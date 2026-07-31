@@ -1,0 +1,74 @@
+name: tracive_sdk
+description: >-
+  Check a phone number, e-mail, bank account, crypto address or social handle
+  against Tracive's scam reports. phase 1 is OAuth-only and the backend Open API
+  is not live yet.
+version: 0.1.0
+homepage: https://tracive.id
+repository: https://github.com/pleistocent/tracive-sdk-flutter
+issue_tracker: https://github.com/pleistocent/tracive-sdk-flutter/issues
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # SHA-256 for cache keys and the PKCE code challenge (§5, §6).
+  crypto: ^3.0.3
+
+  # The default HTTP transport. The transport is injectable (§2), so this is
+  # only the default implementation, not a hard requirement of the design.
+  http: ^1.2.0
+
+  # §5: the cache's data key belongs in the Android Keystore / iOS Keychain,
+  # never in SharedPreferences or UserDefaults. §6 says the same about tokens.
+  # Pinned to 9.x deliberately: 10.x reworks AndroidOptions, and the options
+  # this SDK stores its key with (`encryptedSharedPreferences`,
+  # `first_unlock_this_device`) are the 9.x spelling.
+  flutter_secure_storage: ^9.2.2
+
+  # §5 names this package as the Flutter storage for the check cache. The
+  # constraint is a range rather than a caret because the API this SDK uses —
+  # openDatabase(path, password:), rawQuery/rawInsert/rawDelete — is the sqflite
+  # surface and has been stable across this package's 2.x and 3.x.
+  sqflite_sqlcipher: ">=2.2.0 <4.0.0"
+
+  # §6: the authorize URL opens in a Custom Tab / Universal Link, never a
+  # WebView.
+  url_launcher: ^6.2.5
+
+  # Unicode NFC for the query grammar. Declared here — rather than left to the
+  # host app — so that every integrator gets a version compatible with the
+  # adapter documented at the top of `lib/src/query/normalizer.dart`, which is
+  # exactly what that file asks for. The SDK ships a dependency-free normalizer
+  # and only uses this one when the host installs the adapter; see
+  # `doc/integration.md`.
+  #
+  # The constraint is `^0.3.2`, not the `^2.0.0` written in that file's comment:
+  # unorm_dart has never published a 2.x. `flutter pub get` with `^2.0.0` fails
+  # outright ("doesn't match any versions"), which would block the whole
+  # package, so the version that exists is the one declared here. The API the
+  # comment asks for — `unorm.nfc(String)` — is what 0.3.x exposes, so the
+  # adapter it documents compiles unchanged. See `doc/integration.md`.
+  unorm_dart: ^0.3.2
+
+  # Joining the database file name onto the platform's database directory.
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # The unit tests are plain Dart (no widgets, no bindings), and written against
+  # package:test so they can also run outside a Flutter engine.
+  test: ^1.25.0
+  flutter_lints: ^5.0.0
+
+# Deliberately not declared as a Flutter *plugin*. This package is pure Dart on
+# top of other people's plugins, so it has no `android/` or `ios/` module of its
+# own — which means it cannot yet merge the `<queries>` element §6 step 2 needs
+# into the host manifest. The host app adds four lines instead; `doc/oauth.md`
+# has them. Shipping an empty plugin module just to own a manifest would make
+# every integrator's build depend on native code that does nothing.

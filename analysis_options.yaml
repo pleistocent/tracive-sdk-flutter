@@ -1,0 +1,40 @@
+# Static analysis for the Tracive Flutter SDK.
+#
+# This is an SDK: its mistakes land in other people's apps, so the settings are
+# a notch stricter than an application's would be. Each addition below is here
+# for a reason that is written down, not for tidiness.
+
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    # No implicit downcast from `dynamic`. Every model in this SDK parses JSON
+    # by hand out of `Object?`, and an implicit cast is exactly how a malformed
+    # field turns into a crash on someone's checkout screen instead of the
+    # documented fallback (§4, forward compatibility).
+    strict-casts: true
+    # `List` and `Map` without type arguments hide the same problem.
+    strict-raw-types: true
+  errors:
+    # An unawaited future in an SDK is a write that may not have happened when
+    # the caller thinks it has. Not negotiable here.
+    unawaited_futures: error
+
+linter:
+  rules:
+    # A published SDK's public surface must be documented. This is the rule
+    # that keeps the "why", not just the "what", next to the code — and this
+    # SDK's invariants (no API key, a miss is billed, never cache full detail)
+    # only survive if they are written where they are enforced.
+    - public_member_api_docs
+
+    # Nothing in this package may log. It handles phone numbers, e-mail
+    # addresses, bank accounts and OAuth tokens; `print` in a library ends up in
+    # a customer's crash reports.
+    - avoid_print
+
+    - always_declare_return_types
+    - avoid_dynamic_calls
+    - prefer_final_locals
+    - unawaited_futures
+    - use_super_parameters

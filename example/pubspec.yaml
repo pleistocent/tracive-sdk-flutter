@@ -1,0 +1,32 @@
+name: tracive_sdk_example
+description: >-
+  A runnable example for package:tracive_sdk. It talks to an in-process fake
+  backend, because the Tracive Open API is not live yet.
+
+# Never published: it exists to be read and run, not depended on.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The SDK under demonstration, by path — so running this example always
+  # exercises the working tree, never a published version that may differ.
+  tracive_sdk:
+    path: ../
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

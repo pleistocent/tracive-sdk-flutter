@@ -1,0 +1,661 @@
+// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+//
+// Error surface for the Tracive SDK — the SDK specification §7 ("Error mapping").
+//
+// PACKAGING NOTE (for whoever owns pubspec.yaml): this file depends on nothing
+// outside dart:core. It does use Dart 3 class modifiers (`sealed`, `final
+// class`), so the package must declare `environment: sdk: ^3.0.0` (or newer).
+//
+// Naming: the frozen spec writes the error cases in Kotlin sealed-subclass form
+// (`TraciveException.NotImplemented`). Dart has no nested class names and a
+// package must not squat on bare identifiers like `Server` or `Network`, so
+// each case is rendered as `Tracive<Case>Exception`. The mapping is 1:1 and is
+// spelled out here so a reader can check it against the other SDKs:
+//
+//   InvalidRequest            -> TraciveInvalidRequestException
+//   UnsupportedInputType      -> TraciveUnsupportedInputTypeException
+//   UnsupportedCreditSource   -> TraciveUnsupportedCreditSourceException
+//   InvalidToken              -> TraciveInvalidTokenException
+//   ExpiredToken              -> TraciveExpiredTokenException
+//   GrantRevoked              -> TraciveGrantRevokedException
+//   InvalidApiKey             -> TraciveInvalidApiKeyException
+//   InsufficientCredits(which)-> TraciveInsufficientCreditsException(which)
+//   MissingScope              -> TraciveMissingScopeException
+//   DetailNotPermitted        -> TraciveDetailNotPermittedException
+//   CredentialMismatch        -> TraciveCredentialMismatchException
+//   PartnerSuspended          -> TracivePartnerSuspendedException
+//   IdempotencyConflict       -> TraciveIdempotencyConflictException
+//   RateLimited(retryAfter)   -> TraciveRateLimitedException(retryAfter)
+//   Network(cause)            -> TraciveNetworkException(cause)
+//   Server(status, code?)     -> TraciveServerException(statusCode, code)
+//   NotImplemented(message)   -> TraciveNotImplementedException
+//   CacheMiss                 -> TraciveCacheMissException            (§5)
+//   stateMismatch             -> TraciveStateMismatchException        (§6)
+//   (unrecognised code)       -> TraciveUnknownException(code)        (§7)
+//
+// PRIVACY: no constructor here ever takes a raw identifier (phone / account /
+// e-mail) or a token, and no `toString()` prints one. Messages are either
+// literals written in this SDK or the server's own `error.message`.
+
+/// Base type for every error the Tracive SDK raises.
+///
+/// Sealed so a `switch` over the concrete cases can be checked exhaustively by
+/// the analyser. Callers who only want "did the call fail" can catch this type.
+sealed class TraciveException implements Exception {
+  const TraciveException(
+    this.message, {
+    this.code,
+    this.statusCode,
+    this.checkId,
+  });
+
+  /// Human-readable description. Never contains a raw identifier or a token.
+  final String message;
+
+  /// The wire `error.code` when this error came from the API, else `null`.
+  final String? code;
+
+  /// The HTTP status this error was mapped from, when applicable.
+  final int? statusCode;
+
+  /// `error.checkId` from the response envelope, useful for support tickets.
+  final String? checkId;
+
+  /// Whether retrying the very same call could plausibly succeed.
+  ///
+  /// Note §7: a `checkScammer` retry is only safe with an `Idempotency-Key`;
+  /// this flag says "the failure is transient", not "retrying is free".
+  bool get isRetryable => false;
+
+  /// Spec-shaped shorthand for `TraciveException.NotImplemented(message)`.
+  const factory TraciveException.notImplemented(String message) =
+      TraciveNotImplementedException;
+
+  /// Spec-shaped shorthand for `TraciveException.Network(cause)`.
+  factory TraciveException.network(Object cause, [StackTrace? stackTrace]) =
+      TraciveNetworkException;
+
+  @override
+  String toString() {
+    final buffer = StringBuffer(runtimeType.toString())
+      ..write(': ')
+      ..write(message);
+    if (code != null) buffer.write(' (code: $code)');
+    if (statusCode != null) buffer.write(' (http: $statusCode)');
+    if (checkId != null) buffer.write(' (checkId: $checkId)');
+    return buffer.toString();
+  }
+
+  /// Maps an API error envelope (`{"error":{"code","message","checkId"}}`) to a
+  /// typed exception, per the §7 table.
+  ///
+  /// An unrecognised `code` never throws and never crashes: 5xx becomes
+  /// [TraciveServerException] and anything else [TraciveUnknownException], both
+  /// carrying the raw code so a caller can still branch on it.
+  static TraciveException fromApiError({
+    required int statusCode,
+    String? code,
+    String? message,
+    String? checkId,
+    Duration? retryAfter,
+  }) {
+    final normalizedCode = code?.trim().toLowerCase();
+    final text = (message == null || message.trim().isEmpty)
+        ? _defaultMessageFor(statusCode, normalizedCode)
+        : message.trim();
+
+    switch (normalizedCode) {
+      case 'invalid_request':
+        return TraciveInvalidRequestException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'unsupported_input_type':
+        return TraciveUnsupportedInputTypeException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'unsupported_credit_source':
+        return TraciveUnsupportedCreditSourceException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'invalid_token':
+        return TraciveInvalidTokenException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'expired_token':
+        return TraciveExpiredTokenException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'grant_revoked':
+        return TraciveGrantRevokedException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'invalid_api_key':
+        return TraciveInvalidApiKeyException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'insufficient_user_credits':
+        return TraciveInsufficientCreditsException(
+          InsufficientCreditsKind.user,
+          message: text,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'insufficient_credits':
+        return TraciveInsufficientCreditsException(
+          InsufficientCreditsKind.account,
+          message: text,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'insufficient_partner_balance':
+        return TraciveInsufficientCreditsException(
+          InsufficientCreditsKind.partnerBalance,
+          message: text,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'missing_scope':
+        return TraciveMissingScopeException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'detail_not_permitted':
+        return TraciveDetailNotPermittedException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'credential_mismatch':
+        return TraciveCredentialMismatchException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'partner_suspended':
+        return TracivePartnerSuspendedException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'idempotency_conflict':
+        return TraciveIdempotencyConflictException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+      case 'rate_limited':
+        return TraciveRateLimitedException(
+          retryAfter: retryAfter,
+          message: text,
+          statusCode: statusCode,
+          checkId: checkId,
+        );
+    }
+
+    // Unrecognised (or absent) code: fall back on the status class. Never crash
+    // — a phase 2 server may invent codes this build has never heard of.
+    if (statusCode >= 500) {
+      return TraciveServerException(
+        statusCode: statusCode,
+        code: normalizedCode,
+        message: text,
+        checkId: checkId,
+      );
+    }
+    if (statusCode == 429) {
+      return TraciveRateLimitedException(
+        retryAfter: retryAfter,
+        message: text,
+        statusCode: statusCode,
+        checkId: checkId,
+      );
+    }
+    return TraciveUnknownException(
+      text,
+      code: normalizedCode,
+      statusCode: statusCode,
+      checkId: checkId,
+    );
+  }
+
+  /// Convenience wrapper over [fromApiError] that digs `code`/`message`/
+  /// `checkId` out of a decoded JSON body. Tolerates a missing or malformed
+  /// envelope (a proxy returning HTML, an empty 502, …).
+  static TraciveException fromErrorBody(
+    int statusCode,
+    Object? body, {
+    Duration? retryAfter,
+  }) {
+    String? code;
+    String? message;
+    String? checkId;
+    if (body is Map) {
+      final error = body['error'];
+      if (error is Map) {
+        final rawCode = error['code'];
+        final rawMessage = error['message'];
+        final rawCheckId = error['checkId'];
+        if (rawCode is String) code = rawCode;
+        if (rawMessage is String) message = rawMessage;
+        if (rawCheckId is String) checkId = rawCheckId;
+      } else if (error is String) {
+        code = error;
+      }
+    }
+    return fromApiError(
+      statusCode: statusCode,
+      code: code,
+      message: message,
+      checkId: checkId,
+      retryAfter: retryAfter,
+    );
+  }
+
+  static String _defaultMessageFor(int statusCode, String? code) {
+    if (code != null && code.isNotEmpty) return 'Request failed: $code';
+    return 'Request failed with HTTP $statusCode';
+  }
+}
+
+/// 400 `invalid_request`.
+final class TraciveInvalidRequestException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveInvalidRequestException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// 400 `unsupported_input_type` — the server does not index this input type.
+///
+/// The most likely cause is a key this SDK cannot build (there is deliberately
+/// no `domain()` builder; see [TraciveQueryException]).
+final class TraciveUnsupportedInputTypeException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveUnsupportedInputTypeException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// 400 `unsupported_credit_source`.
+final class TraciveUnsupportedCreditSourceException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveUnsupportedCreditSourceException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// 401 `invalid_token`.
+final class TraciveInvalidTokenException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveInvalidTokenException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// 401 `expired_token` — triggers the single-flight refresh (§6). Callers
+/// normally never see this: the client refreshes and replays the request once.
+final class TraciveExpiredTokenException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveExpiredTokenException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+
+  @override
+  bool get isRetryable => true;
+}
+
+/// 401 `grant_revoked` — stored tokens must be cleared and the user re-consents.
+/// **Do not retry**: retrying is what trips refresh-token reuse detection.
+final class TraciveGrantRevokedException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveGrantRevokedException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// 401 `invalid_api_key`.
+///
+/// This SDK never sends an API key — there is no API-key parameter anywhere in
+/// the public surface, by design (§2/§11.1). The case exists only so that a
+/// server that emits this code (for example behind a partner proxy that adds
+/// its own credentials) maps to something typed instead of "unknown".
+final class TraciveInvalidApiKeyException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveInvalidApiKeyException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// Which balance ran out, for [TraciveInsufficientCreditsException].
+enum InsufficientCreditsKind {
+  /// `insufficient_user_credits` — the end user's own credit balance.
+  user('insufficient_user_credits'),
+
+  /// `insufficient_credits` — the generic/unattributed balance.
+  account('insufficient_credits'),
+
+  /// `insufficient_partner_balance` — the partner's prepaid balance.
+  partnerBalance('insufficient_partner_balance');
+
+  const InsufficientCreditsKind(this.wireCode);
+
+  /// The `error.code` this kind is decoded from.
+  final String wireCode;
+}
+
+/// 402 — a credit balance was exhausted.
+///
+/// §3.3: handle *this* instead of polling `credits()` before every check; it
+/// saves one round trip per transaction.
+final class TraciveInsufficientCreditsException extends TraciveException {
+  /// Creates the exception for the [which] balance the server reported
+  /// exhausted. The default message names that balance, never an amount.
+  TraciveInsufficientCreditsException(
+    this.which, {
+    String? message,
+    int? statusCode = 402,
+    super.checkId,
+  }) : super(
+          message ?? 'Insufficient credits (${which.wireCode})',
+          code: which.wireCode,
+          statusCode: statusCode,
+        );
+
+  /// Which balance was insufficient.
+  final InsufficientCreditsKind which;
+}
+
+/// 403 `missing_scope`.
+final class TraciveMissingScopeException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveMissingScopeException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+    this.requiredScope,
+  });
+
+  /// The scope the server said was missing, when it named one.
+  final String? requiredScope;
+}
+
+/// 403 `detail_not_permitted` — this grant may not request `detail = full`.
+final class TraciveDetailNotPermittedException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveDetailNotPermittedException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// 403 `credential_mismatch`.
+final class TraciveCredentialMismatchException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveCredentialMismatchException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// 403 `partner_suspended`.
+final class TracivePartnerSuspendedException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TracivePartnerSuspendedException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// 409 `idempotency_conflict` — the same `Idempotency-Key` was replayed with a
+/// different body.
+final class TraciveIdempotencyConflictException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveIdempotencyConflictException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// 429 `rate_limited`.
+final class TraciveRateLimitedException extends TraciveException {
+  /// Creates the exception. [retryAfter] carries the server's `Retry-After`
+  /// header when it sent one; the request is retryable either way.
+  const TraciveRateLimitedException({
+    this.retryAfter,
+    String message = 'Rate limited',
+    int? statusCode = 429,
+    super.checkId,
+  }) : super(message, code: 'rate_limited', statusCode: statusCode);
+
+  /// Value of the `Retry-After` response header, when the server sent one.
+  final Duration? retryAfter;
+
+  @override
+  bool get isRetryable => true;
+
+  /// Parses a `Retry-After` header value.
+  ///
+  /// Only the delta-seconds form is understood; the HTTP-date form returns
+  /// `null` (the caller should then fall back on its own backoff). Returns
+  /// `null` for anything unparsable rather than throwing.
+  static Duration? parseRetryAfter(String? headerValue) {
+    if (headerValue == null) return null;
+    final seconds = int.tryParse(headerValue.trim());
+    if (seconds == null || seconds < 0) return null;
+    return Duration(seconds: seconds);
+  }
+}
+
+/// Transport failure — DNS, TLS, socket, timeout. No HTTP response was parsed.
+final class TraciveNetworkException extends TraciveException {
+  /// Wraps the transport-level [cause] that stopped the request before any
+  /// HTTP response existed. [stackTrace] is kept when the transport gave one.
+  TraciveNetworkException(this.cause, [this.stackTrace])
+      : super('Network failure: $cause');
+
+  /// The underlying transport error.
+  final Object cause;
+
+  /// Stack trace of [cause], when the transport supplied one.
+  final StackTrace? stackTrace;
+
+  @override
+  bool get isRetryable => true;
+}
+
+/// 5xx, or any unrecognised server-side failure.
+final class TraciveServerException extends TraciveException {
+  /// Creates the exception for a 5xx or otherwise unrecognised failure.
+  /// [statusCode] is required because it is the only thing that classifies it.
+  const TraciveServerException({
+    required int statusCode,
+    String? code,
+    String message = 'Server error',
+    String? checkId,
+  }) : super(message, code: code, statusCode: statusCode, checkId: checkId);
+
+  @override
+  bool get isRetryable => true;
+}
+
+/// An error code this build does not recognise. Carries the raw `code` so the
+/// caller can still branch on it. Never thrown for a code in the §7 table.
+final class TraciveUnknownException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveUnknownException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+  });
+}
+
+/// Raised where the spec says a surface exists but the behaviour lands later.
+///
+/// The only such place in phase 1 is Proxy mode: `TraciveMode.proxy(...)` is
+/// accepted by the constructor so that adding it in phase 2 is not a breaking
+/// change, but every call made in that mode throws this.
+final class TraciveNotImplementedException extends TraciveException {
+  /// Creates the exception with [message] — the exact sentence the spec
+  /// requires for the surface that is not live yet.
+  const TraciveNotImplementedException(super.message);
+}
+
+/// `source: Source.cache` found no live entry.
+///
+/// §5: a cache-only lookup must fail loudly rather than return a silent empty
+/// result that reads as "not a scammer".
+final class TraciveCacheMissException extends TraciveException {
+  /// Creates the exception. The default message deliberately names no
+  /// identifier, because this value reaches logs.
+  const TraciveCacheMissException([super.message = 'No cached result']);
+}
+
+/// The `state` parameter on the OAuth redirect did not match the one this SDK
+/// generated. Treated as a hostile redirect: the code is discarded.
+final class TraciveStateMismatchException extends TraciveException {
+  /// Creates the exception. The message never quotes either `state` value.
+  const TraciveStateMismatchException([
+    super.message = 'OAuth state mismatch; the redirect was discarded',
+  ]);
+}
+
+/// The reason strings carried by [TraciveQueryException].
+///
+/// These are the exact `reason` values in `test/fixtures/query-grammar-vectors
+/// .json`; they are part of the cross-SDK contract, so they are constants
+/// rather than an enum (the wire form must stay byte-identical).
+abstract final class QueryRejectionReason {
+  /// The phone number is not E.164 after folding (`^\+[1-9]\d{6,14}$`).
+  static const String notE164 = 'not_e164';
+
+  /// The bank country is not an ISO 3166-1 alpha-3 code.
+  static const String countryNotAlpha3 = 'country_not_alpha3';
+
+  /// The account id folded to the empty string.
+  static const String emptyAccountId = 'empty_account_id';
+
+  /// The bank code folded to the empty string.
+  static const String emptyBankCode = 'empty_bank_code';
+
+  /// A required value folded to the empty string.
+  static const String emptyValue = 'empty_value';
+
+  /// The username handle folded to the empty string.
+  static const String emptyHandle = 'empty_handle';
+
+  /// The crypto chain folded to the empty string.
+  static const String emptyChain = 'empty_chain';
+
+  /// The built key is not a legal record key.
+  static const String invalidDocumentId = 'invalid_document_id';
+
+  /// Every reason string, for tests and exhaustiveness checks.
+  static const List<String> values = <String>[
+    notE164,
+    countryNotAlpha3,
+    emptyAccountId,
+    emptyBankCode,
+    emptyValue,
+    emptyHandle,
+    emptyChain,
+    invalidDocumentId,
+  ];
+}
+
+/// Thrown by the `TraciveQuery` builders for input that cannot produce a key
+/// the backend could ever match.
+///
+/// Validation runs **before** any network call: a key that cannot hit is still
+/// billed as a miss, so it must never leave the device.
+///
+/// [reason] is one of [QueryRejectionReason]'s constants — identical across the
+/// Kotlin, Flutter and Swift SDKs.
+///
+/// PRIVACY: the offending input is deliberately **not** stored on, or printed
+/// by, this exception. A phone number or e-mail address in an exception message
+/// ends up in crash reports and logs.
+final class TraciveQueryException extends TraciveException {
+  /// Creates the exception for [reason].
+  ///
+  /// PRIVACY: [message] must never contain the rejected input — it is a raw
+  /// phone number, e-mail address or account number, and it ends up in logs.
+  const TraciveQueryException(this.reason, {String? message})
+      : super(message ?? 'Invalid query input: $reason', code: reason);
+
+  /// The stable, cross-SDK rejection reason.
+  final String reason;
+
+  @override
+  String toString() => 'TraciveQueryException($reason): $message';
+}

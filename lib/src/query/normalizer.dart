@@ -1,0 +1,527 @@
+// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+//
+// Unicode NFC for the query grammar — the SDK specification §3 and the `rules` block of
+// `test/fixtures/query-grammar-vectors.json`.
+//
+// ---------------------------------------------------------------------------
+// PACKAGING NOTE — read this before editing pubspec.yaml
+// ---------------------------------------------------------------------------
+// **This file** has no package dependency. It imports dart:core only, on
+// purpose: the default fold must never fail to compile, or be slowed down,
+// because of an optional package.
+//
+// The grammar requires Unicode NFC and **Dart's core library does not provide
+// it** (there is no `String.normalize()`; that is a JS/Kotlin/Swift luxury).
+// So this file ships a small, self-contained implementation — see the honest
+// scope statement on [DefaultNormalizer] — behind the [Normalizer] seam.
+//
+// A full-Unicode implementation is shipped separately, in
+// `lib/src/query/unorm_normalizer.dart`, backed by `unorm_dart` (a declared
+// dependency in pubspec.yaml — version `^0.3.2`, which is the only major
+// series that package has ever published). It is exported from the public
+// barrel and installed by the host app in one line:
+//
+//     void main() {
+//       TraciveNormalization.normalizer = const UnormNormalizer();
+//       runApp(...);
+//     }
+//
+// Keeping the two in separate files is the point: the dependency is reachable
+// for the apps that need exactness, and absent from the default path for the
+// apps that do not. See `doc/integration.md` § Unicode normalisation.
+// ---------------------------------------------------------------------------
+
+/// Applies Unicode Normalization Form C.
+///
+/// Injected rather than hard-wired because Dart has no core-library NFC, so the
+/// quality of the answer depends on which implementation the host app chooses.
+/// The default is [DefaultNormalizer].
+abstract class Normalizer {
+  /// Allows `const` implementations.
+  const Normalizer();
+
+  /// Returns [input] in Normalization Form C.
+  String nfc(String input);
+}
+
+/// Where the query builders look up the [Normalizer] to use.
+///
+/// This holder is **Dart-only plumbing**: the Kotlin and Swift SDKs get NFC
+/// from the platform and expose no equivalent. It exists so a host app that
+/// accepts identifiers outside [DefaultNormalizer]'s documented scope can swap
+/// in a full-Unicode implementation:
+///
+///     TraciveNormalization.normalizer = const UnormNormalizer();
+///
+/// Set it once, during start-up, before building any query.
+class TraciveNormalization {
+  TraciveNormalization._();
+
+  /// The normalizer every `TraciveQuery` builder folds through.
+  static Normalizer normalizer = const DefaultNormalizer();
+}
+
+/// Dependency-free NFC covering the composition half of the algorithm.
+///
+/// ## What it does
+///
+/// * Canonical ordering of combining marks, using the full BMP
+///   Canonical_Combining_Class table (295 ranges, Unicode 16.0).
+/// * Canonical composition for **every** BMP primary composite (928 pairs,
+///   Unicode 16.0, composition exclusions already removed) — Latin (including
+///   all of Vietnamese and Latin Extended Additional), Greek (including
+///   polytonic), Cyrillic, Arabic, the Indic scripts, Kana voicing marks and
+///   the composed mathematical negations.
+/// * Algorithmic Hangul composition (L+V, LV+T), so decomposed jamo compose to
+///   syllables without a table.
+///
+/// For input that is already NFD — which is what actually reaches an SDK, since
+/// Apple platforms hand back decomposed text — that is exactly NFC.
+///
+/// ## What it does NOT do — read this before shipping non-Latin input
+///
+/// It performs **no canonical decomposition step**, so three narrow cases come
+/// out differently from a full NFC implementation:
+///
+/// 1. Singleton decompositions are left alone: U+212B ANGSTROM SIGN stays
+///    U+212B where true NFC yields U+00C5, and U+2126 OHM SIGN stays U+2126
+///    where true NFC yields U+03A9.
+/// 2. Characters excluded from composition (U+0958 DEVANAGARI QA, the Hebrew
+///    presentation forms, …) stay composed where true NFC would decompose them.
+/// 3. Already-composed text followed by a lower-class mark is not re-ordered
+///    through a decomposition, e.g. `U+00E9 U+0327` stays as typed where true
+///    NFC yields `U+0229 U+0301`.
+///
+/// Characters outside the BMP are passed through unchanged; the table stops at
+/// U+FFFF.
+///
+/// Those limits are measured, not assumed. Checked against Python 3's
+/// `unicodedata` (Unicode 16.0):
+///
+/// * 16 467 already-decomposed inputs — the NFD form of every decomposable BMP
+///   character, all 11 172 Hangul syllables, and 4 000 random multi-mark
+///   sequences — produce **byte-identical** output to full NFC. Zero
+///   divergences.
+/// * Feeding every BMP character raw (i.e. *not* decomposed) diverges on 565
+///   of 63 488: 493 singleton decompositions and 72 composition-excluded
+///   pairs. Nothing else. That is exactly the list above, and it is the whole
+///   of it.
+///
+/// Every one of those cases produces a *different key from the server's*, and
+/// per §3.2 a miss is still billed — so if your app accepts identifiers where
+/// they are plausible, inject a full implementation (see the packaging note at
+/// the top of this file). For ASCII, Latin, Greek, Cyrillic and Hangul input
+/// this class is exact, and ASCII takes a zero-allocation fast path.
+///
+/// The tables below are generated data, not hand-written; the generator is
+/// reproduced in a comment beside them so the values can be regenerated and
+/// diffed against any Unicode release.
+class DefaultNormalizer implements Normalizer {
+  /// Creates the built-in normalizer. `const`, stateless, thread-safe.
+  const DefaultNormalizer();
+
+  @override
+  String nfc(String input) {
+    if (input.isEmpty) return input;
+
+    // Fast path. The lowest code point that can take part in composition as a
+    // combining mark, or be reordered, is U+0300; anything below that is
+    // already in NFC (precomposed Latin-1 letters such as U+00C0 included).
+    // Surrogates are >= 0xD800, so this check also covers non-BMP input.
+    var interesting = false;
+    for (final unit in input.codeUnits) {
+      if (unit >= 0x0300) {
+        interesting = true;
+        break;
+      }
+    }
+    if (!interesting) return input;
+
+    final codePoints = input.runes.toList(growable: false);
+    final ordered = _canonicalOrder(codePoints);
+    final composed = _compose(ordered);
+    return String.fromCharCodes(composed);
+  }
+
+  /// Stable insertion sort of combining marks by canonical combining class,
+  /// bounded by starters (UAX #15, "Canonical Ordering Algorithm").
+  static List<int> _canonicalOrder(List<int> codePoints) {
+    final out = List<int>.of(codePoints);
+    for (var i = 1; i < out.length; i++) {
+      final cc = _combiningClass(out[i]);
+      if (cc == 0) continue;
+      var j = i;
+      while (j > 0) {
+        final previousCc = _combiningClass(out[j - 1]);
+        if (previousCc == 0 || previousCc <= cc) break;
+        final swap = out[j - 1];
+        out[j - 1] = out[j];
+        out[j] = swap;
+        j--;
+      }
+    }
+    return out;
+  }
+
+  /// Canonical composition (UAX #15). A character is *blocked* from the last
+  /// starter when something between them has an equal or higher combining
+  /// class, which is what [lastCc] tracks.
+  static List<int> _compose(List<int> codePoints) {
+    final out = <int>[];
+    var starterIndex = -1;
+    var lastCc = 0;
+
+    for (final codePoint in codePoints) {
+      final cc = _combiningClass(codePoint);
+
+      if (starterIndex >= 0 && (lastCc == 0 || lastCc < cc)) {
+        final composed = _composePair(out[starterIndex], codePoint);
+        if (composed != null) {
+          out[starterIndex] = composed;
+          // Nothing was appended, so the blocking state is unchanged.
+          continue;
+        }
+      }
+
+      out.add(codePoint);
+      if (cc == 0) {
+        starterIndex = out.length - 1;
+        lastCc = 0;
+      } else {
+        lastCc = cc;
+      }
+    }
+    return out;
+  }
+
+  static int? _composePair(int first, int second) {
+    final hangul = _composeHangul(first, second);
+    if (hangul != null) return hangul;
+    if (first > 0xFFFF || second > 0xFFFF) return null;
+    return _compositions[(first << 16) | second];
+  }
+
+  // Hangul syllable composition, UAX #15 section 16 ("Hangul"). Algorithmic —
+  // it replaces 11 172 table entries.
+  static const int _hangulSBase = 0xAC00;
+  static const int _hangulLBase = 0x1100;
+  static const int _hangulVBase = 0x1161;
+  static const int _hangulTBase = 0x11A7;
+  static const int _hangulLCount = 19;
+  static const int _hangulVCount = 21;
+  static const int _hangulTCount = 28;
+  static const int _hangulSCount =
+      _hangulLCount * _hangulVCount * _hangulTCount;
+
+  static int? _composeHangul(int first, int second) {
+    final lIndex = first - _hangulLBase;
+    if (lIndex >= 0 && lIndex < _hangulLCount) {
+      final vIndex = second - _hangulVBase;
+      if (vIndex >= 0 && vIndex < _hangulVCount) {
+        return _hangulSBase + (lIndex * _hangulVCount + vIndex) * _hangulTCount;
+      }
+    }
+    final sIndex = first - _hangulSBase;
+    if (sIndex >= 0 && sIndex < _hangulSCount && sIndex % _hangulTCount == 0) {
+      final tIndex = second - _hangulTBase;
+      if (tIndex > 0 && tIndex < _hangulTCount) return first + tIndex;
+    }
+    return null;
+  }
+
+  /// Canonical_Combining_Class of [codePoint]; 0 (a starter) for anything
+  /// outside the BMP table.
+  static int _combiningClass(int codePoint) {
+    if (codePoint < 0x0300 || codePoint > 0xFFFF) return 0;
+    final starts = _cccStarts;
+    var low = 0;
+    var high = starts.length - 1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (codePoint < starts[mid]) {
+        high = mid - 1;
+      } else if (codePoint > _cccEnds[mid]) {
+        low = mid + 1;
+      } else {
+        return _cccValues[mid];
+      }
+    }
+    return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Generated Unicode data (Unicode 16.0.0, via Python 3 `unicodedata`).
+//
+// Regenerate and diff with:
+//
+//   import unicodedata
+//   comp = []
+//   for cp in range(0x10000):
+//       ch = chr(cp); d = unicodedata.decomposition(ch)
+//       if not d or d.startswith('<'): continue
+//       p = d.split()
+//       if len(p) != 2: continue
+//       a, b = int(p[0], 16), int(p[1], 16)
+//       if unicodedata.normalize('NFC', chr(a) + chr(b)) != ch: continue  # excl.
+//       if 0xAC00 <= cp <= 0xD7A3: continue                    # Hangul: algorithmic
+//       comp.append('%04X%04X%04X' % (a, b, cp))
+//
+//   ccc, runs, prev = [(cp, unicodedata.combining(chr(cp)))
+//                      for cp in range(0x10000)
+//                      if unicodedata.combining(chr(cp))], [], None
+//   for cp, c in ccc:
+//       if prev and prev[1] == c and cp == prev[0] + 1: runs[-1][1] = cp
+//       else: runs.append([cp, cp, c])
+//       prev = (cp, c)
+//   ranges = ['%04X%04X%02X' % (s, e, c) for s, e, c in runs]
+//
+// Format: space-separated fixed-width hex groups.
+//   compositions: <starter:4><mark:4><composed:4>   (928 entries)
+//   ccc ranges:   <first:4><last:4><class:2>        (295 entries)
+// Parsed once, lazily, on first use.
+// ---------------------------------------------------------------------------
+
+/// `(starter << 16) | mark` -> composed code point.
+final Map<int, int> _compositions = _parseCompositions();
+
+Map<int, int> _parseCompositions() {
+  final map = <int, int>{};
+  for (final group in _compositionData.split(' ')) {
+    if (group.length != 12) continue; // tolerate stray whitespace
+    final starter = int.parse(group.substring(0, 4), radix: 16);
+    final mark = int.parse(group.substring(4, 8), radix: 16);
+    final composed = int.parse(group.substring(8, 12), radix: 16);
+    map[(starter << 16) | mark] = composed;
+  }
+  return map;
+}
+
+final List<int> _cccStarts = _parseCcc(0);
+final List<int> _cccEnds = _parseCcc(1);
+final List<int> _cccValues = _parseCcc(2);
+
+List<int> _parseCcc(int field) {
+  final out = <int>[];
+  for (final group in _cccData.split(' ')) {
+    if (group.length != 10) continue;
+    switch (field) {
+      case 0:
+        out.add(int.parse(group.substring(0, 4), radix: 16));
+      case 1:
+        out.add(int.parse(group.substring(4, 8), radix: 16));
+      default:
+        out.add(int.parse(group.substring(8, 10), radix: 16));
+    }
+  }
+  return out;
+}
+
+const String _compositionData =
+    '003C0338226E 003D03382260 003E0338226F 0041030000C0 0041030100C1 0041030200C2 '
+    '0041030300C3 004103040100 004103060102 004103070226 0041030800C4 004103091EA2 '
+    '0041030A00C5 0041030C01CD 0041030F0200 004103110202 004103231EA0 004103251E00 '
+    '004103280104 004203071E02 004203231E04 004203311E06 004303010106 004303020108 '
+    '00430307010A 0043030C010C 0043032700C7 004403071E0A 0044030C010E 004403231E0C '
+    '004403271E10 0044032D1E12 004403311E0E 0045030000C8 0045030100C9 0045030200CA '
+    '004503031EBC 004503040112 004503060114 004503070116 0045030800CB 004503091EBA '
+    '0045030C011A 0045030F0204 004503110206 004503231EB8 004503270228 004503280118 '
+    '0045032D1E18 004503301E1A 004603071E1E 0047030101F4 00470302011C 004703041E20 '
+    '00470306011E 004703070120 0047030C01E6 004703270122 004803020124 004803071E22 '
+    '004803081E26 0048030C021E 004803231E24 004803271E28 0048032E1E2A 0049030000CC '
+    '0049030100CD 0049030200CE 004903030128 00490304012A 00490306012C 004903070130 '
+    '0049030800CF 004903091EC8 0049030C01CF 0049030F0208 00490311020A 004903231ECA '
+    '00490328012E 004903301E2C 004A03020134 004B03011E30 004B030C01E8 004B03231E32 '
+    '004B03270136 004B03311E34 004C03010139 004C030C013D 004C03231E36 004C0327013B '
+    '004C032D1E3C 004C03311E3A 004D03011E3E 004D03071E40 004D03231E42 004E030001F8 '
+    '004E03010143 004E030300D1 004E03071E44 004E030C0147 004E03231E46 004E03270145 '
+    '004E032D1E4A 004E03311E48 004F030000D2 004F030100D3 004F030200D4 004F030300D5 '
+    '004F0304014C 004F0306014E 004F0307022E 004F030800D6 004F03091ECE 004F030B0150 '
+    '004F030C01D1 004F030F020C 004F0311020E 004F031B01A0 004F03231ECC 004F032801EA '
+    '005003011E54 005003071E56 005203010154 005203071E58 0052030C0158 0052030F0210 '
+    '005203110212 005203231E5A 005203270156 005203311E5E 00530301015A 00530302015C '
+    '005303071E60 0053030C0160 005303231E62 005303260218 00530327015E 005403071E6A '
+    '0054030C0164 005403231E6C 00540326021A 005403270162 0054032D1E70 005403311E6E '
+    '0055030000D9 0055030100DA 0055030200DB 005503030168 00550304016A 00550306016C '
+    '0055030800DC 005503091EE6 0055030A016E 0055030B0170 0055030C01D3 0055030F0214 '
+    '005503110216 0055031B01AF 005503231EE4 005503241E72 005503280172 0055032D1E76 '
+    '005503301E74 005603031E7C 005603231E7E 005703001E80 005703011E82 005703020174 '
+    '005703071E86 005703081E84 005703231E88 005803071E8A 005803081E8C 005903001EF2 '
+    '0059030100DD 005903020176 005903031EF8 005903040232 005903071E8E 005903080178 '
+    '005903091EF6 005903231EF4 005A03010179 005A03021E90 005A0307017B 005A030C017D '
+    '005A03231E92 005A03311E94 0061030000E0 0061030100E1 0061030200E2 0061030300E3 '
+    '006103040101 006103060103 006103070227 0061030800E4 006103091EA3 0061030A00E5 '
+    '0061030C01CE 0061030F0201 006103110203 006103231EA1 006103251E01 006103280105 '
+    '006203071E03 006203231E05 006203311E07 006303010107 006303020109 00630307010B '
+    '0063030C010D 0063032700E7 006403071E0B 0064030C010F 006403231E0D 006403271E11 '
+    '0064032D1E13 006403311E0F 0065030000E8 0065030100E9 0065030200EA 006503031EBD '
+    '006503040113 006503060115 006503070117 0065030800EB 006503091EBB 0065030C011B '
+    '0065030F0205 006503110207 006503231EB9 006503270229 006503280119 0065032D1E19 '
+    '006503301E1B 006603071E1F 0067030101F5 00670302011D 006703041E21 00670306011F '
+    '006703070121 0067030C01E7 006703270123 006803020125 006803071E23 006803081E27 '
+    '0068030C021F 006803231E25 006803271E29 0068032E1E2B 006803311E96 0069030000EC '
+    '0069030100ED 0069030200EE 006903030129 00690304012B 00690306012D 0069030800EF '
+    '006903091EC9 0069030C01D0 0069030F0209 00690311020B 006903231ECB 00690328012F '
+    '006903301E2D 006A03020135 006A030C01F0 006B03011E31 006B030C01E9 006B03231E33 '
+    '006B03270137 006B03311E35 006C0301013A 006C030C013E 006C03231E37 006C0327013C '
+    '006C032D1E3D 006C03311E3B 006D03011E3F 006D03071E41 006D03231E43 006E030001F9 '
+    '006E03010144 006E030300F1 006E03071E45 006E030C0148 006E03231E47 006E03270146 '
+    '006E032D1E4B 006E03311E49 006F030000F2 006F030100F3 006F030200F4 006F030300F5 '
+    '006F0304014D 006F0306014F 006F0307022F 006F030800F6 006F03091ECF 006F030B0151 '
+    '006F030C01D2 006F030F020D 006F0311020F 006F031B01A1 006F03231ECD 006F032801EB '
+    '007003011E55 007003071E57 007203010155 007203071E59 0072030C0159 0072030F0211 '
+    '007203110213 007203231E5B 007203270157 007203311E5F 00730301015B 00730302015D '
+    '007303071E61 0073030C0161 007303231E63 007303260219 00730327015F 007403071E6B '
+    '007403081E97 0074030C0165 007403231E6D 00740326021B 007403270163 0074032D1E71 '
+    '007403311E6F 0075030000F9 0075030100FA 0075030200FB 007503030169 00750304016B '
+    '00750306016D 0075030800FC 007503091EE7 0075030A016F 0075030B0171 0075030C01D4 '
+    '0075030F0215 007503110217 0075031B01B0 007503231EE5 007503241E73 007503280173 '
+    '0075032D1E77 007503301E75 007603031E7D 007603231E7F 007703001E81 007703011E83 '
+    '007703020175 007703071E87 007703081E85 0077030A1E98 007703231E89 007803071E8B '
+    '007803081E8D 007903001EF3 0079030100FD 007903020177 007903031EF9 007903040233 '
+    '007903071E8F 0079030800FF 007903091EF7 0079030A1E99 007903231EF5 007A0301017A '
+    '007A03021E91 007A0307017C 007A030C017E 007A03231E93 007A03311E95 00A803001FED '
+    '00A803010385 00A803421FC1 00C203001EA6 00C203011EA4 00C203031EAA 00C203091EA8 '
+    '00C4030401DE 00C5030101FA 00C6030101FC 00C6030401E2 00C703011E08 00CA03001EC0 '
+    '00CA03011EBE 00CA03031EC4 00CA03091EC2 00CF03011E2E 00D403001ED2 00D403011ED0 '
+    '00D403031ED6 00D403091ED4 00D503011E4C 00D50304022C 00D503081E4E 00D60304022A '
+    '00D8030101FE 00DC030001DB 00DC030101D7 00DC030401D5 00DC030C01D9 00E203001EA7 '
+    '00E203011EA5 00E203031EAB 00E203091EA9 00E4030401DF 00E5030101FB 00E6030101FD '
+    '00E6030401E3 00E703011E09 00EA03001EC1 00EA03011EBF 00EA03031EC5 00EA03091EC3 '
+    '00EF03011E2F 00F403001ED3 00F403011ED1 00F403031ED7 00F403091ED5 00F503011E4D '
+    '00F50304022D 00F503081E4F 00F60304022B 00F8030101FF 00FC030001DC 00FC030101D8 '
+    '00FC030401D6 00FC030C01DA 010203001EB0 010203011EAE 010203031EB4 010203091EB2 '
+    '010303001EB1 010303011EAF 010303031EB5 010303091EB3 011203001E14 011203011E16 '
+    '011303001E15 011303011E17 014C03001E50 014C03011E52 014D03001E51 014D03011E53 '
+    '015A03071E64 015B03071E65 016003071E66 016103071E67 016803011E78 016903011E79 '
+    '016A03081E7A 016B03081E7B 017F03071E9B 01A003001EDC 01A003011EDA 01A003031EE0 '
+    '01A003091EDE 01A003231EE2 01A103001EDD 01A103011EDB 01A103031EE1 01A103091EDF '
+    '01A103231EE3 01AF03001EEA 01AF03011EE8 01AF03031EEE 01AF03091EEC 01AF03231EF0 '
+    '01B003001EEB 01B003011EE9 01B003031EEF 01B003091EED 01B003231EF1 01B7030C01EE '
+    '01EA030401EC 01EB030401ED 0226030401E0 0227030401E1 022803061E1C 022903061E1D '
+    '022E03040230 022F03040231 0292030C01EF 039103001FBA 039103010386 039103041FB9 '
+    '039103061FB8 039103131F08 039103141F09 039103451FBC 039503001FC8 039503010388 '
+    '039503131F18 039503141F19 039703001FCA 039703010389 039703131F28 039703141F29 '
+    '039703451FCC 039903001FDA 03990301038A 039903041FD9 039903061FD8 0399030803AA '
+    '039903131F38 039903141F39 039F03001FF8 039F0301038C 039F03131F48 039F03141F49 '
+    '03A103141FEC 03A503001FEA 03A50301038E 03A503041FE9 03A503061FE8 03A5030803AB '
+    '03A503141F59 03A903001FFA 03A90301038F 03A903131F68 03A903141F69 03A903451FFC '
+    '03AC03451FB4 03AE03451FC4 03B103001F70 03B1030103AC 03B103041FB1 03B103061FB0 '
+    '03B103131F00 03B103141F01 03B103421FB6 03B103451FB3 03B503001F72 03B5030103AD '
+    '03B503131F10 03B503141F11 03B703001F74 03B7030103AE 03B703131F20 03B703141F21 '
+    '03B703421FC6 03B703451FC3 03B903001F76 03B9030103AF 03B903041FD1 03B903061FD0 '
+    '03B9030803CA 03B903131F30 03B903141F31 03B903421FD6 03BF03001F78 03BF030103CC '
+    '03BF03131F40 03BF03141F41 03C103131FE4 03C103141FE5 03C503001F7A 03C5030103CD '
+    '03C503041FE1 03C503061FE0 03C5030803CB 03C503131F50 03C503141F51 03C503421FE6 '
+    '03C903001F7C 03C9030103CE 03C903131F60 03C903141F61 03C903421FF6 03C903451FF3 '
+    '03CA03001FD2 03CA03010390 03CA03421FD7 03CB03001FE2 03CB030103B0 03CB03421FE7 '
+    '03CE03451FF4 03D2030103D3 03D2030803D4 040603080407 0410030604D0 0410030804D2 '
+    '041303010403 041503000400 0415030604D6 041503080401 0416030604C1 0416030804DC '
+    '0417030804DE 04180300040D 0418030404E2 041803060419 0418030804E4 041A0301040C '
+    '041E030804E6 0423030404EE 04230306040E 0423030804F0 0423030B04F2 0427030804F4 '
+    '042B030804F8 042D030804EC 0430030604D1 0430030804D3 043303010453 043503000450 '
+    '0435030604D7 043503080451 0436030604C2 0436030804DD 0437030804DF 04380300045D '
+    '0438030404E3 043803060439 0438030804E5 043A0301045C 043E030804E7 0443030404EF '
+    '04430306045E 0443030804F1 0443030B04F3 0447030804F5 044B030804F9 044D030804ED '
+    '045603080457 0474030F0476 0475030F0477 04D8030804DA 04D9030804DB 04E8030804EA '
+    '04E9030804EB 062706530622 062706540623 062706550625 064806540624 064A06540626 '
+    '06C1065406C2 06D2065406D3 06D5065406C0 0928093C0929 0930093C0931 0933093C0934 '
+    '09C709BE09CB 09C709D709CC 0B470B3E0B4B 0B470B560B48 0B470B570B4C 0B920BD70B94 '
+    '0BC60BBE0BCA 0BC60BD70BCC 0BC70BBE0BCB 0C460C560C48 0CBF0CD50CC0 0CC60CC20CCA '
+    '0CC60CD50CC7 0CC60CD60CC8 0CCA0CD50CCB 0D460D3E0D4A 0D460D570D4C 0D470D3E0D4B '
+    '0DD90DCA0DDA 0DD90DCF0DDC 0DD90DDF0DDE 0DDC0DCA0DDD 1025102E1026 1B051B351B06 '
+    '1B071B351B08 1B091B351B0A 1B0B1B351B0C 1B0D1B351B0E 1B111B351B12 1B3A1B351B3B '
+    '1B3C1B351B3D 1B3E1B351B40 1B3F1B351B41 1B421B351B43 1E3603041E38 1E3703041E39 '
+    '1E5A03041E5C 1E5B03041E5D 1E6203071E68 1E6303071E69 1EA003021EAC 1EA003061EB6 '
+    '1EA103021EAD 1EA103061EB7 1EB803021EC6 1EB903021EC7 1ECC03021ED8 1ECD03021ED9 '
+    '1F0003001F02 1F0003011F04 1F0003421F06 1F0003451F80 1F0103001F03 1F0103011F05 '
+    '1F0103421F07 1F0103451F81 1F0203451F82 1F0303451F83 1F0403451F84 1F0503451F85 '
+    '1F0603451F86 1F0703451F87 1F0803001F0A 1F0803011F0C 1F0803421F0E 1F0803451F88 '
+    '1F0903001F0B 1F0903011F0D 1F0903421F0F 1F0903451F89 1F0A03451F8A 1F0B03451F8B '
+    '1F0C03451F8C 1F0D03451F8D 1F0E03451F8E 1F0F03451F8F 1F1003001F12 1F1003011F14 '
+    '1F1103001F13 1F1103011F15 1F1803001F1A 1F1803011F1C 1F1903001F1B 1F1903011F1D '
+    '1F2003001F22 1F2003011F24 1F2003421F26 1F2003451F90 1F2103001F23 1F2103011F25 '
+    '1F2103421F27 1F2103451F91 1F2203451F92 1F2303451F93 1F2403451F94 1F2503451F95 '
+    '1F2603451F96 1F2703451F97 1F2803001F2A 1F2803011F2C 1F2803421F2E 1F2803451F98 '
+    '1F2903001F2B 1F2903011F2D 1F2903421F2F 1F2903451F99 1F2A03451F9A 1F2B03451F9B '
+    '1F2C03451F9C 1F2D03451F9D 1F2E03451F9E 1F2F03451F9F 1F3003001F32 1F3003011F34 '
+    '1F3003421F36 1F3103001F33 1F3103011F35 1F3103421F37 1F3803001F3A 1F3803011F3C '
+    '1F3803421F3E 1F3903001F3B 1F3903011F3D 1F3903421F3F 1F4003001F42 1F4003011F44 '
+    '1F4103001F43 1F4103011F45 1F4803001F4A 1F4803011F4C 1F4903001F4B 1F4903011F4D '
+    '1F5003001F52 1F5003011F54 1F5003421F56 1F5103001F53 1F5103011F55 1F5103421F57 '
+    '1F5903001F5B 1F5903011F5D 1F5903421F5F 1F6003001F62 1F6003011F64 1F6003421F66 '
+    '1F6003451FA0 1F6103001F63 1F6103011F65 1F6103421F67 1F6103451FA1 1F6203451FA2 '
+    '1F6303451FA3 1F6403451FA4 1F6503451FA5 1F6603451FA6 1F6703451FA7 1F6803001F6A '
+    '1F6803011F6C 1F6803421F6E 1F6803451FA8 1F6903001F6B 1F6903011F6D 1F6903421F6F '
+    '1F6903451FA9 1F6A03451FAA 1F6B03451FAB 1F6C03451FAC 1F6D03451FAD 1F6E03451FAE '
+    '1F6F03451FAF 1F7003451FB2 1F7403451FC2 1F7C03451FF2 1FB603451FB7 1FBF03001FCD '
+    '1FBF03011FCE 1FBF03421FCF 1FC603451FC7 1FF603451FF7 1FFE03001FDD 1FFE03011FDE '
+    '1FFE03421FDF 21900338219A 21920338219B 2194033821AE 21D0033821CD 21D2033821CF '
+    '21D4033821CE 220303382204 220803382209 220B0338220C 222303382224 222503382226 '
+    '223C03382241 224303382244 224503382247 224803382249 224D0338226D 226103382262 '
+    '226403382270 226503382271 227203382274 227303382275 227603382278 227703382279 '
+    '227A03382280 227B03382281 227C033822E0 227D033822E1 228203382284 228303382285 '
+    '228603382288 228703382289 2291033822E2 2292033822E3 22A2033822AC 22A8033822AD '
+    '22A9033822AE 22AB033822AF 22B2033822EA 22B3033822EB 22B4033822EC 22B5033822ED '
+    '304630993094 304B3099304C 304D3099304E 304F30993050 305130993052 305330993054 '
+    '305530993056 305730993058 30593099305A 305B3099305C 305D3099305E 305F30993060 '
+    '306130993062 306430993065 306630993067 306830993069 306F30993070 306F309A3071 '
+    '307230993073 3072309A3074 307530993076 3075309A3077 307830993079 3078309A307A '
+    '307B3099307C 307B309A307D 309D3099309E 30A6309930F4 30AB309930AC 30AD309930AE '
+    '30AF309930B0 30B1309930B2 30B3309930B4 30B5309930B6 30B7309930B8 30B9309930BA '
+    '30BB309930BC 30BD309930BE 30BF309930C0 30C1309930C2 30C4309930C5 30C6309930C7 '
+    '30C8309930C9 30CF309930D0 30CF309A30D1 30D2309930D3 30D2309A30D4 30D5309930D6 '
+    '30D5309A30D7 30D8309930D9 30D8309A30DA 30DB309930DC 30DB309A30DD 30EF309930F7 '
+    '30F0309930F8 30F1309930F9 30F2309930FA 30FD309930FE';
+
+const String _cccData =
+    '03000314E6 03150315E8 03160319DC 031A031AE8 031B031BD8 031C0320DC '
+    '03210322CA 03230326DC 03270328CA 03290333DC 0334033801 0339033CDC '
+    '033D0344E6 03450345F0 03460346E6 03470349DC 034A034CE6 034D034EDC '
+    '03500352E6 03530356DC 03570357E6 03580358E8 0359035ADC 035B035BE6 '
+    '035C035CE9 035D035EEA 035F035FE9 03600361EA 03620362E9 0363036FE6 '
+    '04830487E6 05910591DC 05920595E6 05960596DC 05970599E6 059A059ADE '
+    '059B059BDC 059C05A1E6 05A205A7DC 05A805A9E6 05AA05AADC 05AB05ACE6 '
+    '05AD05ADDE 05AE05AEE4 05AF05AFE6 05B005B00A 05B105B10B 05B205B20C '
+    '05B305B30D 05B405B40E 05B505B50F 05B605B610 05B705B711 05B805B812 '
+    '05B905BA13 05BB05BB14 05BC05BC15 05BD05BD16 05BF05BF17 05C105C118 '
+    '05C205C219 05C405C4E6 05C505C5DC 05C705C712 06100617E6 061806181E '
+    '061906191F 061A061A20 064B064B1B 064C064C1C 064D064D1D 064E064E1E '
+    '064F064F1F 0650065020 0651065121 0652065222 06530654E6 06550656DC '
+    '0657065BE6 065C065CDC 065D065EE6 065F065FDC 0670067023 06D606DCE6 '
+    '06DF06E2E6 06E306E3DC 06E406E4E6 06E706E8E6 06EA06EADC 06EB06ECE6 '
+    '06ED06EDDC 0711071124 07300730E6 07310731DC 07320733E6 07340734DC '
+    '07350736E6 07370739DC 073A073AE6 073B073CDC 073D073DE6 073E073EDC '
+    '073F0741E6 07420742DC 07430743E6 07440744DC 07450745E6 07460746DC '
+    '07470747E6 07480748DC 0749074AE6 07EB07F1E6 07F207F2DC 07F307F3E6 '
+    '07FD07FDDC 08160819E6 081B0823E6 08250827E6 0829082DE6 0859085BDC '
+    '08970898E6 0899089BDC 089C089FE6 08CA08CEE6 08CF08D3DC 08D408E1E6 '
+    '08E308E3DC 08E408E5E6 08E608E6DC 08E708E8E6 08E908E9DC 08EA08ECE6 '
+    '08ED08EFDC 08F008F01B 08F108F11C 08F208F21D 08F308F5E6 08F608F6DC '
+    '08F708F8E6 08F908FADC 08FB08FFE6 093C093C07 094D094D09 09510951E6 '
+    '09520952DC 09530954E6 09BC09BC07 09CD09CD09 09FE09FEE6 0A3C0A3C07 '
+    '0A4D0A4D09 0ABC0ABC07 0ACD0ACD09 0B3C0B3C07 0B4D0B4D09 0BCD0BCD09 '
+    '0C3C0C3C07 0C4D0C4D09 0C550C5554 0C560C565B 0CBC0CBC07 0CCD0CCD09 '
+    '0D3B0D3C09 0D4D0D4D09 0DCA0DCA09 0E380E3967 0E3A0E3A09 0E480E4B6B '
+    '0EB80EB976 0EBA0EBA09 0EC80ECB7A 0F180F19DC 0F350F35DC 0F370F37DC '
+    '0F390F39D8 0F710F7181 0F720F7282 0F740F7484 0F7A0F7D82 0F800F8082 '
+    '0F820F83E6 0F840F8409 0F860F87E6 0FC60FC6DC 1037103707 1039103A09 '
+    '108D108DDC 135D135FE6 1714171509 1734173409 17D217D209 17DD17DDE6 '
+    '18A918A9E4 19391939DE 193A193AE6 193B193BDC 1A171A17E6 1A181A18DC '
+    '1A601A6009 1A751A7CE6 1A7F1A7FDC 1AB01AB4E6 1AB51ABADC 1ABB1ABCE6 '
+    '1ABD1ABDDC 1ABF1AC0DC 1AC11AC2E6 1AC31AC4DC 1AC51AC9E6 1ACA1ACADC '
+    '1ACB1ACEE6 1B341B3407 1B441B4409 1B6B1B6BE6 1B6C1B6CDC 1B6D1B73E6 '
+    '1BAA1BAB09 1BE61BE607 1BF21BF309 1C371C3707 1CD01CD2E6 1CD41CD401 '
+    '1CD51CD9DC 1CDA1CDBE6 1CDC1CDFDC 1CE01CE0E6 1CE21CE801 1CED1CEDDC '
+    '1CF41CF4E6 1CF81CF9E6 1DC01DC1E6 1DC21DC2DC 1DC31DC9E6 1DCA1DCADC '
+    '1DCB1DCCE6 1DCD1DCDEA 1DCE1DCED6 1DCF1DCFDC 1DD01DD0CA 1DD11DF5E6 '
+    '1DF61DF6E8 1DF71DF8E4 1DF91DF9DC 1DFA1DFADA 1DFB1DFBE6 1DFC1DFCE9 '
+    '1DFD1DFDDC 1DFE1DFEE6 1DFF1DFFDC 20D020D1E6 20D220D301 20D420D7E6 '
+    '20D820DA01 20DB20DCE6 20E120E1E6 20E520E601 20E720E7E6 20E820E8DC '
+    '20E920E9E6 20EA20EB01 20EC20EFDC 20F020F0E6 2CEF2CF1E6 2D7F2D7F09 '
+    '2DE02DFFE6 302A302ADA 302B302BE4 302C302CE8 302D302DDE 302E302FE0 '
+    '3099309A08 A66FA66FE6 A674A67DE6 A69EA69FE6 A6F0A6F1E6 A806A80609 '
+    'A82CA82C09 A8C4A8C409 A8E0A8F1E6 A92BA92DDC A953A95309 A9B3A9B307 '
+    'A9C0A9C009 AAB0AAB0E6 AAB2AAB3E6 AAB4AAB4DC AAB7AAB8E6 AABEAABFE6 '
+    'AAC1AAC1E6 AAF6AAF609 ABEDABED09 FB1EFB1E1A FE20FE26E6 FE27FE2DDC '
+    'FE2EFE2FE6';

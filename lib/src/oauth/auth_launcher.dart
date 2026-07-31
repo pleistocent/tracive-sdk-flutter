@@ -1,0 +1,78 @@
+// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+//
+// Opening URLs outside the app — the SDK specification §6 steps 2-4.
+//
+//   "open the authorize URL via **Custom Tabs (Android) / `UIApplication.open`
+//    Universal Link (iOS)**. **Never a WebView** — App Links do not fire from
+//    an in-app WebView (RFC 8252 also forbids it)."
+//
+// That is why this interface has exactly one opening method and it is named
+// [openExternally]. There is no `openInWebView`, no `mode` parameter, no way to
+// ask for an embedded browser. The shipped implementation calls
+// `url_launcher`'s `launchUrl(url, mode: LaunchMode.externalApplication)`, and
+// external-application mode is the whole point: it hands the URL to the OS, so
+// Android's App Links / iOS's Universal Links resolve to the Tracive app if it
+// is installed. `LaunchMode.inAppWebView` would keep the URL inside the host
+// app's WebView, where the App Link never fires — and where the host app can
+// read the user's Tracive credentials, which is what RFC 8252 §8.12 forbids.
+//
+// The interface is pure Dart so the OAuth flow is testable with no Flutter
+// engine; the `url_launcher` implementation is `UrlLauncherAuthLauncher` in
+// `platform_flutter.dart`, selected automatically on Flutter.
+
+/// Opens URLs in the operating system's own handler.
+abstract class AuthLauncher {
+  /// Allows `const` implementations.
+  const AuthLauncher();
+
+  /// Whether the OS has a handler for [url].
+  ///
+  /// Used only as the **app-presence probe** (§6 step 2), against a custom
+  /// scheme (`tracive://…`). Asking this about an `https://` URL is
+  /// meaningless: a browser is always installed, so the answer is always
+  /// `true`, which is exactly why the probe cannot use the authorize URL.
+  ///
+  /// The probe needs a manifest declaration to work at all:
+  ///
+  /// * **Android** — package visibility. Declare
+  ///   `<queries><package android:name="com.pleistocent.tracive"/></queries>`
+  ///   (the SDK's own AAR manifest does this, so it merges into the host app
+  ///   automatically; a Flutter app that does not consume that AAR must add it
+  ///   to `android/app/src/main/AndroidManifest.xml`). Without it Android 11+
+  ///   answers `false` even when the app is installed.
+  /// * **iOS** — add `tracive` to `LSApplicationQueriesSchemes` in
+  ///   `Info.plist`. Without it `canOpenURL` answers `false`, again regardless
+  ///   of the truth.
+  ///
+  /// A `false` from a missing declaration is indistinguishable from a `false`
+  /// from a missing app, and both send the user to the install link. That is
+  /// annoying but safe; the reverse would be worse.
+  Future<bool> canOpen(Uri url);
+
+  /// Opens [url] in the OS's handler — a Custom Tab / the default browser, or
+  /// the Tracive app when the URL is one of its App Links / Universal Links.
+  ///
+  /// Returns whether the OS accepted it. **Must never** open an in-app WebView.
+  Future<bool> openExternally(Uri url);
+}
+
+/// The launcher used when the SDK is running outside Flutter.
+///
+/// It answers "no handler" and "could not open" for everything, because in a
+/// plain Dart process that is the truth: there is no OS UI to hand a URL to.
+/// The practical effect is that `authorize()` reports
+/// `AuthResult.appNotInstalled` instead of throwing — a unit test or a
+/// server-side isolate gets a defined answer rather than a crash.
+class UnsupportedAuthLauncher extends AuthLauncher {
+  /// Creates the no-op launcher.
+  const UnsupportedAuthLauncher();
+
+  @override
+  Future<bool> canOpen(Uri url) async => false;
+
+  @override
+  Future<bool> openExternally(Uri url) async => false;
+
+  @override
+  String toString() => 'UnsupportedAuthLauncher()';
+}

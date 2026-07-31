@@ -1,0 +1,919 @@
+// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+//
+// Cache tests — the SDK specification §5.
+//
+// NO NETWORK, NO DEVICE. Every `CheckResult` here is built in-process, the
+// clock is injected, and the only two storage backends exercised are the real
+// in-memory store and a fake database. Nothing opens a socket, a file, a
+// platform channel or a keystore, so this file runs under `dart test` as well
+// as `flutter test`.
+//
+// What is deliberately NOT covered, so nobody mistakes green for complete:
+// `lib/src/cache/tracive_cache.dart`, the ~120 lines that bind
+// `sqflite_sqlcipher` and `flutter_secure_storage` to the seams below. Those
+// need a device or an emulator; see `doc/caching.md`.
+//
+// Imported through `src/` rather than the barrel because the barrel does not
+// export the cache yet — same as `test/query_grammar_test.dart` does for the
+// document-id guard. See the packaging note in `lib/src/cache/check_cache.dart`.
+
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+import 'package:test/test.dart';
+import 'package:tracive_sdk/tracive_sdk.dart';
+
+void main() {
+  // A distinctive number: several tests assert it appears nowhere in storage.
+  final phone = TraciveQuery.phone('+6281234567891');
+  final otherPhone = TraciveQuery.phone('+6281100002222');
+
+  group('cache key', () {
+    test('is the SHA-256 of the folded key, in lowercase hex', () {
+      final expected =
+          sha256.convert(utf8.encode('PHONE_+6281234567891')).toString();
+      expect(cacheKeyFor(phone), expected);
+      expect(cacheKeyFor(phone), hasLength(64));
+      expect(cacheKeyFor(phone), matches(RegExp(r'^[0-9a-f]{64}$')));
+    });
+
+    test('never contains the identifier it was derived from', () {
+      expect(cacheKeyFor(phone), isNot(contains('6281234567891')));
+      expect(cacheKeyFor(phone), isNot(contains('PHONE')));
+    });
+
+    test('separates different identifiers and collapses equal ones', () {
+      expect(cacheKeyFor(phone), isNot(cacheKeyFor(otherPhone)));
+      expect(cacheKeyFor(phone),
+          cacheKeyFor(TraciveQuery.phone('+62 812-3456-7891')));
+    });
+
+    test('is the same whichever builder produced an equal folded key', () {
+      final email = TraciveQuery.email('Budi@Example.COM');
+      expect(cacheKeyFor(email), cacheKeyForIndex('EMAIL_budi@example.com'));
+    });
+  });
+
+  group('TTL by tier', () {
+    // §5: HIGH 30 d, ELEVATED 7 d, CAUTION 24 h, NONE 1 h.
+    const expectations = <RiskTier, Duration>{
+      RiskTier.high: Duration(days: 30),
+      RiskTier.elevated: Duration(days: 7),
+      RiskTier.caution: Duration(hours: 24),
+      RiskTier.none: Duration(hours: 1),
+    };
+
+    expectations.forEach((tier, ttl) {
+      test('${tier.wireValue} is live for $ttl and stale after', () async {
+        final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+        final cache = CheckCache.inMemory(clock: clock.call);
+        await cache.write(phone, _result(tier: tier, fetchedAt: clock.now));
+
+        clock.advance(ttl - const Duration(seconds: 1));
+        final live = await cache.read(phone);
+        expect(live, isNotNull, reason: 'still inside the $tier TTL');
+        expect(live!.riskTier, tier);
+
+        clock.advance(const Duration(seconds: 2));
+        expect(await cache.read(phone), isNull, reason: 'past the $tier TTL');
+      });
+    });
+
+    test('expires exactly at the boundary, not a tick later', () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final cache = CheckCache.inMemory(clock: clock.call);
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.none, fetchedAt: clock.now),
+      );
+
+      clock.advance(const Duration(hours: 1));
+      expect(await cache.read(phone), isNull);
+    });
+
+    test('measures the TTL from fetchedAt, not from the write', () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final cache = CheckCache.inMemory(clock: clock.call);
+
+      // A result that was already 50 minutes old when it was stored.
+      await cache.write(
+        phone,
+        _result(
+          tier: RiskTier.none,
+          fetchedAt: clock.now.subtract(const Duration(minutes: 50)),
+        ),
+      );
+
+      clock.advance(const Duration(minutes: 9));
+      expect(await cache.read(phone), isNotNull);
+      clock.advance(const Duration(minutes: 2));
+      expect(await cache.read(phone), isNull);
+    });
+
+    test('a lapsed entry is deleted on read, not left to rot', () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final store = MemoryCheckCacheStore();
+      final cache = DefaultCheckCache(store: store, clock: clock.call);
+
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.none, fetchedAt: clock.now),
+      );
+      expect(await store.count(), 1);
+
+      clock.advance(const Duration(hours: 2));
+      expect(await cache.read(phone), isNull);
+      expect(await store.count(), 0, reason: 'lazy expiry (§5)');
+    });
+
+    test('a policy change applies to rows already stored', () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final store = MemoryCheckCacheStore();
+      final written = DefaultCheckCache(store: store, clock: clock.call);
+      await written.write(
+        phone,
+        _result(tier: RiskTier.high, fetchedAt: clock.now),
+      );
+
+      // Same rows, a build that trusts HIGH for one day instead of thirty.
+      final shorter = DefaultCheckCache(
+        store: store,
+        clock: clock.call,
+        policy: const CachePolicy(highTtl: Duration(days: 1)),
+      );
+      clock.advance(const Duration(days: 2));
+      expect(
+        await shorter.read(phone),
+        isNull,
+        reason: 'the live policy decides, not the stamp written at write time',
+      );
+    });
+  });
+
+  group('server TTL override', () {
+    test('a shorter cacheTtlSeconds wins over the tier default', () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final cache = CheckCache.inMemory(clock: clock.call);
+      await cache.write(
+        phone,
+        _result(
+          tier: RiskTier.high, // would otherwise live 30 days
+          fetchedAt: clock.now,
+          cacheTtlSeconds: 60,
+        ),
+      );
+
+      clock.advance(const Duration(seconds: 59));
+      expect(await cache.read(phone), isNotNull);
+      clock.advance(const Duration(seconds: 2));
+      expect(await cache.read(phone), isNull);
+    });
+
+    test('a longer cacheTtlSeconds also wins', () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final cache = CheckCache.inMemory(clock: clock.call);
+      await cache.write(
+        phone,
+        _result(
+          tier: RiskTier.none, // would otherwise live 1 hour
+          fetchedAt: clock.now,
+          cacheTtlSeconds: 86400,
+        ),
+      );
+
+      clock.advance(const Duration(hours: 23));
+      expect(await cache.read(phone), isNotNull);
+      clock.advance(const Duration(hours: 2));
+      expect(await cache.read(phone), isNull);
+    });
+
+    test('cacheTtlSeconds survives the round trip', () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final cache = CheckCache.inMemory(clock: clock.call);
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.high, fetchedAt: clock.now, cacheTtlSeconds: 60),
+      );
+      expect((await cache.read(phone))!.cacheTtlSeconds, 60);
+    });
+
+    test('cacheTtlSeconds: 0 stores nothing and evicts what was there',
+        () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final store = MemoryCheckCacheStore();
+      final cache = DefaultCheckCache(store: store, clock: clock.call);
+
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.high, fetchedAt: clock.now),
+      );
+      expect(await store.count(), 1);
+
+      // The fleet-wide invalidation lever: the server has changed its mind.
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.high, fetchedAt: clock.now, cacheTtlSeconds: 0),
+      );
+      expect(await store.count(), 0);
+      expect(await cache.read(phone), isNull);
+    });
+
+    test('honourServerTtl: false falls back on the tier default', () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final cache = CheckCache.inMemory(
+        clock: clock.call,
+        policy: const CachePolicy(honourServerTtl: false),
+      );
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.high, fetchedAt: clock.now, cacheTtlSeconds: 60),
+      );
+
+      clock.advance(const Duration(days: 2));
+      expect(await cache.read(phone), isNotNull,
+          reason: 'HIGH default is 30 d');
+    });
+  });
+
+  group('full detail is never cached', () {
+    late CheckResult stored;
+
+    setUp(() async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final cache = CheckCache.inMemory(clock: clock.call);
+      await cache.write(
+        phone,
+        _result(
+          tier: RiskTier.high,
+          fetchedAt: clock.now,
+          checkId: 'chk_abc123',
+          full: true,
+        ),
+      );
+      stored = (await cache.read(phone))!;
+    });
+
+    test('drops topChronologies and comments', () {
+      expect(stored.topChronologies, isNull);
+      expect(stored.comments, isNull);
+      expect(stored.hasFullDetail, isFalse);
+    });
+
+    test('drops billing — a replayed charge would misreport spend', () {
+      expect(stored.billing, isNull);
+    });
+
+    test('drops checkId — nothing was checked on a hit', () {
+      expect(stored.checkId, isNull);
+    });
+
+    test('keeps everything that is invariant across detail and locale', () {
+      expect(stored.found, isTrue);
+      expect(stored.riskTier, RiskTier.high);
+      expect(stored.reportTotal, 12);
+      expect(stored.credibleReports, 9);
+      expect(stored.ambiguousReports, 3);
+      expect(stored.tags, <String>['investment']);
+      expect(stored.fraudAmount, <String, double>{'IDR': 4500000});
+      expect(stored.relatedScammerCount, 4);
+      expect(stored.disclaimer, isNotNull);
+    });
+
+    test('is stamped as a cache hit, keeping the original fetch time', () {
+      expect(stored.origin, Origin.cache);
+      expect(stored.isFromCache, isTrue);
+      expect(stored.fetchedAt, DateTime.utc(2026, 7, 31, 9));
+    });
+
+    test('nothing full-detail reaches storage in the first place', () async {
+      final store = MemoryCheckCacheStore();
+      final cache = DefaultCheckCache(store: store);
+      await cache.write(
+        phone,
+        _result(
+          tier: RiskTier.high,
+          fetchedAt: DateTime.utc(2026, 7, 31, 9),
+          checkId: 'chk_abc123',
+          full: true,
+        ),
+      );
+
+      final payload = (await store.read(cacheKeyFor(phone)))!.payload;
+      expect(payload, isNot(contains('Promised 30% monthly returns')));
+      expect(payload, isNot(contains('chk_abc123')));
+      expect(payload, isNot(contains('unitsCharged')));
+    });
+  });
+
+  group('privacy', () {
+    test('no stored field carries the identifier', () async {
+      final store = MemoryCheckCacheStore();
+      final cache = DefaultCheckCache(store: store);
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.high, fetchedAt: DateTime.utc(2026, 7, 31, 9)),
+      );
+
+      final row = (await store.read(cacheKeyFor(phone)))!;
+      for (final field in <String>[row.cacheKey, row.payload, row.riskTier]) {
+        expect(field, isNot(contains('6281234567891')));
+        expect(field, isNot(contains('PHONE_')));
+      }
+      expect(row.toString(), isNot(contains('6281234567891')));
+    });
+  });
+
+  group('policy off', () {
+    test('an enabled: false policy reads and writes nothing', () async {
+      final store = MemoryCheckCacheStore();
+      final cache = DefaultCheckCache(
+        store: store,
+        policy: CachePolicy.disabled,
+      );
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.high, fetchedAt: DateTime.utc(2026, 7, 31, 9)),
+      );
+      expect(await store.count(), 0);
+      expect(await cache.read(phone), isNull);
+    });
+
+    test('CheckCache.disabled() is inert', () async {
+      const cache = CheckCache.disabled();
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.high, fetchedAt: DateTime.utc(2026, 7, 31, 9)),
+      );
+      expect(await cache.read(phone), isNull);
+      expect(await cache.prune(), 0);
+      expect(await cache.remove(phone), isFalse);
+      expect(cache.policy.enabled, isFalse);
+      expect(cache.lastStoreError, isNull);
+    });
+  });
+
+  group('housekeeping', () {
+    test('remove drops one entry and leaves the rest', () async {
+      final cache = CheckCache.inMemory();
+      final now = DateTime.utc(2026, 7, 31, 9);
+      await cache.write(phone, _result(tier: RiskTier.high, fetchedAt: now));
+      await cache.write(
+        otherPhone,
+        _result(tier: RiskTier.high, fetchedAt: now),
+      );
+
+      expect(await cache.remove(phone), isTrue);
+      expect(await cache.remove(phone), isFalse);
+      expect(await cache.read(phone), isNull);
+      expect(await cache.read(otherPhone), isNotNull);
+    });
+
+    test('clear empties everything', () async {
+      final cache = CheckCache.inMemory();
+      final now = DateTime.utc(2026, 7, 31, 9);
+      await cache.write(phone, _result(tier: RiskTier.high, fetchedAt: now));
+      await cache.write(
+        otherPhone,
+        _result(tier: RiskTier.high, fetchedAt: now),
+      );
+
+      await cache.clear();
+      expect(await cache.read(phone), isNull);
+      expect(await cache.read(otherPhone), isNull);
+    });
+
+    test('open prunes what expired while the app was closed', () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final store = MemoryCheckCacheStore();
+
+      // A previous run of the app.
+      final before = DefaultCheckCache(store: store, clock: clock.call);
+      await before.write(
+        phone,
+        _result(tier: RiskTier.none, fetchedAt: clock.now),
+      );
+      await before.write(
+        otherPhone,
+        _result(tier: RiskTier.high, fetchedAt: clock.now),
+      );
+      expect(await store.count(), 2);
+
+      // Two days later, a fresh process over the same rows.
+      clock.advance(const Duration(days: 2));
+      final after = DefaultCheckCache(store: store, clock: clock.call);
+      await after.open();
+      expect(await store.count(), 1, reason: 'the NONE entry lapsed');
+      expect(await after.read(otherPhone), isNotNull);
+    });
+
+    test('prune evicts down to maxEntries, keeping the longest-lived',
+        () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final store = MemoryCheckCacheStore();
+      final cache = DefaultCheckCache(
+        store: store,
+        clock: clock.call,
+        policy: const CachePolicy(maxEntries: 2),
+      );
+
+      await cache.write(
+        TraciveQuery.phone('+6281000000001'),
+        _result(tier: RiskTier.none, fetchedAt: clock.now), // 1 h
+      );
+      await cache.write(
+        TraciveQuery.phone('+6281000000002'),
+        _result(tier: RiskTier.caution, fetchedAt: clock.now), // 24 h
+      );
+      await cache.write(
+        TraciveQuery.phone('+6281000000003'),
+        _result(tier: RiskTier.high, fetchedAt: clock.now), // 30 d
+      );
+
+      expect(await cache.prune(), 1);
+      expect(await store.count(), 2);
+      expect(await cache.read(TraciveQuery.phone('+6281000000001')), isNull);
+      expect(await cache.read(TraciveQuery.phone('+6281000000002')), isNotNull);
+      expect(await cache.read(TraciveQuery.phone('+6281000000003')), isNotNull);
+    });
+
+    test('a maxEntries of 0 means no cap', () async {
+      final store = MemoryCheckCacheStore();
+      final cache = DefaultCheckCache(
+        store: store,
+        policy: const CachePolicy(maxEntries: 0),
+      );
+      final now = DateTime.utc(2026, 7, 31, 9);
+      for (var i = 0; i < 5; i++) {
+        await cache.write(
+          TraciveQuery.phone('+628100000000$i'),
+          _result(tier: RiskTier.high, fetchedAt: now),
+        );
+      }
+      expect(await cache.prune(), 0);
+      expect(await store.count(), 5);
+    });
+  });
+
+  group('a broken store degrades instead of breaking the SDK', () {
+    test('read and write swallow, and record, a storage failure', () async {
+      final cache = DefaultCheckCache(store: _BrokenStore());
+      final result = _result(
+        tier: RiskTier.high,
+        fetchedAt: DateTime.utc(2026, 7, 31, 9),
+      );
+
+      await expectLater(cache.write(phone, result), completes);
+      await expectLater(cache.read(phone), completion(isNull));
+      expect(
+        cache.lastStoreError,
+        isNotNull,
+        reason: 'the caller has to be able to see that the cache is dead',
+      );
+    });
+
+    test('an undecodable row is dropped rather than retried forever', () async {
+      final store = MemoryCheckCacheStore();
+      final cache = DefaultCheckCache(store: store);
+      await store.write(
+        StoredCheck(
+          cacheKey: cacheKeyFor(phone),
+          payload: 'this is not JSON',
+          riskTier: 'HIGH',
+          fetchedAt: DateTime.utc(2026, 7, 31, 9),
+          expiresAt: DateTime.utc(2099),
+          storedAt: DateTime.utc(2026, 7, 31, 9),
+        ),
+      );
+
+      expect(await cache.read(phone), isNull);
+      expect(await store.count(), 0);
+    });
+  });
+
+  group('SQL store', () {
+    late _FakeCacheDatabase database;
+    late SqlCheckCacheStore store;
+
+    setUp(() {
+      database = _FakeCacheDatabase();
+      store = SqlCheckCacheStore(opener: () async => database);
+    });
+
+    test('creates the table and stamps the schema version on a fresh file',
+        () async {
+      await store.open();
+      expect(database.statements, <String>[
+        SqlCheckCacheStore.readSchemaVersionSql,
+        SqlCheckCacheStore.dropTableSql,
+        SqlCheckCacheStore.createTableSql,
+        SqlCheckCacheStore.createIndexSql,
+        SqlCheckCacheStore.writeSchemaVersionSql,
+      ]);
+      expect(database.userVersion, checkCacheSchemaVersion);
+    });
+
+    test('leaves rows alone when the schema version already matches', () async {
+      database
+        ..userVersion = checkCacheSchemaVersion
+        ..rows['existing'] = _columns(_row('existing'));
+
+      await store.open();
+      expect(database.statements,
+          isNot(contains(SqlCheckCacheStore.dropTableSql)));
+      expect(database.rows, contains('existing'));
+    });
+
+    test('drops every row when the stored schema version is older', () async {
+      database
+        ..userVersion = checkCacheSchemaVersion - 1
+        ..rows['stale'] = _columns(_row('stale'));
+
+      await store.open();
+      expect(database.statements, contains(SqlCheckCacheStore.dropTableSql));
+      expect(database.rows, isEmpty,
+          reason: 'schema-version invalidation (§5)');
+      expect(database.userVersion, checkCacheSchemaVersion);
+    });
+
+    test('drops every row when the schema version cannot be read', () async {
+      database.userVersion = null;
+      await store.open();
+      expect(database.statements, contains(SqlCheckCacheStore.dropTableSql));
+      expect(database.userVersion, checkCacheSchemaVersion);
+    });
+
+    test('round-trips a row through bound parameters only', () async {
+      final entry = _row('abc');
+      await store.write(entry);
+
+      final insertIndex = database.statements.indexOf(
+        SqlCheckCacheStore.insertSql,
+      );
+      expect(insertIndex, isNonNegative);
+      expect(database.arguments[insertIndex], <Object?>[
+        'abc',
+        entry.payload,
+        'HIGH',
+        entry.fetchedAt.millisecondsSinceEpoch,
+        entry.expiresAt.millisecondsSinceEpoch,
+        entry.storedAt.millisecondsSinceEpoch,
+      ]);
+
+      final read = await store.read('abc');
+      expect(read, isNotNull);
+      expect(read!.cacheKey, 'abc');
+      expect(read.payload, entry.payload);
+      expect(read.riskTier, 'HIGH');
+      expect(read.fetchedAt, entry.fetchedAt);
+      expect(read.expiresAt, entry.expiresAt);
+      expect(await store.read('missing'), isNull);
+    });
+
+    test('delete, clear and count', () async {
+      await store.write(_row('a'));
+      await store.write(_row('b'));
+      expect(await store.count(), 2);
+      expect(await store.delete('a'), isTrue);
+      expect(await store.delete('a'), isFalse);
+      expect(await store.count(), 1);
+      await store.clear();
+      expect(await store.count(), 0);
+    });
+
+    test('prune deletes what expired and then trims to the cap', () async {
+      final now = DateTime.utc(2026, 7, 31, 9);
+      await store.write(
+          _row('expired', expiresAt: now.subtract(const Duration(minutes: 1))));
+      await store
+          .write(_row('short', expiresAt: now.add(const Duration(hours: 1))));
+      await store
+          .write(_row('long', expiresAt: now.add(const Duration(days: 30))));
+
+      expect(await store.pruneExpired(now, maxEntries: 1), 2);
+      expect(database.rows.keys, <String>['long']);
+    });
+
+    test('prune with no cap only deletes what expired', () async {
+      final now = DateTime.utc(2026, 7, 31, 9);
+      await store.write(
+          _row('expired', expiresAt: now.subtract(const Duration(minutes: 1))));
+      await store
+          .write(_row('live', expiresAt: now.add(const Duration(days: 1))));
+
+      expect(await store.pruneExpired(now), 1);
+      expect(database.rows.keys, <String>['live']);
+    });
+
+    test('reopens after close', () async {
+      await store.open();
+      await store.close();
+      expect(database.closed, isTrue);
+      await store.write(_row('after-close'));
+      expect(database.rows, contains('after-close'));
+    });
+
+    test('sends no statement this test does not know about', () async {
+      // The fake throws on an unrecognised statement, so simply exercising
+      // every operation is the assertion. If someone adds a statement to the
+      // store without adding it here, this fails.
+      await store.open();
+      await store.write(_row('x'));
+      await store.read('x');
+      await store.count();
+      await store.pruneExpired(DateTime.utc(2026), maxEntries: 10);
+      await store.delete('x');
+      await store.clear();
+      await store.close();
+    });
+  });
+
+  group('cache over SQL', () {
+    test('nothing that identifies the user is bound into a statement',
+        () async {
+      final database = _FakeCacheDatabase();
+      final cache = DefaultCheckCache(
+        store: SqlCheckCacheStore(opener: () async => database),
+      );
+
+      await cache.write(
+        phone,
+        _result(
+          tier: RiskTier.high,
+          fetchedAt: DateTime.utc(2026, 7, 31, 9),
+          checkId: 'chk_abc123',
+          full: true,
+        ),
+      );
+      expect(await cache.read(phone), isNotNull);
+
+      final everything = <String>[
+        ...database.statements,
+        ...database.arguments.expand((args) => args.map((a) => '$a')),
+      ].join('\n');
+      expect(everything, isNot(contains('6281234567891')));
+      expect(everything, isNot(contains('PHONE_')));
+      expect(everything, isNot(contains('chk_abc123')));
+      expect(everything, isNot(contains('Promised 30% monthly returns')));
+    });
+
+    test('survives a full write-read-expire cycle on the fake database',
+        () async {
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final database = _FakeCacheDatabase();
+      final cache = DefaultCheckCache(
+        store: SqlCheckCacheStore(opener: () async => database),
+        clock: clock.call,
+      );
+
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.caution, fetchedAt: clock.now),
+      );
+      expect((await cache.read(phone))!.riskTier, RiskTier.caution);
+
+      clock.advance(const Duration(hours: 25));
+      expect(await cache.read(phone), isNull);
+      expect(database.rows, isEmpty);
+    });
+  });
+}
+
+/// A result with the shape of a `POST /scammer-checks` answer.
+///
+/// [full] adds the `detail = full` payload plus billing, which the cache must
+/// drop; [cacheTtlSeconds] is the server's TTL override.
+CheckResult _result({
+  required RiskTier tier,
+  required DateTime fetchedAt,
+  int? cacheTtlSeconds,
+  String? checkId,
+  bool full = false,
+}) =>
+    CheckResult(
+      checkId: checkId,
+      found: tier != RiskTier.none,
+      riskTier: tier,
+      reportTotal: 12,
+      credibleReports: 9,
+      ambiguousReports: 3,
+      firstReportOn: DateTime.utc(2025, 1, 2, 3, 4, 5),
+      lastReportOn: DateTime.utc(2026, 7, 1, 10),
+      fraudAmount: const <String, double>{'IDR': 4500000},
+      tags: const <String>['investment'],
+      relatedScammerCount: 4,
+      topChronologies: full
+          ? <Chronology>[
+              const Chronology(
+                chronology: 'Promised 30% monthly returns.',
+                riskLevel: 3,
+                incidentDate: '2026-06-01',
+              ),
+            ]
+          : null,
+      comments: full
+          ? <Comment>[
+              const Comment(
+                date: '2026-06-02',
+                text: 'Took my deposit and blocked me.',
+                fromCredibleReport: true,
+              ),
+            ]
+          : null,
+      billing:
+          full ? const Billing(creditSource: 'USER', unitsCharged: 1) : null,
+      cacheTtlSeconds: cacheTtlSeconds,
+      disclaimer: 'User reports, not adjudicated findings.',
+      origin: Origin.server,
+      fetchedAt: fetchedAt,
+    );
+
+StoredCheck _row(String key, {DateTime? expiresAt}) => StoredCheck(
+      cacheKey: key,
+      payload: jsonEncode(<String, Object?>{'found': true, 'riskTier': 'HIGH'}),
+      riskTier: 'HIGH',
+      fetchedAt: DateTime.utc(2026, 7, 31, 9),
+      expiresAt: expiresAt ?? DateTime.utc(2026, 8, 30, 9),
+      storedAt: DateTime.utc(2026, 7, 31, 9),
+    );
+
+/// [entry] as the column map [_FakeCacheDatabase] holds, for seeding a row that
+/// is supposed to already be in the file before `open()` runs.
+Map<String, Object?> _columns(StoredCheck entry) => <String, Object?>{
+      'cache_key': entry.cacheKey,
+      'payload': entry.payload,
+      'risk_tier': entry.riskTier,
+      'fetched_at': entry.fetchedAt.millisecondsSinceEpoch,
+      'expires_at': entry.expiresAt.millisecondsSinceEpoch,
+      'stored_at': entry.storedAt.millisecondsSinceEpoch,
+    };
+
+/// A clock the tests move by hand. `clock.call` is the [CacheClock].
+class _MutableClock {
+  _MutableClock(this.now);
+
+  DateTime now;
+
+  DateTime call() => now;
+
+  void advance(Duration by) => now = now.add(by);
+}
+
+/// A store whose every operation fails, standing in for a corrupted database
+/// or an unreadable keystore.
+class _BrokenStore extends CheckCacheStore {
+  @override
+  Future<void> open() async => throw StateError('database unavailable');
+
+  @override
+  Future<StoredCheck?> read(String cacheKey) async =>
+      throw StateError('database unavailable');
+
+  @override
+  Future<void> write(StoredCheck entry) async =>
+      throw StateError('database unavailable');
+
+  @override
+  Future<bool> delete(String cacheKey) async =>
+      throw StateError('database unavailable');
+
+  @override
+  Future<void> clear() async => throw StateError('database unavailable');
+
+  @override
+  Future<int> pruneExpired(DateTime now, {int maxEntries = 0}) async =>
+      throw StateError('database unavailable');
+
+  @override
+  Future<int> count() async => throw StateError('database unavailable');
+
+  @override
+  Future<void> close() async {}
+}
+
+/// A stand-in for SQLite that understands exactly the statements
+/// [SqlCheckCacheStore] issues — matched against that class's own constants,
+/// not parsed — and throws on anything else.
+///
+/// It is deliberately not a SQL engine. What it proves is that the store issues
+/// the right statement with the right bound arguments in the right order; that
+/// those statements are *valid SQLite* is proved by running them against a real
+/// database on a device (see `doc/caching.md`).
+class _FakeCacheDatabase extends CacheDatabase {
+  final List<String> statements = <String>[];
+  final List<List<Object?>> arguments = <List<Object?>>[];
+  final Map<String, Map<String, Object?>> rows =
+      <String, Map<String, Object?>>{};
+
+  int? userVersion = 0;
+  bool closed = false;
+
+  void _record(String sql, List<Object?>? args) {
+    statements.add(sql);
+    arguments.add(args ?? const <Object?>[]);
+  }
+
+  @override
+  Future<void> execute(String sql, [List<Object?>? args]) async {
+    _record(sql, args);
+    switch (sql) {
+      case SqlCheckCacheStore.dropTableSql:
+        rows.clear();
+      case SqlCheckCacheStore.createTableSql:
+      case SqlCheckCacheStore.createIndexSql:
+        break;
+      case SqlCheckCacheStore.writeSchemaVersionSql:
+        userVersion = checkCacheSchemaVersion;
+      default:
+        throw UnsupportedError('unexpected statement: $sql');
+    }
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> query(
+    String sql, [
+    List<Object?>? args,
+  ]) async {
+    _record(sql, args);
+    switch (sql) {
+      case SqlCheckCacheStore.readSchemaVersionSql:
+        return <Map<String, Object?>>[
+          <String, Object?>{'user_version': userVersion},
+        ];
+      case SqlCheckCacheStore.selectSql:
+        final row = rows[args!.first];
+        return row == null
+            ? const <Map<String, Object?>>[]
+            : <Map<String, Object?>>[row];
+      case SqlCheckCacheStore.countSql:
+        return <Map<String, Object?>>[
+          <String, Object?>{'row_count': rows.length},
+        ];
+      default:
+        throw UnsupportedError('unexpected query: $sql');
+    }
+  }
+
+  @override
+  Future<int> insert(String sql, [List<Object?>? args]) async {
+    _record(sql, args);
+    if (sql != SqlCheckCacheStore.insertSql) {
+      throw UnsupportedError('unexpected insert: $sql');
+    }
+    final values = args!;
+    rows[values[0]! as String] = <String, Object?>{
+      'cache_key': values[0],
+      'payload': values[1],
+      'risk_tier': values[2],
+      'fetched_at': values[3],
+      'expires_at': values[4],
+      'stored_at': values[5],
+    };
+    return rows.length;
+  }
+
+  @override
+  Future<int> delete(String sql, [List<Object?>? args]) async {
+    _record(sql, args);
+    switch (sql) {
+      case SqlCheckCacheStore.deleteSql:
+        return rows.remove(args!.first) == null ? 0 : 1;
+      case SqlCheckCacheStore.deleteAllSql:
+        final removed = rows.length;
+        rows.clear();
+        return removed;
+      case SqlCheckCacheStore.deleteExpiredSql:
+        final cutoff = args!.first! as int;
+        final doomed = rows.entries
+            .where((entry) => (entry.value['expires_at']! as int) <= cutoff)
+            .map((entry) => entry.key)
+            .toList(growable: false);
+        doomed.forEach(rows.remove);
+        return doomed.length;
+      case SqlCheckCacheStore.deleteOverCapSql:
+        final offset = args!.first! as int;
+        // ORDER BY expires_at DESC, stored_at DESC LIMIT -1 OFFSET ?
+        final ordered = rows.values.toList(growable: false)
+          ..sort((a, b) {
+            final byExpiry = (b['expires_at']! as int).compareTo(
+              a['expires_at']! as int,
+            );
+            return byExpiry != 0
+                ? byExpiry
+                : (b['stored_at']! as int).compareTo(a['stored_at']! as int);
+          });
+        final doomed = ordered
+            .skip(offset)
+            .map((row) => row['cache_key']! as String)
+            .toList(growable: false);
+        doomed.forEach(rows.remove);
+        return doomed.length;
+      default:
+        throw UnsupportedError('unexpected delete: $sql');
+    }
+  }
+
+  @override
+  Future<void> close() async {
+    closed = true;
+  }
+}

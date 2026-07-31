@@ -1,0 +1,57 @@
+# `tracive_sdk` example
+
+A runnable app for `package:tracive_sdk`.
+
+**It does not talk to a server.** The Tracive Open API is not live yet (phase 1),
+so this example injects `DemoBackend` — an in-process fake, about 190 readable
+lines in [`lib/demo_backend.dart`](lib/demo_backend.dart) — as the client's HTTP
+transport. Nothing here opens a socket.
+
+That is not just a workaround for the missing backend; it demonstrates the
+point. `HttpTransport` is a one-method interface precisely so that a fake is
+short enough to read. The same fake is how you would widget-test your own
+checkout screen without a network.
+
+## Run it
+
+```bash
+cd example
+flutter pub get
+flutter run
+```
+
+The SDK is referenced by path (`tracive_sdk: {path: ../}`), so you are always
+running the working tree, never a published version that may differ.
+
+## What to try
+
+| Do this | And notice |
+|---|---|
+| Press **Check** twice with `Source: cacheFirst` | "Backend calls this session" does **not** move the second time. That is a cache hit: zero credits, no network I/O (§5). |
+| Switch to `Source: server`, check again | The counter moves every time. Every one of those is a billed call. |
+| Switch to `Source: cache`, press **Clear cache**, then **Check** | A `Cache miss` *error* — never a silent empty result, which a user would read as "not a scammer". |
+| Turn on **Full detail**, check, then check again | Chronologies and comments appear on the server answer and are gone on the cache hit. Full detail is never cached (§5). |
+| Type `not-a-phone-number` and press **Check** | Rejected before any call is made, with the reason `not_e164`. Validation runs first because **a miss is billed** (§3.2). |
+| Press **Simulate 402** then **Check** | The typed `TraciveInsufficientCreditsException` from §7 — the one you should handle instead of polling `credits()`. |
+| Look at the folded key under any result | `+62 812-3456-7891` became `PHONE_+6281234567891`. That folded string is both what goes on the wire and what the cache key is hashed from. |
+
+## Two things this example is not
+
+**It is not signed in the way your app will be.** The token store here is
+pre-seeded with a fake token so the demo starts usable. A real app calls
+`client.authorize()`, which requires the Tracive app to be installed and a
+registered redirect URI — see [`../doc/oauth.md`](../doc/oauth.md).
+
+**Its cache is in memory.** A real app passes `await openTraciveCache()`:
+SQLCipher on disk with the key in Keystore/Keychain. In-memory here so the
+example runs anywhere, including desktop, with no plugin. See
+[`../doc/caching.md`](../doc/caching.md).
+
+## Files worth reading
+
+| File | Why |
+|---|---|
+| [`lib/main.dart`](lib/main.dart) | Client construction — note there is no API-key parameter, in any mode — plus the whole check flow and the §4 `disclaimer` being surfaced. |
+| [`lib/demo_backend.dart`](lib/demo_backend.dart) | The fake transport. Copy this shape for your own tests. |
+| [`lib/main.dart`](lib/main.dart) (`main()`) | Installing `UnormNormalizer` for full Unicode NFC, which matters if you accept non-Latin identifiers. It ships with the SDK; installing it is one line. |
+| [`test/widget_test.dart`](test/widget_test.dart) | Widget tests asserting a cache hit does no network I/O, and that invalid input never reaches the wire. |

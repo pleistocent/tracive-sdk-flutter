@@ -1,0 +1,123 @@
+# CI for the Tracive Flutter SDK — the SDK specification §8.
+#
+# NO NETWORK IN TESTS. Nothing in this repo talks to a server, and nothing can:
+# the Tracive Open API is not live yet, and every test injects a fake transport.
+# So this workflow needs no secrets, no service containers and no environment —
+# if a step here ever starts needing a credential, something has gone wrong.
+#
+# Runs on ubuntu-latest. §8 asks for a macOS runner "where iOS is involved";
+# the Flutter SDK's unit tests are pure Dart and its example builds for Android,
+# so nothing here compiles Swift. The Swift SDK's own repo is where the macOS
+# runner belongs.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to a PR makes the previous run's answer worthless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned, not "stable". A floating channel means a Flutter release can turn
+  # a green PR red with no change to this repo — and the formatter in
+  # particular changes its output between versions.
+  FLUTTER_VERSION: 3.29.3
+
+jobs:
+  package:
+    name: Package — analyze and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # The vendored fixture is the anti-drift contract: the Kotlin, Flutter and
+      # Swift SDKs must fold identical input to identical keys, and they only do
+      # that if all three carry the *same* file. Verbatim means verbatim.
+      #
+      # If you are updating the grammar on purpose, change the fixture in every
+      # SDK repo and update this checksum in each — that deliberate act is the
+      # whole point of pinning it.
+      - name: Verify the query-grammar fixture is unmodified
+        run: |
+          echo "f28b2c18841b6328fe08422f6107f2459418ac0d70a733b26d2dc28130fd3f9d  test/fixtures/query-grammar-vectors.json" \
+            | sha256sum --check --strict
+
+      # Deliberately not `--set-exit-if-changed` on a subset: a published
+      # package is formatted or it is not. If this fails, run `dart format .`
+      # at the repo root and commit the result.
+      - name: Check formatting
+        run: |
+          dart format --output=none --set-exit-if-changed . \
+            || { echo "::error::Unformatted Dart. Fix with: dart format . "; exit 1; }
+
+      # `analysis_options.yaml` turns unawaited_futures into an error and
+      # requires docs on every public member, so this is a real gate, not a
+      # style suggestion. Warnings fail it too.
+      - name: Analyze
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+      - name: Test
+        run: flutter test --reporter expanded
+
+  example:
+    name: Example — analyze, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The example builds a real Android APK, which needs a JDK. Flutter 3.29
+      # targets AGP 8.x, which wants Java 17.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # `example/android/` is gitignored on purpose (see `.gitignore`): a
+      # committed platform folder turns every Flutter upgrade into an
+      # unreviewable diff. So CI regenerates it, which is exactly the workflow
+      # that file documents. Only the Android platform is created — it is the
+      # one this job builds.
+      - name: Regenerate the example's Android platform folder
+        working-directory: example
+        run: flutter create --platforms=android --project-name tracive_sdk_example .
+
+      - name: Resolve dependencies
+        working-directory: example
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: example
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+      # Widget tests over the fake backend: they assert that a cache hit does
+      # no network I/O and that the §4 disclaimer is on screen.
+      - name: Test
+        working-directory: example
+        run: flutter test --reporter expanded
+
+      # §8 asks for "build + unit tests". This is the build half: it proves the
+      # SDK's plugin dependencies (sqflite_sqlcipher, flutter_secure_storage,
+      # url_launcher) actually link on a real target, which no unit test can.
+      - name: Build Android APK (debug)
+        working-directory: example
+        run: flutter build apk --debug
