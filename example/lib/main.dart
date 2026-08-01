@@ -21,14 +21,9 @@
 
 import 'package:flutter/material.dart';
 
-// ignore_for_file: implementation_imports
-//
-// `TraciveClient` and `CheckCache` are not yet exported from
-// `package:tracive_sdk/tracive_sdk.dart`: that barrel is owned by another
-// author and still carries a TODO listing these exports (see the block at the
-// bottom of `lib/tracive_sdk.dart`). Importing through `src/` is the only way
-// to reach them today. **Delete these two imports and this comment** once the
-// barrel exports them — nothing else in this file needs to change.
+// Everything this app needs comes through the public barrel — which is the
+// point of an example: it is written against the surface an integrator has,
+// not against the package's internals.
 import 'package:tracive_sdk/tracive_sdk.dart';
 
 import 'demo_backend.dart';
