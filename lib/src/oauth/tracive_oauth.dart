@@ -67,7 +67,7 @@ class TraciveOAuth {
   ///
   /// [installUrl] defaults to [defaultInstallUrl] and is only worth passing if
   /// Tracive has issued you a different link. Pass a real URL or none at all: a
-  /// blank string is an override, not an absence — see [installUrl].
+  /// blank one throws [ArgumentError] here — see [installUrl].
   ///
   /// Everything after [installUrl] is a seam with a working default:
   /// [transport] defaults to the platform HTTP client, [tokenStore] to the
@@ -88,7 +88,30 @@ class TraciveOAuth {
         _tokenStore = tokenStore ?? platform.createDefaultTokenStore(),
         _launcher = launcher ?? platform.createDefaultAuthLauncher(),
         _clock = clock ?? TraciveClock.system,
-        _random = random;
+        _random = random {
+    // Not an assert: asserts are compiled out of a release build, which is
+    // exactly the build a partner ships. See [installUrl] for why this is a
+    // rejection rather than a fallback to [defaultInstallUrl].
+    if (installUrl.trim().isEmpty) {
+      throw ArgumentError.value(
+        installUrl,
+        'installUrl',
+        '$blankInstallUrlReason: pass a real URL or omit the parameter. '
+            'A blank override is neither the default nor a link anyone '
+            'configured — it builds a schemeless string no operating system '
+            'can open.',
+      );
+    }
+  }
+
+  /// The cross-SDK reason token for a blank [installUrl].
+  ///
+  /// Spelled identically in every Tracive SDK, so that a partner reading one
+  /// SDK's error can search for the same string in another. It travels inside
+  /// the [ArgumentError]'s message; this package raises configuration mistakes
+  /// as [ArgumentError] (as [TraciveEnvironment.custom] does), and that type
+  /// carries no code field of its own.
+  static const String blankInstallUrlReason = 'blank_install_url';
 
   /// URL scheme the Tracive app registers. Used **only** as the presence probe.
   static const String traciveAppScheme = 'tracive';
@@ -121,14 +144,27 @@ class TraciveOAuth {
   /// Defaults to [defaultInstallUrl], which is the link every Tracive SDK
   /// opens. Pass one only to override it.
   ///
-  /// **A blank override is used as given; it does not fall back to
-  /// [defaultInstallUrl].** Only "not passed" means "use the default", and that
-  /// is deliberate. A blank value here is almost always a build variable that
-  /// did not expand, and the two failures are not symmetric: substituting the
-  /// default sends a partner's users to a link the partner never configured,
-  /// and nobody can tell, because [authorize] returns [AuthAppNotInstalled]
-  /// either way and this SDK logs nothing. Keeping the blank value opens
-  /// nothing, which surfaces the first time anyone exercises the path.
+  /// **A blank override is rejected: the constructor throws [ArgumentError],
+  /// carrying the reason `blank_install_url`.** Whitespace-only counts as
+  /// blank. Omitting the parameter is not blank — absence is a real answer, and
+  /// it still means [defaultInstallUrl].
+  ///
+  /// A blank value here is almost always a build variable that did not expand,
+  /// and there is no good way to carry on from one. Substituting
+  /// [defaultInstallUrl] would send a partner's users to a link the partner
+  /// never configured, and nobody could tell, because [authorize] returns
+  /// [AuthAppNotInstalled] either way and this SDK logs nothing. Using the
+  /// blank as given is no better, and that is the part that is easy to miss: it
+  /// does not produce the partner's link either. It builds
+  /// `?ref=…&utm_source=…` — a schemeless, hostless string no operating system
+  /// will open — and it too says nothing, until some user without the Tracive
+  /// app finds it. Both roads fail; only one of them can be made loud. So the
+  /// blank is refused at construction, which is once, in host-app code, on
+  /// every run, in development, before an end user is involved.
+  ///
+  /// This is **not** URL validation. Anything non-blank is used verbatim,
+  /// untrimmed and unparsed, including a value that is plainly wrong: what
+  /// links Tracive issues is not this SDK's to adjudicate.
   ///
   /// Whatever it is, it is opened **clean**: the only query parameters that
   /// travel on it are `ref` (your OAuth client id — the partner's identifier,

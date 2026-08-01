@@ -103,16 +103,48 @@ until it is frozen at `1.0.0`.
   because the URL was not yet confirmed and a wrong default would have been
   invisible in development while being a 404 for every partner's first user
   without the app; the URL is confirmed now, so the argument goes back to being
-  an override. Passing one still works and still wins. **Only omitting it means
-  "use the default":** a blank or whitespace-only `installUrl` is an override
-  with a blank value and is used as given, not replaced by the default link.
-  That was already the behaviour; it is now documented on the parameter and
-  pinned by a test, because it is the kind of thing a later "tidy-up" removes.
-  A blank value is nearly always a build variable that did not expand, and
-  substituting the default would send a partner's users to a link the partner
-  never configured with nothing to show for it — `authorize()` returns
-  `AuthAppNotInstalled` either way and this SDK logs nothing — whereas keeping
-  it opens nothing and surfaces the mistake the first time the path is used.
+  an override. Passing one still works and still wins. Omitting it means "use
+  the default"; a blank one is rejected — see the next entry.
+- **A blank `installUrl` now throws instead of being passed through.
+  ⚠️ Breaking for anyone who passed a blank on purpose.** `TraciveOAuth`'s
+  constructor — and therefore `TraciveClient`, which forwards the value
+  unchanged — raises `ArgumentError` when `installUrl` is empty or
+  whitespace-only, with the cross-SDK reason token `blank_install_url` in the
+  message. Omitting the parameter is untouched and still yields
+  `TraciveOAuth.defaultInstallUrl`: absence is a real answer, and no app that
+  never mentions `installUrl` can start throwing.
+
+  This reverses the behaviour documented and pinned one entry above, so it is
+  worth being explicit about what was wrong with it. The argument for passing a
+  blank through was a comparison against *silently substituting the default*,
+  and that comparison still holds: substituting sends a partner's users to a
+  link the partner never configured, and nobody can tell, because `authorize()`
+  returns `AuthAppNotInstalled` either way and this SDK logs nothing. What the
+  argument stopped short of checking is what passing the blank through actually
+  produces. It is not the partner's link either: `installUrl: ''` builds
+  `?ref=…&utm_source=…` — no scheme, no host, nothing an operating system will
+  open — and `'   '` builds `%20%20%20?ref=…`. That failure is every bit as
+  silent as the one it was chosen over. It reaches only a user without the
+  Tracive app, only after release, and it surfaces nowhere unless the host app
+  happens to be watching. "Blank passes through" was never the safe option; it
+  was the second quiet one.
+
+  So the choice is not between the default and the blank, but between a quiet
+  failure and a loud one. The constructor is the loudest point available: it
+  runs once, in host-app code, on every run, in development, before any end user
+  is involved. A blank `installUrl` is nearly always a build variable that did
+  not expand, and that is precisely the mistake a constructor throw catches on
+  the developer's own machine.
+
+  This is **not** URL validation, and no non-blank value's behaviour changed.
+  Anything non-blank is still used verbatim — untrimmed, unparsed, and
+  unjudged, including a value that is plainly wrong. Which links Tracive issues
+  is not this SDK's to adjudicate, and a stricter check would reject link
+  formats that do not exist yet.
+
+  **If you pass `installUrl` from a build variable, make sure it is set, or stop
+  passing it.** The migration is one line either way: drop the argument to take
+  the shared default, or pass a real URL.
 - **The install link now carries `ref=<clientId>` and
   `utm_source=tracive-sdk-flutter`**, replacing `utm_source=<clientId>` and
   `utm_medium=tracive_sdk_flutter`, to match the other Tracive SDKs. Both

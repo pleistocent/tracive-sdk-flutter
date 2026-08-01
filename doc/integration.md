@@ -44,8 +44,9 @@ final client = TraciveClient(
   ),
   // `installUrl` — where a user without the Tracive app is sent — defaults to
   // the install page every Tracive SDK opens. Pass one only to override it, and
-  // pass a real URL: only omitting it means "use the default", so a blank
-  // string is an override with a blank value. See `doc/oauth.md`.
+  // pass a real URL: omitting it means "use the default", while a blank or
+  // whitespace-only string is a configured value and throws `ArgumentError`
+  // (`blank_install_url`) right here. See `doc/oauth.md`.
   // environment: TraciveEnvironment.sandbox,  // while you are developing
 );
 ```

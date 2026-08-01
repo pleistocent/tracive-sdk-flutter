@@ -267,16 +267,34 @@ fresh PKCE pair anyway.
 > 404 for every partner's first user without the app. The URL is confirmed now,
 > so the argument is back to being an override.
 
-**Only "not passed" means "use the default".** A blank or whitespace-only
-`installUrl` is an override with a blank value, and it is used as given rather
-than quietly replaced by the link above. That is deliberate. A blank value is
-nearly always a build variable that did not expand, and the two possible
-behaviours fail very differently: substituting the default sends your users to a
-link you never configured, and neither you nor they can tell, because
-`authorize()` returns `AuthAppNotInstalled` either way and this SDK logs
-nothing. Keeping the blank value opens nothing, so the mistake shows up the
-first time anybody without the Tracive app tries it. Pass a real URL, or pass
-nothing.
+**A blank `installUrl` throws.** Omitting the parameter is fine and means "use
+the link above" — absence is a real answer. A blank or whitespace-only string is
+not absence, and `TraciveOAuth` (and `TraciveClient`, which forwards it
+unchanged) raises `ArgumentError` from the constructor, with the cross-SDK
+reason `blank_install_url` in its message. Pass a real URL, or pass nothing.
+
+The reason it throws rather than falling back is worth stating, because falling
+back looks like the kind thing to do. A blank value is nearly always a build
+variable that did not expand, and neither of the quiet options is actually
+quiet-and-correct:
+
+- **Substituting the default** sends your users to a link you never configured,
+  and neither you nor they can tell — `authorize()` returns
+  `AuthAppNotInstalled` either way and this SDK logs nothing.
+- **Using the blank as given**, which this SDK used to do, does not send them to
+  your link either. It builds `?ref=…&utm_source=…`: no scheme, no host, nothing
+  an operating system can open. It reports nothing either, and it only ever
+  shows up for a user who does not have the Tracive app, long after the build
+  that caused it.
+
+Both are wrong; only one failure can be made loud. The constructor is the
+loudest point available — it runs once, in your own code, on every run,
+in development, before any end user is involved.
+
+This is **not** URL validation. Any non-blank value is used exactly as given,
+untrimmed and unparsed, including one that is plainly wrong: which links Tracive
+issues is not something this SDK can adjudicate, and a check clever enough to
+try would reject link formats that do not exist yet.
 
 ---
 

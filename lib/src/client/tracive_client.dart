@@ -83,9 +83,11 @@ class TraciveClient {
   ///
   /// The first four parameters are the configuration. [installUrl] applies in
   /// OAuth mode only and defaults to [TraciveOAuth.defaultInstallUrl], so pass
-  /// it only to override that link — and pass a real URL when you do, because
-  /// only `null` means "use the default"; a blank string is an override and is
-  /// used as given (see [TraciveOAuth.installUrl] for why). The rest are seams:
+  /// it only to override that link — and pass a real URL when you do. Only
+  /// `null` means "use the default"; a blank or whitespace-only string is a
+  /// configured value, it is not normalised away here, and it throws
+  /// [ArgumentError] with the reason `blank_install_url` (see
+  /// [TraciveOAuth.installUrl] for why). The rest are seams:
   /// [transport] and [clock] are named as such by the cross-SDK contract;
   /// [retryPolicy], [cache], [tokenStore], [launcher] and [oauth] are additive,
   /// and every one of them has a working default, so an app passes none of
@@ -132,6 +134,12 @@ class TraciveClient {
               tokenStore: tokenStore,
               launcher: launcher,
               clock: resolvedClock,
+              // `??` fires on absence only. A blank string is a configured
+              // value and travels through unchanged, so it meets the same
+              // rejection in TraciveOAuth's constructor that it would have met
+              // had the flow been built directly. Normalising it here — to the
+              // default or to anything else — would make the client the one
+              // place where a blank quietly works.
               installUrl: installUrl ?? TraciveOAuth.defaultInstallUrl,
             ))
         : null;
