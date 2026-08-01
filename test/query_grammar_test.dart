@@ -51,7 +51,7 @@ void main() {
       // `nfcScope`, which used to read as though NFC applied to the social and
       // chain platform codes but not to a bank code, and added the vector that
       // pins the bank code's NFC step down.
-      expect(fixture['version'], 3);
+      expect(fixture['version'], 4);
     });
 
     test('carries the vectors it is supposed to', () {
