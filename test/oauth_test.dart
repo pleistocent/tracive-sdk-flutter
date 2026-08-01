@@ -45,7 +45,7 @@ const String _installUrl = 'https://install.example/app';
 
 void main() {
   // ---------------------------------------------------------------------------
-  // PKCE — step 1 of the flow, RFC 7636.
+  // PKCE — step 2 of the flow, RFC 7636.
   // ---------------------------------------------------------------------------
   group('PKCE', () {
     test('RFC 7636 appendix B vector', () {
@@ -409,7 +409,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // authorize() — steps 2 to 4 of the flow.
+  // authorize() — steps 1 to 3 of the flow.
   // ---------------------------------------------------------------------------
   group('authorize()', () {
     test('app missing: opens the install link and starts nothing', () async {
@@ -1585,7 +1585,7 @@ class _FakeTransport extends HttpTransport {
 /// Records what the SDK asked the operating system to do, and answers.
 ///
 /// It has no `openInWebView`, because [AuthLauncher] has no such method —
-/// step 4 and RFC 8252 §8.12 rule it out, and the interface is shaped so a
+/// step 3 and RFC 8252 §8.12 rule it out, and the interface is shaped so a
 /// caller could not ask for one even by mistake.
 class _FakeLauncher extends AuthLauncher {
   _FakeLauncher({required this.installed, this.canLaunch = true});

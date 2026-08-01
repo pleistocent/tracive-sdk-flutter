@@ -15,10 +15,10 @@ secret shipped inside a mobile binary is a published secret.
 ## The flow, in order
 
 ```
-1. Generate code_verifier + code_challenge (S256) and a random state
-2. Is the Tracive app installed?            <- BEFORE any redirect
+1. Is the Tracive app installed?            <- BEFORE anything is generated
       no  -> open the clean install link, return AuthResult.appNotInstalled
       yes -> continue
+2. Generate code_verifier + code_challenge (S256) and a random state
 3. Open the authorize URL in a Custom Tab (Android) / Universal Link (iOS)
 4. OS routes the redirect back              -> client.handleCallback(url)
 5. Verify state; mismatch -> AuthFailed(TraciveStateMismatchException)
@@ -26,10 +26,11 @@ secret shipped inside a mobile binary is a published secret.
    confidential client -> AuthResult.codeReceived  (your backend exchanges it)
 ```
 
-Steps 1 and 2 are in that order for a reason. The presence check runs **before**
-anything is generated or persisted, so a user who does not have the app never
-has a PKCE pair minted, never has a `state` stored, and never has an OAuth
-parameter leak into an install-attribution chain.
+The presence check comes first for a reason, and the order is load-bearing
+rather than incidental. It runs **before** anything is generated or persisted,
+so a user who does not have the app never has a PKCE pair minted, never has a
+`state` stored, and never has an OAuth parameter leak into an
+install-attribution chain.
 
 The `state` and the verifier are then persisted, before the authorize URL is
 opened, rather than held in a field — Android may collect your app while the

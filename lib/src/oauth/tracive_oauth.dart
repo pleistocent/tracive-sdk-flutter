@@ -57,7 +57,8 @@ import 'token_store.dart';
 ///
 /// ## What it never does
 ///
-/// * It never opens a WebView (§6 step 4, RFC 8252 §8.12).
+/// * It never opens a WebView (step 3, and "Never a WebView" in
+///   `doc/oauth.md`; RFC 8252 §8.12).
 /// * It never sends `code_challenge_method=plain`.
 /// * It never puts an OAuth parameter on the install link.
 /// * It never sends an API key. There is no API key anywhere in this SDK,
@@ -272,7 +273,7 @@ class TraciveOAuth {
   /// `<queries>` / `LSApplicationQueriesSchemes` entries this needs.
   Future<bool> isTraciveAppInstalled() => _launcher.canOpen(appPresenceProbe);
 
-  /// Starts the flow — steps 1 to 4 in `doc/oauth.md`.
+  /// Starts the flow — steps 1 to 3 in `doc/oauth.md`.
   ///
   /// Returns:
   ///

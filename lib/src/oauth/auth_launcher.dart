@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Opening URLs outside the app — steps 2-4 of the flow in `doc/oauth.md`.
+// Opening URLs outside the app — steps 1 and 3 of the flow in `doc/oauth.md`.
 //
 //   "open the authorize URL via **Custom Tabs (Android) / `UIApplication.open`
 //    Universal Link (iOS)**. **Never a WebView** — App Links do not fire from
