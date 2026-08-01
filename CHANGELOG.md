@@ -10,6 +10,18 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **Your `idempotencyKey` now goes out exactly as you wrote it.** It was
+  trimmed on the way to the wire, so a key of `'  9f3c-1  '` reached the server
+  as `'9f3c-1'`. The justification was that a stray space would make a replay a
+  different key; it would not, because the replay reuses the string the call
+  already captured. What trimming did change is reconciliation: the key you
+  recorded against a transaction is the key the server deduplicates on, and a
+  disputed charge cannot be matched against a ledger holding a different string.
+  Kotlin, Swift and React Native never trimmed it, so this SDK was the outlier.
+
+  Only the question *"is there a key here at all"* still trims: `null`, `''`
+  and `'   '` all still count as no key, and still get a generated `sdk-<uuid>`.
+
 - **A blank token now means whitespace-only as well as empty.** The repair for
   a damaged grant asked whether the stored access token was *empty*, so a value
   of `'   '` was read as a token that is present and went out as
