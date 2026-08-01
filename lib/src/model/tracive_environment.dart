@@ -14,6 +14,18 @@ class TraciveEnvironment {
   /// A trailing slash is trimmed so that `'$baseUrl/scammer-checks'` is always
   /// well-formed. The URL must be absolute; anything else throws
   /// [ArgumentError] here rather than failing later inside the transport.
+  ///
+  /// **The scheme must be `https`.** Every authorized request carries
+  /// `Authorization: Bearer <access token>`, and over plaintext HTTP that token
+  /// is readable by anything on the path — a hotel network, a captive portal, a
+  /// misconfigured corporate proxy. It is rejected here rather than warned
+  /// about, because a warning in a constructor is a warning nobody reads, and
+  /// the failure it prevents is silent by nature.
+  ///
+  /// The one exception is a loopback host — `localhost`, `127.0.0.1`, `::1` —
+  /// where `http` is allowed. Traffic to loopback never leaves the machine, and
+  /// a local test server with no certificate is the ordinary way to exercise
+  /// proxy mode. [loopbackHosts] is the whole list.
   factory TraciveEnvironment.custom(String baseUrl) {
     final trimmed = baseUrl.trim();
     if (trimmed.isEmpty) {
@@ -27,8 +39,29 @@ class TraciveEnvironment {
         'must be an absolute URL, e.g. https://proxy.example.com/v1',
       );
     }
+    final scheme = uri.scheme.toLowerCase();
+    final isLoopback = loopbackHosts.contains(uri.host.toLowerCase());
+    if (scheme != 'https' && !(scheme == 'http' && isLoopback)) {
+      throw ArgumentError.value(
+        baseUrl,
+        'baseUrl',
+        'must use https — every request carries a bearer token, and over '
+            'plaintext HTTP anything on the network path can read it. '
+            'http is allowed only for ${loopbackHosts.join(", ")}.',
+      );
+    }
     return TraciveEnvironment._(_withoutTrailingSlash(trimmed), 'custom');
   }
+
+  /// Hosts for which [TraciveEnvironment.custom] accepts `http`.
+  ///
+  /// Loopback only: traffic to these never leaves the machine, so there is no
+  /// network path for a bearer token to be read from.
+  static const Set<String> loopbackHosts = <String>{
+    'localhost',
+    '127.0.0.1',
+    '::1',
+  };
 
   /// `https://api.tracive.id/v1`
   static const TraciveEnvironment production = TraciveEnvironment._(

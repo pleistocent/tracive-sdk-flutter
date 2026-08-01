@@ -665,6 +665,44 @@ void main() {
         throwsArgumentError,
       );
     });
+
+    test('rejects a cleartext custom URL', () {
+      // Every authorized request carries `Authorization: Bearer <token>`. Over
+      // plaintext HTTP that token is readable by anything on the path, and
+      // nothing about the failure is visible to the integrator or the user.
+      // Phase 2's proxy mode makes this a URL people will actually type.
+      expect(
+        () => TraciveEnvironment.custom('http://proxy.internal/v1'),
+        throwsArgumentError,
+      );
+      expect(
+        () => TraciveEnvironment.custom('http://192.168.1.10:8080/v1'),
+        throwsArgumentError,
+        reason: 'a LAN address is still a network path',
+      );
+      expect(
+        () => TraciveEnvironment.custom('ftp://proxy.example/v1'),
+        throwsArgumentError,
+      );
+    });
+
+    test('allows http on loopback, where there is no path to listen on', () {
+      // A local test server with no certificate is the ordinary way to exercise
+      // proxy mode, and traffic to loopback never leaves the machine.
+      for (final host in TraciveEnvironment.loopbackHosts) {
+        final url =
+            host == '::1' ? 'http://[$host]:8080/v1' : 'http://$host:8080/v1';
+        expect(
+          TraciveEnvironment.custom(url).baseUrl,
+          url,
+          reason: 'http://$host must stay usable for local testing',
+        );
+      }
+      expect(
+        TraciveEnvironment.custom('https://proxy.example/v1').baseUrl,
+        'https://proxy.example/v1',
+      );
+    });
   });
 
   group('TraciveMode', () {
