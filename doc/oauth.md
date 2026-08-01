@@ -277,7 +277,9 @@ calls.
   `UserDefaults` or a plain file.
 - **Refresh token** — opaque and **rotating**: every refresh returns a new one,
   and the stored value is replaced atomically.
-- **Auto-refresh on `401 expired_token`, single-flight.** Concurrent 401s
+- **Auto-refresh on any non-terminal `401`, single-flight.** A bare 401 with no
+  body is what a gateway emits, and requiring an exact `expired_token` code left
+  the client stuck against one. Concurrent 401s
   trigger exactly one refresh; the others await its result. This is not an
   optimisation — sending the same refresh token twice is what trips the
   server's refresh-token **reuse detection**, which revokes the whole grant.
@@ -293,9 +295,8 @@ calls.
   partial write, a save interrupted by process death, a restored backup — and
   the grant behind it never stopped working; one field of the local copy is
   missing, which is not the same thing. It cannot be left to the 401 above,
-  because an empty bearer is answered `invalid_token`, which is terminal, rather
-  than `expired_token`, which refreshes — so the record would fail on every call
-  from then on. With **no** refresh token beside it there is nothing to spend,
+  because an empty bearer is answered `invalid_token`, the one 401 code excluded
+  from the refresh — so the record would fail on every call from then on. With **no** refresh token beside it there is nothing to spend,
   and `TraciveInvalidTokenException` is still the answer.
 
   The shipped `SecureStorageTokenStore` keeps such a record, and `isAuthorized`

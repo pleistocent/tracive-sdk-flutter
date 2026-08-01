@@ -892,7 +892,11 @@ void main() {
       expect(transport.to('/oauth/token'), isEmpty);
     });
 
-    test('invalid_token does not refresh — only expired_token does', () async {
+    test('invalid_token is terminal — a fresh token earns nothing', () async {
+      // The one 401 code that is excluded from the refresh, alongside
+      // grant_revoked. The server is saying the credential is not usable at
+      // all — it is the answer to a malformed or empty bearer — so minting
+      // another one only spends a rotation to be told the same thing again.
       final transport = _FakeTransport((_) => _error(401, 'invalid_token'));
       final client = _client(transport: transport);
 
@@ -901,6 +905,75 @@ void main() {
         throwsA(isA<TraciveInvalidTokenException>()),
       );
       expect(transport.to('/oauth/token'), isEmpty);
+    });
+
+    // A bare `401 Unauthorized` with no JSON body is what CDNs, API gateways
+    // and misconfigured reverse proxies emit, and this SDK is explicitly
+    // designed to sit behind a partner gateway. Requiring the body to carry
+    // exactly `expired_token` meant that in that state it never refreshed, so
+    // every subsequent call failed identically until the app happened to call
+    // authorize() again — while the user's grant was fine the whole time.
+    test('a 401 with an empty body refreshes and replays', () async {
+      var checks = 0;
+      final transport = _FakeTransport((request) {
+        if (request.url.path.endsWith('/oauth/token')) return _ok(_tokenBody());
+        checks++;
+        return checks == 1 ? _bareUnauthorized() : _ok(_checkBody());
+      });
+      final client = _client(
+        transport: transport,
+        tokenStore: _authorizedStore(),
+      );
+
+      final result = await client.checkScammer(query, source: Source.server);
+
+      expect(result.riskTier, RiskTier.high);
+      expect(transport.to('/oauth/token'), hasLength(1));
+      expect(
+        transport.to('/scammer-checks').last.header('authorization'),
+        'Bearer access-token-2',
+      );
+    });
+
+    test('a 401 carrying an unrecognised code refreshes too', () async {
+      var checks = 0;
+      final transport = _FakeTransport((request) {
+        if (request.url.path.endsWith('/oauth/token')) return _ok(_tokenBody());
+        checks++;
+        return checks == 1
+            ? _error(401, 'token_not_active_yet')
+            : _ok(_checkBody());
+      });
+      final client = _client(
+        transport: transport,
+        tokenStore: _authorizedStore(),
+      );
+
+      await client.checkScammer(query, source: Source.server);
+
+      expect(transport.to('/oauth/token'), hasLength(1));
+      expect(transport.to('/scammer-checks'), hasLength(2));
+    });
+
+    test('a bare 401 still refreshes at most once', () async {
+      // Widening which responses trigger a refresh must not widen how many
+      // refreshes one request can cause. A grant that is genuinely finished
+      // must surface, not loop.
+      final transport = _FakeTransport((request) {
+        if (request.url.path.endsWith('/oauth/token')) return _ok(_tokenBody());
+        return _bareUnauthorized();
+      });
+      final client = _client(
+        transport: transport,
+        tokenStore: _authorizedStore(),
+      );
+
+      await expectLater(
+        client.checkScammer(query, source: Source.server),
+        throwsA(isA<TraciveException>()),
+      );
+      expect(transport.to('/oauth/token'), hasLength(1));
+      expect(transport.to('/scammer-checks'), hasLength(2));
     });
 
     test('concurrent 401s trigger exactly one refresh (single-flight)',
@@ -1356,6 +1429,15 @@ TraciveHttpResponse _ok(String body) => TraciveHttpResponse(
       statusCode: 200,
       headers: const <String, String>{'content-type': 'application/json'},
       body: body,
+    );
+
+/// A `401 Unauthorized` with no body at all — what a CDN, an API gateway or a
+/// misconfigured reverse proxy emits, and therefore the response no error code
+/// can be read out of.
+TraciveHttpResponse _bareUnauthorized() => TraciveHttpResponse(
+      statusCode: 401,
+      headers: const <String, String>{},
+      body: '',
     );
 
 TraciveHttpResponse _error(

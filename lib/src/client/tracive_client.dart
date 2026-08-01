@@ -531,6 +531,8 @@ class TraciveClient {
   ///   third attempt will not fix.
   /// * **401 `grant_revoked` -> clear and stop.** No refresh, no retry.
   ///   Retrying with a dead refresh token is what trips reuse detection.
+  ///   `invalid_token` is terminal too, without the teardown: a credential the
+  ///   server calls unusable is not made usable by minting another one.
   /// * **5xx / transport -> retry only if [safeToRepeat].**
   Future<TraciveHttpResponse> _sendAuthorized(
     TraciveHttpRequest request, {
@@ -570,7 +572,24 @@ class TraciveClient {
           await oauth!.clearTokens();
           throw mapErrorResponse(response);
         }
-        if (code == 'expired_token' && !refreshedOnce) {
+        // Refresh on any 401 that is not terminal, rather than only on an exact
+        // `expired_token` body.
+        //
+        // A bare `401 Unauthorized` — no body at all, or a `WWW-Authenticate`
+        // header and nothing else — is what CDNs, API gateways and
+        // misconfigured reverse proxies emit, and this SDK is explicitly
+        // designed to sit behind a partner gateway (the proxy contract exists
+        // for that). Requiring the code left the client permanently stuck in
+        // that state: `errorCodeOf` answers `null`, the branch never fired, and
+        // every subsequent call failed identically until the app happened to
+        // call `authorize()` again. The user's grant was fine the whole time.
+        //
+        // `invalid_token` is excluded alongside `grant_revoked`, for the same
+        // reason at one remove: the server is saying the credential is not
+        // usable at all, so obtaining a fresh one earns nothing. It is the
+        // answer to a malformed or empty bearer, and refreshing into it would
+        // spend a rotation to be told the same thing again.
+        if (code != 'invalid_token' && !refreshedOnce) {
           refreshedOnce = true;
           await oauth!.refreshTokens(staleAccessToken: token);
           continue;

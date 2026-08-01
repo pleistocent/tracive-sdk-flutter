@@ -99,7 +99,7 @@ A runnable app is in [`example/`](example).
 | | |
 |---|---|
 | **Query builders** | phone, e-mail, bank account, IBAN, crypto, social handle — each folded to the exact key the backend indexes |
-| **OAuth 2.0 + PKCE** | S256 only, app-presence pre-check, Custom Tabs / Universal Link, single-flight refresh on `401 expired_token`, rotating refresh tokens |
+| **OAuth 2.0 + PKCE** | S256 only, app-presence pre-check, Custom Tabs / Universal Link, single-flight refresh on a non-terminal `401`, rotating refresh tokens |
 | **Encrypted cache** | SQLCipher, key in Keystore/Keychain, per-tier TTL, server-driven invalidation |
 | **Typed errors** | every documented `error.code` maps to a `TraciveException` subclass |
 | **Testable offline** | the HTTP transport, the clock, the cache, the token store and the browser launcher are all injectable |

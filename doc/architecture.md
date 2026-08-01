@@ -135,7 +135,8 @@ What the ordering buys, in the order it appears:
 
 Every authorized request starts with `ensureAccessToken()`, which hands over the
 stored access token **without consulting the expiry**. A token the SDK holds is
-refreshed when the server says so — `401 expired_token` — and at no other moment.
+refreshed when the server says so — any non-terminal `401` — and at no other
+moment.
 The one refresh that does not wait for a rejection is the repair of a stored
 grant whose access token is blank: there is no token to send, so there is no
 rejection to wait for. A refresh token is single-use, so presenting one twice is
@@ -179,7 +180,7 @@ flowchart TD
     Use --> Send
     Send -->|"2xx"| Done
     Send -->|"401 grant_revoked"| Revoked
-    Send -->|"401 expired_token,<br/>not yet replayed"| Refresh
+    Send -->|"401, not terminal,<br/>not yet replayed"| Refresh
     Refresh -->|"no refresh token"| NoRefresh
     Refresh -->|"canRefresh"| Stale
     Stale -->|"no, somebody else refreshed"| Replay
@@ -207,8 +208,8 @@ request has been sent yet, so what follows a successful refresh there is the
 first send rather than a replay; everything between the two, guards included, is
 the same. It lives in `ensureAccessToken()` rather than on the 401 path because
 nothing on the 401 path could recover it: `Bearer ` is answered `invalid_token`,
-which is terminal — no refresh, grant discarded — and not `expired_token`, which
-is what the diagram's refresh hangs off. Such a record therefore never healed
+which is the one 401 code that is terminal without a teardown — no refresh, and
+the diagram's refresh deliberately excludes it. Such a record therefore never healed
 itself; it failed on every call, and it failed by demanding a consent that was
 not needed. With no refresh token stored beside the blank one there is nothing
 to spend, and the same `TraciveInvalidTokenException` is thrown as for an empty
@@ -272,7 +273,9 @@ charged twice. It does not consume the retry budget, being a re-authentication
 rather than a retry of a failed check. Meanwhile
 `grant_revoked` clears the tokens and stops. `grant_revoked` is never retried;
 retrying with a dead refresh token is exactly the pattern reuse detection
-punishes. A *second* `expired_token` gives up rather than looping.
+punishes, and `invalid_token` is terminal too — a credential the server calls
+unusable is not made usable by minting another. A *second* 401 gives up rather
+than looping.
 
 ---
 

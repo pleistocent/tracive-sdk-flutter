@@ -69,6 +69,27 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **A 401 now triggers the refresh whenever it is not terminal**, rather than
+  only when the body carries exactly `expired_token`. A bare
+  `401 Unauthorized` — no body, or a `WWW-Authenticate` header and nothing else
+  — is what CDNs, API gateways and misconfigured reverse proxies emit, and this
+  SDK is explicitly designed to sit behind a partner gateway. Against one, no
+  error code could be read, the branch never fired, and every call failed
+  identically until the app happened to call `authorize()` again — while the
+  user's grant was fine the whole time.
+
+  `grant_revoked` keeps its own branch: the grant is gone, so there is nothing
+  to refresh into, and the local tokens are cleared. `invalid_token` stays
+  excluded for the same reason at one remove — the server is saying the
+  credential is not usable at all, so minting a fresh one earns nothing.
+
+  Everything that made the branch safe is unchanged: it fires at most once per
+  request, it does not consume the retry budget, and the replay now carries an
+  `Idempotency-Key` in every case (see above), so it no longer rests on the
+  assumption that a 401 is rejected before billing.
+
+  The React Native SDK made this change first; the other three carried the bug.
+
 - **Every check now leaves with an `Idempotency-Key`.** One was sent only when
   the caller supplied it — yet the client re-sends the identical POST after a
   401 refresh, and without a key those two attempts are indistinguishable to the
