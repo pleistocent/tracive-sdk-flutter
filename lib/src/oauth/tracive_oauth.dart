@@ -149,6 +149,25 @@ class TraciveOAuth {
   /// from a clean slate.
   String? _spentRefreshToken;
 
+  /// Which generation of credentials this flow is currently working with.
+  ///
+  /// Bumped by [signOut] and [clearTokens]. Every code path that is about to
+  /// write tokens captures it before its network call and compares afterwards,
+  /// and writes only if it has not moved.
+  ///
+  /// The problem it solves is that discarding credentials is instantaneous
+  /// while acquiring them is not. A refresh or an exchange that was already on
+  /// the wire when the user signed out will still complete, and its `write`
+  /// would refill the store the user just emptied — leaving their grant live on
+  /// a device they may be about to hand over, which is precisely what
+  /// [signOut]'s contract says must not happen.
+  ///
+  /// Awaiting the in-flight work inside [signOut] would not fix this: it would
+  /// make signing out wait on the network, which [signOut] deliberately
+  /// refuses to do. Gating the write is what makes sign-out both immediate and
+  /// final.
+  int _credentialEpoch = 0;
+
   /// Where tokens are kept. Exposed so a host app can clear it on log-out of
   /// its *own* account, which is not the same event as [signOut].
   TokenStore get tokenStore => _tokenStore;
@@ -305,12 +324,17 @@ class TraciveOAuth {
       );
     }
 
+    // Captured before the exchange goes out, for the same reason the refresh
+    // path captures it: a sign-out that lands while the code is being exchanged
+    // must win over the tokens that come back.
+    final epoch = _credentialEpoch;
     try {
       final tokens = await _exchange(
         code: code,
         codeVerifier: pending.codeVerifier,
         redirectUri: pending.redirectUri,
       );
+      if (epoch != _credentialEpoch) throw _discardedMidFlight;
       await _tokenStore.write(tokens);
       await _tokenStore.writePending(null);
       return AuthResult.authorized(tokens.grantedScopes);
@@ -442,29 +466,35 @@ class TraciveOAuth {
 
   /// Erases the stored tokens without calling the server.
   ///
-  /// Used on `grant_revoked` (§6): the grant is already gone server-side, so
+  /// Used on `grant_revoked`: the grant is already gone server-side, so
   /// revoking it would be a wasted call, and *retrying* anything with the dead
   /// refresh token is exactly the pattern reuse detection punishes.
-  Future<void> clearTokens() {
-    _spentRefreshToken = null;
-    return _tokenStore.clear();
-  }
+  Future<void> clearTokens() => _discardCredentials();
 
-  /// Signs out — §6.
+  /// Signs out.
   ///
-  /// > "`signOut()` calls `POST /oauth/revoke` best-effort, then clears local
-  /// > tokens regardless of outcome."
+  /// Calls the revocation endpoint best-effort, and clears the local tokens
+  /// regardless of the outcome. "Regardless of outcome" is the important half:
+  /// a user who taps sign-out on a train with no signal must still be signed
+  /// out on the device. Leaving the tokens behind because a network call failed
+  /// would leave their Tracive grant live on a phone they may be about to hand
+  /// over.
   ///
-  /// "Regardless of outcome" is the important half. A user who taps sign-out on
-  /// a train with no signal must still be signed out on the device; leaving the
-  /// tokens behind because a network call failed would leave their Tracive
-  /// grant live on a phone they may be about to hand over.
+  /// The local discard happens **before** the revocation call, not after. That
+  /// ordering closes the window the network call opens: once the store is empty
+  /// and the epoch has moved, a refresh that starts during the call finds
+  /// nothing to spend, and one that was already on the wire has its write
+  /// rejected when it lands. Doing it the other way round meant a sign-out
+  /// could be silently undone by a response that arrived a moment later.
   Future<void> signOut() async {
     final tokens = await _tokenStore.read();
     final refreshToken = tokens?.refreshToken;
     final token = (refreshToken != null && refreshToken.isNotEmpty)
         ? refreshToken
         : tokens?.accessToken;
+
+    await _discardCredentials();
+
     if (token != null && token.isNotEmpty) {
       try {
         await _postForm(
@@ -478,14 +508,11 @@ class TraciveOAuth {
           ),
         );
       } on TraciveException {
-        // Best effort, by design. The local clear below is what the user asked
-        // for; the server-side revocation is a courtesy that must never be able
-        // to block it.
+        // Best effort, by design. The local discard above is what the user
+        // asked for; the server-side revocation is a courtesy that must never
+        // be able to block it, or to undo it.
       }
     }
-    _refreshInFlight = null;
-    _spentRefreshToken = null;
-    await _tokenStore.clear();
   }
 
   /// Releases the transport, if this flow created it.
@@ -495,6 +522,27 @@ class TraciveOAuth {
   // Internals
   // ---------------------------------------------------------------------------
 
+  /// Throws away every credential this flow is holding, and moves the epoch so
+  /// that anything already on the wire cannot put them back.
+  Future<void> _discardCredentials() async {
+    _credentialEpoch++;
+    _refreshInFlight = null;
+    _spentRefreshToken = null;
+    await _tokenStore.clear();
+  }
+
+  /// The error a caller gets when its tokens arrived after the credentials they
+  /// belong to were discarded. Deliberately the same typed error as "nothing is
+  /// stored", because that is now the truth: whatever the server issued is gone
+  /// and the user has to authorize again.
+  static const TraciveInvalidTokenException _discardedMidFlight =
+      TraciveInvalidTokenException(
+    'The session was signed out while this request was in flight, so the '
+    'tokens it returned were discarded. Authorize again.',
+    code: 'invalid_token',
+    statusCode: 401,
+  );
+
   Future<TraciveTokens> _startRefresh(TraciveTokens current) {
     final completer = Completer<TraciveTokens>();
     // Both set synchronously, before the first await inside `_performRefresh`
@@ -503,7 +551,7 @@ class TraciveOAuth {
     // second time once the latch has cleared.
     _refreshInFlight = completer.future;
     _spentRefreshToken = current.refreshToken;
-    _performRefresh(current).then(
+    _performRefresh(current, _credentialEpoch).then(
       (tokens) {
         _refreshInFlight = null;
         completer.complete(tokens);
@@ -523,7 +571,10 @@ class TraciveOAuth {
     return completer.future;
   }
 
-  Future<TraciveTokens> _performRefresh(TraciveTokens current) async {
+  Future<TraciveTokens> _performRefresh(
+    TraciveTokens current,
+    int epoch,
+  ) async {
     final response = await _postForm(
       environment.resolve(tokenPath),
       buildRefreshForm(
@@ -533,11 +584,17 @@ class TraciveOAuth {
     );
     if (!response.isSuccess) {
       final error = mapTokenErrorResponse(response);
-      if (error is TraciveGrantRevokedException) await _tokenStore.clear();
+      if (error is TraciveGrantRevokedException) await _discardCredentials();
       throw error;
     }
     final tokens = _decodeTokenResponse(response, previous: current);
-    // One write for the pair. The refresh token rotates (§6), so replacing them
+    if (epoch != _credentialEpoch) {
+      // Signed out (or the grant was revoked) while this was on the wire. The
+      // server has issued a fresh pair, but nobody asked for it any more —
+      // writing it would undo the sign-out.
+      throw _discardedMidFlight;
+    }
+    // One write for the pair. The refresh token rotates, so replacing them
     // separately could strand a new access token beside a spent refresh token.
     await _tokenStore.write(tokens);
     return tokens;

@@ -910,6 +910,82 @@ void main() {
       await _oauth(transport: transport).signOut();
       expect(transport.requests, isEmpty);
     });
+
+    test('a refresh already in flight cannot undo it', () async {
+      // Signing out while a background check is retrying a 401 is an ordinary
+      // user action, and signOut() makes a network call of its own, which
+      // widens the window. If the refresh's response is allowed to land in the
+      // store afterwards, the user is signed out of the UI and still holds a
+      // live grant on a phone they may be about to hand over — exactly what
+      // signOut()'s own doc comment says must never happen.
+      final store = _authorizedStore();
+      final refreshReachedTheServer = Completer<void>();
+      final releaseTheRefresh = Completer<void>();
+      final transport = _FakeTransport((request) async {
+        if (request.url.path.endsWith('/oauth/token')) {
+          if (!refreshReachedTheServer.isCompleted) {
+            refreshReachedTheServer.complete();
+          }
+          await releaseTheRefresh.future;
+          return _ok(_tokenBody());
+        }
+        return TraciveHttpResponse(statusCode: 200, body: '{}');
+      });
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      final refresh = oauth.refreshTokens();
+      await refreshReachedTheServer.future;
+
+      await oauth.signOut();
+      expect(await store.read(), isNull, reason: 'signOut cleared the store');
+
+      releaseTheRefresh.complete();
+      await expectLater(
+        refresh,
+        throwsA(isA<TraciveInvalidTokenException>()),
+        reason: 'the caller must be told its refresh was discarded',
+      );
+
+      expect(
+        await store.read(),
+        isNull,
+        reason: 'the in-flight refresh must not write tokens back',
+      );
+      expect(await oauth.isAuthorized, isFalse);
+    });
+
+    test('a token exchange already in flight cannot undo it', () async {
+      // Same hole on the other write path: handleCallback() exchanges the code
+      // and then writes. A sign-out that lands in between must win, or the
+      // grant the user just revoked comes back.
+      final store = InMemoryTokenStore();
+      final exchangeReachedTheServer = Completer<void>();
+      final releaseTheExchange = Completer<void>();
+      final transport = _FakeTransport((request) async {
+        if (request.url.path.endsWith('/oauth/token')) {
+          if (!exchangeReachedTheServer.isCompleted) {
+            exchangeReachedTheServer.complete();
+          }
+          await releaseTheExchange.future;
+          return _ok(_tokenBody());
+        }
+        return TraciveHttpResponse(statusCode: 200, body: '{}');
+      });
+      final oauth = _oauth(tokenStore: store, transport: transport);
+      final pending = await _startFlow(oauth, store);
+
+      final callback = oauth.handleCallback(
+        _callback(pending.state, code: 'auth-code'),
+      );
+      await exchangeReachedTheServer.future;
+
+      await oauth.signOut();
+      releaseTheExchange.complete();
+
+      expect(await callback, isA<AuthFailed>());
+      expect(await store.read(), isNull);
+      expect(await oauth.isAuthorized, isFalse);
+    });
   });
 
   // ---------------------------------------------------------------------------
