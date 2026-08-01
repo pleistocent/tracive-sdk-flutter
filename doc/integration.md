@@ -171,12 +171,29 @@ try {
   backOff(e.retryAfter);
 } on TraciveGrantRevokedException {
   sendUserBackToConsent();            // tokens already cleared; do not retry
+} on TraciveInvalidTokenException {
+  sendUserBackToConsent();            // no usable grant stored; nothing was sent
 } on TraciveNetworkException {
   showOffline();
 } on TraciveException catch (e) {
   report(e);                          // sealed base type; catch-all
 }
 ```
+
+### A damaged grant repairs itself, and costs one extra round trip
+
+`TraciveInvalidTokenException` is what you get when there is no usable grant — but not every damaged
+record is one. If the stored access token is blank while the refresh token beside it is still good,
+the SDK renews it with a single `POST /oauth/token` and carries on. You will see one unexplained
+refresh before the call you actually made, and nothing else.
+
+That state is reachable from a partial write, a save interrupted by process death, or a restored
+backup. The alternative would be to declare the grant lost and send the user back through consent to
+replace a credential that never stopped working.
+
+`TraciveInvalidTokenException` is reserved for the case where there is genuinely nothing to spend:
+no access token and no refresh token. Nothing is sent to the server on that path, so nothing is
+billed.
 
 ### Do **not** poll `credits()` before every check
 
