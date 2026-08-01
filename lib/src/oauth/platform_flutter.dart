@@ -25,35 +25,73 @@ TokenStore createDefaultTokenStore() => SecureStorageTokenStore();
 AuthLauncher createDefaultAuthLauncher() => const UrlLauncherAuthLauncher();
 
 /// Tokens in the Android Keystore / iOS Keychain, via `flutter_secure_storage`
-/// — §6's "**never** in SharedPreferences/UserDefaults/plain files".
+/// — never in SharedPreferences, UserDefaults or a plain file.
 ///
 /// Records are JSON, written under two keys derived from [namespace]. Change
 /// [namespace] if one app holds grants for more than one Tracive client id;
 /// otherwise the second client silently overwrites the first's tokens.
 ///
-/// ## Platform notes worth setting deliberately
+/// ## The storage options are set deliberately, and they matter
 ///
-/// No `IOSOptions` / `AndroidOptions` are passed, so each platform's default
-/// applies (Keychain on Apple platforms, Keystore-backed encrypted preferences
-/// on Android). Two adjustments are worth making in an app that needs them, by
-/// constructing `FlutterSecureStorage` yourself and passing it in:
+/// `flutter_secure_storage`'s defaults are weaker than its name suggests, on
+/// both platforms, and a refresh token is the most sensitive thing this SDK
+/// holds. [defaultSecureStorage] therefore sets them explicitly rather than
+/// inheriting them; see that constant for what each one buys.
 ///
-/// * `IOSOptions(accessibility: KeychainAccessibility.first_unlock)` — the
-///   Keychain default (`unlocked`) makes the refresh token unreadable while the
-///   device is locked, which breaks a refresh from a background task.
-/// * `IOSOptions(synchronizable: false)` is already the default; leave it
-///   there. A refresh token synced to iCloud Keychain is a refresh token on
-///   every device the user owns, which is precisely the multi-device replay
-///   that reuse detection exists to punish.
+/// This class is internal, so an app that needs *different* options does not
+/// subclass or reconstruct it — it implements the exported `TokenStore`
+/// interface over its own `FlutterSecureStorage` and passes the result as
+/// `TraciveOAuth(tokenStore: …)` / `TraciveClient(tokenStore: …)`. The record
+/// encoding it needs (`TraciveTokens.toStorageJson`, `encodeStorageJson` and
+/// their inverses) is exported for exactly that.
 class SecureStorageTokenStore extends TokenStore {
   /// Creates a store.
   ///
-  /// Pass [storage] to control the platform options (see the class docs);
-  /// otherwise a default `FlutterSecureStorage` is used.
+  /// Pass [storage] only if your app genuinely needs different platform options
+  /// from [defaultSecureStorage] — read that constant first, because the
+  /// defaults it overrides are weaker than they look.
   SecureStorageTokenStore({
     FlutterSecureStorage? storage,
     this.namespace = 'tracive_sdk',
-  }) : _storage = storage ?? FlutterSecureStorage();
+  }) : _storage = storage ?? defaultSecureStorage;
+
+  /// The options tokens are stored with, chosen rather than inherited.
+  ///
+  /// * `encryptedSharedPreferences: true` — the plugin's default is `false`,
+  ///   which puts the tokens through a legacy path: an RSA key in the Keystore
+  ///   wrapping an AES key, with the ciphertext in an ordinary
+  ///   `SharedPreferences` XML file. `true` selects `EncryptedSharedPreferences`
+  ///   instead. Existing entries are not stranded — the plugin migrates them
+  ///   into the encrypted store on first use.
+  /// * `accessibility: first_unlock_this_device` — the plugin's default is
+  ///   `unlocked`, which is wrong here twice over. It makes the refresh token
+  ///   unreadable while the device is locked, so a refresh from a background
+  ///   task fails; and, being no `…ThisDeviceOnly` variant, it lets the item
+  ///   travel in an encrypted device backup and be restored onto a *different*
+  ///   device. A refresh token that exists on two devices is exactly the
+  ///   multi-device replay that reuse detection punishes by revoking the grant.
+  ///   `first_unlock_this_device` fixes both: readable after the first unlock
+  ///   following a boot, and never leaving this device. The plugin's read query
+  ///   carries no accessibility attribute, so entries written under the old
+  ///   default stay readable and are re-tagged on the next write.
+  /// * `synchronizable: false` — already the plugin's default, and stated here
+  ///   so that it is a decision rather than an accident. A token synced to
+  ///   iCloud Keychain is a token on every device the user owns.
+  ///
+  /// This is the same shape, and the same reasoning, as the cache encryption
+  /// key's store. The two should never diverge: it would be absurd for the
+  /// cache key to be better protected than the credential that can refill the
+  /// cache.
+  ///
+  /// Built lazily rather than as a `const` so that a change to the plugin's
+  /// constructor cannot turn into a compile error in a `const` context.
+  static final FlutterSecureStorage defaultSecureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+      synchronizable: false,
+    ),
+  );
 
   final FlutterSecureStorage _storage;
 
