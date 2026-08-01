@@ -10,6 +10,26 @@ until it is frozen at `1.0.0`.
 
 ### Changed
 
+- **The retry defaults are now the set all four Tracive SDKs share**, and each
+  number has its reasoning written beside it. `initialBackoff` moves from 300 ms
+  to **500 ms**, `maxBackoff` from 5 s to **8 s**, and a **`jitter` of 0.2** is
+  added — this SDK had none at all. `maxAttempts` (3) and `backoffMultiplier`
+  (2.0) already agreed.
+
+  The values had drifted because nothing asserted them and nothing explained
+  them: three of the four SDKs shipped three different initial backoffs and two
+  jitter ratios, with no reason recorded anywhere for any of them. Behavioural
+  tests cannot catch that, so each value is now pinned by name.
+
+  `jitter` shaves up to 20% off each computed delay and is **one-sided — it only
+  ever shortens a wait**, so `maxBackoff` stays a true ceiling. Pass `jitter: 0`
+  for a fully deterministic schedule, or a seeded `Random` to `backoffFor` when
+  a test needs one.
+
+  None of these numbers is measured; the Tracive API is not deployed. They are
+  defensible starting points with their reasoning attached, and the first real
+  production data should be allowed to move them — in all four SDKs together.
+
 - **BREAKING: `handleCallback` returns `AuthResult?`, and `null` means "this
   link was not addressed here".** Before acting on a URL it is now checked
   against the client's own `redirectUri` and must carry at least one of `state`,

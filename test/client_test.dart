@@ -21,6 +21,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:test/test.dart';
 import 'package:tracive_sdk/tracive_sdk.dart';
@@ -558,6 +559,50 @@ void main() {
   // reports that it happened.
   // ---------------------------------------------------------------------------
   group('retry policy', () {
+    // The five numbers below are a cross-SDK contract, not a local preference:
+    // Kotlin, Swift, React Native and this SDK ship the same set. They were
+    // asserted nowhere, which is how three of the four came to ship three
+    // different initial backoffs and two jitter ratios with no reason recorded
+    // anywhere for any of them. Behavioural tests cannot catch that — a policy
+    // that waits 300 ms passes every one of them — so each value is pinned by
+    // name here, and changing one has to be deliberate.
+    test('the shipped defaults are the cross-SDK set', () {
+      const policy = RetryPolicy.defaultPolicy;
+      expect(policy.maxAttempts, 3);
+      expect(policy.backoffMultiplier, 2.0);
+      expect(policy.initialBackoff, const Duration(milliseconds: 500));
+      expect(policy.jitter, 0.2);
+      expect(policy.maxBackoff, const Duration(seconds: 8));
+    });
+
+    test('the schedule those numbers produce is 500 ms then 1 s', () {
+      // `jitter: 0` to read the curve itself. The first retry is attempt 2.
+      const policy = RetryPolicy(jitter: 0);
+      expect(policy.backoffFor(1), Duration.zero);
+      expect(policy.backoffFor(2), const Duration(milliseconds: 500));
+      expect(policy.backoffFor(3), const Duration(seconds: 1));
+      expect(
+        policy.backoffFor(9),
+        const Duration(seconds: 8),
+        reason: 'maxBackoff binds only for a caller who raises maxAttempts',
+      );
+    });
+
+    test('jitter only ever shortens a wait', () {
+      // One-sided on purpose: if it could lengthen one, `maxBackoff` would stop
+      // being a ceiling and the worst case would be the documented one plus
+      // twenty percent.
+      const policy = RetryPolicy.defaultPolicy;
+      const base = Duration(milliseconds: 500);
+      final random = Random(20260801);
+
+      for (var i = 0; i < 500; i++) {
+        final delay = policy.backoffFor(2, random: random);
+        expect(delay, lessThanOrEqualTo(base));
+        expect(delay, greaterThanOrEqualTo(base * 0.8));
+      }
+    });
+
     test('a 5xx check without an Idempotency-Key is NOT retried', () async {
       final transport = _FakeTransport((_) => _error(503, 'unavailable'));
       final client = _client(transport: transport, retryPolicy: _fastRetries);
