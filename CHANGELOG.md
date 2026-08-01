@@ -8,6 +8,30 @@ until it is frozen at `1.0.0`.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: `handleCallback` returns `AuthResult?`, and `null` means "this
+  link was not addressed here".** Before acting on a URL it is now checked
+  against the client's own `redirectUri` and must carry at least one of `state`,
+  `code` or `error`. A URL failing either check returns `null` with nothing
+  touched — not even a read of the store. The Kotlin SDK has had this; this SDK
+  acted on whatever URL it was handed.
+
+  It matters because hosts are told to route their whole deep-link surface
+  through this method, and any app on the device can register a scheme and fire
+  a URL at yours. Without the check, an unrelated link — your own marketing
+  link, a share intent, a stray redirect — was judged as an OAuth redirect, and
+  the honest verdict on a link carrying no `state` is
+  `TraciveStateMismatchException`: an error raised at the user about a consent
+  that is perfectly fine.
+
+  **What you need to change:** add a `case null:` to your `switch`, and treat it
+  as "carry on with my own routing". The comparison is deliberately loose —
+  scheme, authority and path, case-insensitive, trailing slashes ignored — so a
+  browser that normalises the URL on the way back cannot cost a user the consent
+  they just gave. `state` still decides whether a code may be redeemed; nothing
+  past the gate moved.
+
 ### Added
 
 - **`TraciveOAuth.cancelPendingAuthorization()` and

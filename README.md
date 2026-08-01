@@ -66,7 +66,7 @@ Future<void> main() async {
   // 1. The user consents in the Tracive app (Custom Tab / Universal Link).
   await client.authorize();
   // ... and in your deep-link handler:
-  //     await client.handleCallback(incomingUrl);
+  //     await client.handleCallback(incomingUrl); // null == not our link
 
   // 2. Check something.
   final result = await client.checkScammer(

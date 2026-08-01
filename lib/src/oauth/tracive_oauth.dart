@@ -375,7 +375,32 @@ class TraciveOAuth {
   /// Handles the redirect — steps 5 and 6 in `doc/oauth.md`.
   ///
   /// Call this from the host app's App Link / Universal Link handler with the
-  /// incoming URL.
+  /// incoming URL. Routing **every** incoming link through it is fine, and is
+  /// what the next paragraph exists to make safe.
+  ///
+  /// ## `null` means "this link was not addressed here"
+  ///
+  /// Before anything else — before the store is read, before a pending record
+  /// is judged — the URL is checked against this client's own `redirectUri`,
+  /// and it must carry at least one of `state`, `code` or `error`. A URL that
+  /// fails either check returns `null` with nothing touched, because it is not
+  /// this SDK's to interpret.
+  ///
+  /// That gate is not decoration. Any app on the device can register a custom
+  /// scheme and fire a URL at yours, and a host is encouraged to funnel its
+  /// whole deep-link surface through here. Without it, one unrelated link —
+  /// your own marketing link, a share intent, a stray redirect from another
+  /// app — would be judged as an OAuth redirect, and the honest verdict on a
+  /// link carrying no `state` is [TraciveStateMismatchException]: an error
+  /// raised at the user, about a consent that is still perfectly fine, for a
+  /// link that had nothing to do with it. `null` says the true thing instead.
+  ///
+  /// It narrows what is accepted and nothing else. Everything past the gate is
+  /// unchanged: `state` is still what decides whether a code may be redeemed,
+  /// and being generous here costs nothing because of it. The comparison is
+  /// therefore deliberately loose — scheme, authority and path, case-insensitive
+  /// and ignoring trailing slashes — so that a browser that normalises the URL
+  /// on the way back cannot drop a genuine redirect.
   ///
   /// The `state` check runs **first**, before the `error` and `code`
   /// parameters are even read. That ordering is the point of `state`: a
@@ -406,7 +431,7 @@ class TraciveOAuth {
   ///
   /// One `switch` over the result therefore covers every outcome, and there is
   /// nothing to catch alongside it.
-  Future<AuthResult> handleCallback(Uri url) async {
+  Future<AuthResult?> handleCallback(Uri url) async {
     try {
       return await _handleCallback(url);
     } on TraciveException catch (error) {
@@ -416,7 +441,15 @@ class TraciveOAuth {
     }
   }
 
-  Future<AuthResult> _handleCallback(Uri url) async {
+  Future<AuthResult?> _handleCallback(Uri url) async {
+    // Both "not mine" gates run before the store is touched, so a link that was
+    // never addressed here really does leave everything as it found it.
+    // Both "not mine" gates run before the store is touched, so a link that was
+    // never addressed here really does leave everything as it found it.
+    if (!_isOurRedirect(url)) return null;
+    final parameters = _redirectParameters(url);
+    if (!_oauthRedirectParameters.any(parameters.containsKey)) return null;
+
     final pending = await _tokenStore.readPending();
     if (pending == null) {
       return const AuthResult.failed(
@@ -434,7 +467,6 @@ class TraciveOAuth {
       );
     }
 
-    final parameters = _redirectParameters(url);
     final returnedState = parameters['state'];
     if (returnedState == null ||
         !_constantTimeEquals(returnedState, pending.state)) {
@@ -1087,6 +1119,46 @@ class TraciveOAuth {
       // Same: an undecodable query is treated as absent, not as fatal.
     }
     return parameters;
+  }
+
+  /// The parameters an authorization redirect must carry at least one of.
+  ///
+  /// A URL on this client's own redirect that has none of them did not come
+  /// from the authorization server, so it is left alone rather than allowed to
+  /// resolve — or to fail — a pending request. Spelled the same in the Kotlin
+  /// SDK.
+  static const List<String> _oauthRedirectParameters = <String>[
+    'state',
+    'code',
+    'error',
+  ];
+
+  /// Whether [url] is addressed to this client's own redirect URI.
+  ///
+  /// Compared as everything before the query and the fragment — scheme,
+  /// authority and path, the parts a redirect registration fixes.
+  /// Case-insensitively, because scheme and host are (RFC 3986 §3.1 and
+  /// §3.2.2), and with trailing slashes ignored, because a browser adds one to
+  /// a bare-authority URL and a registration usually does not carry it.
+  ///
+  /// Getting this wrong in the permissive direction costs nothing: `state` is
+  /// still checked afterwards, and that is what actually decides whether a code
+  /// may be redeemed. Getting it wrong in the restrictive direction would drop
+  /// a real redirect, so it errs towards accepting.
+  bool _isOurRedirect(Uri url) =>
+      _redirectTarget(url.toString()).toLowerCase() ==
+      _redirectTarget(mode.redirectUri).toLowerCase();
+
+  static String _redirectTarget(String url) {
+    var target = url;
+    final fragment = target.indexOf('#');
+    if (fragment >= 0) target = target.substring(0, fragment);
+    final query = target.indexOf('?');
+    if (query >= 0) target = target.substring(0, query);
+    while (target.endsWith('/')) {
+      target = target.substring(0, target.length - 1);
+    }
+    return target;
   }
 
   /// Length-independent-ish comparison for the `state` nonce.

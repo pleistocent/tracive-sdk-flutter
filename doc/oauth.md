@@ -111,6 +111,11 @@ and, wherever your app receives its deep links:
 ```dart
 Future<void> onDeepLink(Uri url) async {
   switch (await client.handleCallback(url)) {
+    case null:
+      // Not this SDK's redirect, or no OAuth parameter on it. Nothing was
+      // touched — route the link onward to whatever else your app does with
+      // deep links.
+      await myRouter.handle(url);
     case AuthAuthorized(:final grantedScopes):
       // Check what was actually granted; do not assume you got what you asked
       // for.
@@ -226,6 +231,12 @@ Then add the Associated Domains capability with
 Route incoming links to `client.handleCallback(url)`. Any deep-link package
 works (`app_links`, `uni_links`, `go_router`'s deep-link handling); the SDK does
 not care which, and deliberately does not depend on one.
+
+**Routing every link through it is safe, and is the intended use.**
+`handleCallback` returns `null` for a URL that is not this client's redirect, or
+that carries none of `state`, `code` or `error` — "not mine", not an error, and
+nothing touched, not even a read of the store. Treat `null` as "carry on with
+your own routing".
 
 ---
 

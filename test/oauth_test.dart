@@ -1614,6 +1614,131 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // Whose redirect is this?
+  //
+  // Hosts are encouraged to route their whole deep-link surface through
+  // handleCallback, and any app on the device can register a scheme and fire a
+  // URL at yours. Without an ownership check, an unrelated link — a marketing
+  // link, a share intent, a stray redirect from another app — is judged as an
+  // OAuth redirect, and the honest verdict on a link carrying no `state` is a
+  // state mismatch: an error raised at the user about a consent that is
+  // perfectly fine.
+  //
+  // The check narrows what is accepted, so both directions are pinned here: a
+  // foreign URL is refused, and the genuine redirect still completes.
+  // ---------------------------------------------------------------------------
+  group('callback ownership', () {
+    test('a URL on somebody else\'s redirect is not ours', () async {
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(tokenStore: store);
+      final pending = await _startFlow(oauth, store);
+
+      final result = await oauth.handleCallback(
+        Uri.parse(
+          'https://attacker.example/oauth/callback'
+          '?state=${pending.state}&code=stolen',
+        ),
+      );
+
+      expect(result, isNull, reason: '"not mine" is not an error');
+      expect(
+        await store.readPending(),
+        isNotNull,
+        reason: 'a foreign URL must not cancel a consent in progress',
+      );
+    });
+
+    test('the same path on a different scheme is not ours either', () async {
+      final oauth = _oauth();
+      expect(
+        await oauth.handleCallback(
+          Uri.parse('myapp://partner.example/oauth/callback?code=c&state=s'),
+        ),
+        isNull,
+      );
+    });
+
+    test('a different path on our own host is not ours', () async {
+      final oauth = _oauth();
+      expect(
+        await oauth.handleCallback(
+          Uri.parse('https://partner.example/other?code=c&state=s'),
+        ),
+        isNull,
+      );
+    });
+
+    test('our own redirect carrying no OAuth parameter is left alone',
+        () async {
+      // The second gate. This is a real link on the registered redirect — a
+      // browser landing on the bare callback page, for instance — and it did
+      // not come from the authorization server.
+      final oauth = _oauth();
+      expect(
+        await oauth.handleCallback(
+          Uri.parse('https://partner.example/oauth/callback?utm_source=email'),
+        ),
+        isNull,
+      );
+    });
+
+    test('a foreign URL is refused before the store is touched at all',
+        () async {
+      // "Nothing was touched" stated as a fact rather than as an intention: a
+      // store that throws on every access proves the gate ran ahead of it.
+      final oauth = _oauth(
+        tokenStore: _RefusingStore(onReadPending: true, onWritePending: true),
+      );
+
+      expect(
+        await oauth.handleCallback(
+          Uri.parse('https://attacker.example/cb?state=s&code=c'),
+        ),
+        isNull,
+      );
+    });
+
+    test('the genuine redirect still completes', () async {
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(
+        tokenStore: store,
+        transport: _FakeTransport((_) => _ok(_tokenBody())),
+      );
+      final pending = await _startFlow(oauth, store);
+
+      final result = await oauth.handleCallback(
+        _callback(pending.state, code: 'auth-code'),
+      );
+
+      expect(result, isA<AuthAuthorized>());
+      expect((await store.read())?.accessToken, isNotEmpty);
+    });
+
+    test('a normalised redirect is still ours', () async {
+      // The comparison errs towards accepting on purpose: `state` is what
+      // decides whether a code may be redeemed, so being generous here costs
+      // nothing, while being strict would drop a real redirect. A browser that
+      // upper-cases the host or appends a trailing slash must not cost a user
+      // the consent they just gave.
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(
+        tokenStore: store,
+        transport: _FakeTransport((_) => _ok(_tokenBody())),
+      );
+      final pending = await _startFlow(oauth, store);
+
+      final result = await oauth.handleCallback(
+        Uri.parse(
+          'https://PARTNER.example/oauth/callback/'
+          '?state=${pending.state}&code=auth-code',
+        ),
+      );
+
+      expect(result, isA<AuthAuthorized>());
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Abandoning a flow the user walked away from.
   //
   // A browser that closes without a redirect produces no signal of its own: the

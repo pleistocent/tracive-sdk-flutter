@@ -344,7 +344,11 @@ class TraciveClient {
   }
 
   /// Handles the OAuth redirect — see [TraciveOAuth.handleCallback].
-  Future<AuthResult> handleCallback(Uri url) async {
+  ///
+  /// Returns `null` when [url] is not this client's redirect, or carries no
+  /// OAuth parameter at all: "not mine", not an error, and nothing was touched.
+  /// That is what makes it safe to route every incoming deep link through here.
+  Future<AuthResult?> handleCallback(Uri url) async {
     _ensureOAuthMode();
     return oauth!.handleCallback(url);
   }

@@ -75,7 +75,8 @@ published key; PKCE exists so there is nothing long-lived to ship.
 ## 4. Authorize
 
 → [`doc/oauth.md`](oauth.md). In short: `await client.authorize()`, route your
-deep link to `client.handleCallback(url)`, `switch` on the sealed `AuthResult`.
+deep link to `client.handleCallback(url)`, `switch` on the sealed `AuthResult`
+— and on `null`, which means the link was not this SDK's to interpret.
 
 ## 5. Open the persistent cache (recommended)
 
