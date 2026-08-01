@@ -27,13 +27,22 @@ DerivedData/
 .cxx/
 local.properties
 
-# `pubspec.lock` is deliberately NOT committed. This repo publishes a package
-# (a library), not an application: a committed lock file would pin resolutions
-# that consumers never use, and it would go stale against the version ranges in
-# pubspec.yaml. The example app is a Flutter app but is checked out as part of
-# this package, so it shares the rule.
-pubspec.lock
-example/pubspec.lock
+# The published package's own `pubspec.lock` is deliberately NOT committed.
+# This repo publishes a library, not an application: a committed lock file
+# would pin resolutions that consumers never use, and it would go stale against
+# the version ranges in pubspec.yaml.
+#
+# `example/pubspec.lock` is committed, and the distinction is the point. The
+# example is an application, and it is what CI builds. Leaving it unpinned
+# meant every CI run re-resolved every plugin, so a green run pinned nothing
+# and an upstream publish could turn this repo red with no change to it — which
+# is exactly how the Kotlin 2.x breakage arrived. It also contradicted this
+# workflow's own reason for pinning FLUTTER_VERSION: "a floating channel means
+# a Flutter release can turn a green PR red with no change to this repo".
+#
+# Anchored with a leading slash so it means "the one at the repo root" and not
+# "every pubspec.lock anywhere", which is what silently swallowed the example's.
+/pubspec.lock
 
 # Generated platform folders in the example app. `flutter create .` regenerates
 # them from `example/pubspec.yaml`; committing them means every Flutter upgrade
