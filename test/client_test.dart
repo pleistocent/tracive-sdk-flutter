@@ -1429,6 +1429,21 @@ void main() {
   // person to pick up this device must not inherit it, and the SDK must not go
   // on serving verdicts obtained under consent that has just been withdrawn.
   // ---------------------------------------------------------------------------
+  group('isAuthorized', () {
+    test('true with a grant, false without, false in proxy mode', () async {
+      final transport = _FakeTransport((_) => _ok('{}'));
+      final authorized = _client(
+        transport: transport,
+        tokenStore: _authorizedStore(),
+      );
+      expect(await authorized.isAuthorized, isTrue);
+
+      final empty =
+          _client(transport: transport, tokenStore: InMemoryTokenStore());
+      expect(await empty.isAuthorized, isFalse);
+    });
+  });
+
   group('clearCache', () {
     test('empties the cache and leaves the grant alone', () async {
       final clock = MutableClock(_t0);

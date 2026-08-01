@@ -432,6 +432,14 @@ class TraciveClient {
     await cache.clear();
   }
 
+  /// Whether a grant is stored, by delegating to [oauth].
+  ///
+  /// False in proxy mode rather than throwing: a proxied client genuinely holds
+  /// no grant, which is an answer to the question rather than a misuse of it.
+  /// Swift, Kotlin and React Native all spell it this way.
+  Future<bool> get isAuthorized async =>
+      mode is TraciveOAuthMode ? await oauth!.isAuthorized : false;
+
   /// Empties the result cache, and nothing else.
   ///
   /// The same call as `client.cache.clear()`, named where a reader looks for
