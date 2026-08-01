@@ -54,6 +54,17 @@ until it is frozen at `1.0.0`.
 
 ### Added
 
+- **`TraciveScopes` holds the OAuth scope names as constants** —
+  `TraciveScopes.scammerCheck` (`scammer.check`), `creditsRead`
+  (`credits.read`) and `profileRead` (`profile.read`) — matching the other
+  Tracive SDKs. A scope name is only ever validated by the authorization
+  server, which rejects the whole consent request when it does not recognise
+  one, so a mistyped literal is not a narrower grant: it is an integration that
+  cannot authorize at all, discoverable only against a live server. A test pins
+  the three strings as literals, so renaming a constant fails the build instead
+  of quietly redefining the contract. Nothing changed on the wire — the names
+  were already correct everywhere — and the list is exactly the scopes this
+  SDK's own calls need rather than the server's whole catalogue.
 - **`UnormNormalizer` is now shipped by the SDK** (`lib/src/query/
   unorm_normalizer.dart`) and exported. `unorm_dart` was already a declared
   dependency, but the full-Unicode adapter that uses it had to be hand-copied

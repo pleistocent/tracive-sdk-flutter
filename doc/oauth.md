@@ -38,7 +38,7 @@ final client = TraciveClient(
   mode: TraciveMode.oauth(
     clientId: 'your-client-id',
     redirectUri: 'https://your.app/oauth/callback',
-    scopes: const ['scammer.check'],
+    scopes: const [TraciveScopes.scammerCheck],
   ),
 );
 
@@ -65,7 +65,9 @@ Future<void> onDeepLink(Uri url) async {
     case AuthAuthorized(:final grantedScopes):
       // Check what was actually granted; do not assume you got what you asked
       // for.
-      if (!grantedScopes.contains('scammer.check')) showDegradedUi();
+      if (!grantedScopes.contains(TraciveScopes.scammerCheck)) {
+        showDegradedUi();
+      }
     case AuthCodeReceived(:final code, :final codeVerifier, :final redirectUri):
       // ClientType.confidential only. Forward these to YOUR backend over TLS
       // and hold them nowhere else — they are bearer credentials until they

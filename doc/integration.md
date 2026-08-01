@@ -40,13 +40,30 @@ final client = TraciveClient(
   mode: TraciveMode.oauth(
     clientId: 'your-client-id',
     redirectUri: 'https://your.app/oauth/callback',
-    scopes: const ['scammer.check'],
+    scopes: const [TraciveScopes.scammerCheck],
   ),
   // `installUrl` — where a user without the Tracive app is sent — defaults to
   // the install page every Tracive SDK opens. Pass one only to override it.
   // environment: TraciveEnvironment.sandbox,  // while you are developing
 );
 ```
+
+**Name the scopes with `TraciveScopes`, do not type the strings.** A scope name
+is only ever validated by the authorization server, which rejects the whole
+consent request when it does not recognise one — so a typo is not a narrower
+grant, it is an integration that cannot authorize at all, failing identically
+whichever name is wrong. Ask for the narrowest set that works: an unused scope
+on the consent screen is one more permission the user has to accept.
+
+| Constant                     | Wire value      | Grants                                    |
+| ---------------------------- | --------------- | ----------------------------------------- |
+| `TraciveScopes.scammerCheck` | `scammer.check` | running a scammer check (`checkScammer`)  |
+| `TraciveScopes.creditsRead`  | `credits.read`  | reading the remaining credits (`credits`) |
+| `TraciveScopes.profileRead`  | `profile.read`  | reading the minimal profile (`profile`)   |
+
+`scopes` defaults to `[TraciveScopes.scammerCheck]` alone. Check
+`AuthAuthorized.grantedScopes` rather than assuming you were given what you
+asked for.
 
 **There is no API-key parameter here, in any mode.** That is a hard design
 invariant, not an omission. A long-lived key shipped inside a mobile binary is a

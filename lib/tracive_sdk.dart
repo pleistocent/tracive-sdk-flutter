@@ -53,6 +53,7 @@ export 'src/model/risk_tier.dart';
 export 'src/model/source.dart';
 export 'src/model/tracive_environment.dart';
 export 'src/model/tracive_mode.dart';
+export 'src/model/tracive_scopes.dart';
 export 'src/oauth/auth_launcher.dart';
 export 'src/oauth/token_store.dart';
 export 'src/oauth/tracive_oauth.dart';

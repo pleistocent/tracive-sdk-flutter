@@ -1,6 +1,7 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 
 import 'client_type.dart';
+import 'tracive_scopes.dart';
 
 /// How the client authenticates.
 ///
@@ -41,7 +42,7 @@ final class TraciveOAuthMode extends TraciveMode {
   const TraciveOAuthMode({
     required this.clientId,
     required this.redirectUri,
-    this.scopes = const <String>['scammer.check'],
+    this.scopes = const <String>[TraciveScopes.scammerCheck],
     this.partnerUserId,
     this.clientType = ClientType.public,
   });
@@ -54,7 +55,13 @@ final class TraciveOAuthMode extends TraciveMode {
   /// Link the host app owns; completing the flow in a WebView is forbidden.
   final String redirectUri;
 
-  /// Scopes to request.
+  /// Scopes to request, as the exact wire strings — name them with
+  /// [TraciveScopes] rather than typing them.
+  ///
+  /// Ask for the narrowest set that works; the default is the single scope
+  /// `checkScammer` needs. The server rejects the whole consent request when it
+  /// does not recognise a name, so a typo here is not a narrower grant, it is
+  /// an integration that cannot authorize.
   final List<String> scopes;
 
   /// The partner's own id for this end user, when they want the grant tied to

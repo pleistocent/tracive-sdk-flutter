@@ -98,7 +98,11 @@ class _CheckScreenState extends State<CheckScreen> {
         // somebody else. `SECURITY.md` says the same, and this file is what
         // integrators copy.
         redirectUri: 'https://example.tracive.id/oauth/callback',
-        scopes: <String>['scammer.check'],
+        // Named, not typed. A scope name is only ever validated by the
+        // authorization server, and it rejects the whole consent request when
+        // it does not recognise one — so a typo is not a narrower grant, it is
+        // an integration that cannot authorize at all.
+        scopes: <String>[TraciveScopes.scammerCheck],
       ),
       // `installUrl` — where a user without the Tracive app is sent — is not
       // passed here, and a real app does not pass it either: it defaults to
@@ -117,7 +121,7 @@ class _CheckScreenState extends State<CheckScreen> {
         tokens: const TraciveTokens(
           accessToken: 'demo-access-token',
           refreshToken: 'demo-refresh-token',
-          grantedScopes: <String>['scammer.check'],
+          grantedScopes: <String>[TraciveScopes.scammerCheck],
         ),
       ),
     );

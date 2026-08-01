@@ -56,6 +56,9 @@ Future<void> main() async {
     mode: TraciveMode.oauth(
       clientId: 'your-client-id',
       redirectUri: 'https://your.app/oauth/callback', // an App Link you own
+      // Name scopes with `TraciveScopes`; a mistyped one is rejected by the
+      // authorization server as a whole, not granted narrowly.
+      scopes: const [TraciveScopes.scammerCheck],
     ),
     cache: await openTraciveCache(),                  // encrypted, on device
   );

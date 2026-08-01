@@ -728,6 +728,52 @@ void main() {
     });
   });
 
+  group('TraciveScopes', () {
+    test('are the exact wire strings', () {
+      // Spelled out as literals rather than compared to the constants
+      // themselves. A test written the other way round would pass no matter
+      // what the constants held, so renaming one would quietly redefine the
+      // contract instead of failing here.
+      //
+      // A scope name is only ever validated by the authorization server, and it
+      // rejects the whole consent request when it does not recognise one — so a
+      // wrong name is not a narrower grant, it is an integration that cannot
+      // authorize at all. There is no server to find that out against yet.
+      expect(TraciveScopes.scammerCheck, 'scammer.check');
+      expect(TraciveScopes.creditsRead, 'credits.read');
+      expect(TraciveScopes.profileRead, 'profile.read');
+    });
+
+    test('are dot-separated, never colon-separated', () {
+      // Both halves of the shape are easy to get wrong, and both have been
+      // wrong in a Tracive SDK before: a colon separator, and a resource named
+      // after neither the endpoint nor the thing acted on.
+      for (final scope in <String>[
+        TraciveScopes.scammerCheck,
+        TraciveScopes.creditsRead,
+        TraciveScopes.profileRead,
+      ]) {
+        expect(scope, contains('.'), reason: '"$scope" must be dot-separated');
+        expect(
+          scope,
+          isNot(contains(':')),
+          reason: '"$scope" must not be colon-separated',
+        );
+      }
+    });
+
+    test('are what an OAuth mode asks for by default', () {
+      // The default is the one scope every integration needs. Asking for more
+      // by default would put permissions on the consent screen that the caller
+      // never uses.
+      const mode = TraciveMode.oauth(
+        clientId: 'partner-app',
+        redirectUri: 'https://partner.example/callback',
+      );
+      expect((mode as TraciveOAuthMode).scopes, <String>['scammer.check']);
+    });
+  });
+
   group('TraciveMode', () {
     test('OAuth mode defaults to a public client and needs no secret', () {
       const mode = TraciveMode.oauth(
