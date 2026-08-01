@@ -66,7 +66,8 @@ class TraciveOAuth {
   /// Creates a flow for [mode].
   ///
   /// [installUrl] defaults to [defaultInstallUrl] and is only worth passing if
-  /// Tracive has issued you a different link.
+  /// Tracive has issued you a different link. Pass a real URL or none at all: a
+  /// blank string is an override, not an absence — see [installUrl].
   ///
   /// Everything after [installUrl] is a seam with a working default:
   /// [transport] defaults to the platform HTTP client, [tokenStore] to the
@@ -119,6 +120,15 @@ class TraciveOAuth {
   ///
   /// Defaults to [defaultInstallUrl], which is the link every Tracive SDK
   /// opens. Pass one only to override it.
+  ///
+  /// **A blank override is used as given; it does not fall back to
+  /// [defaultInstallUrl].** Only "not passed" means "use the default", and that
+  /// is deliberate. A blank value here is almost always a build variable that
+  /// did not expand, and the two failures are not symmetric: substituting the
+  /// default sends a partner's users to a link the partner never configured,
+  /// and nobody can tell, because [authorize] returns [AuthAppNotInstalled]
+  /// either way and this SDK logs nothing. Keeping the blank value opens
+  /// nothing, which surfaces the first time anyone exercises the path.
   ///
   /// Whatever it is, it is opened **clean**: the only query parameters that
   /// travel on it are `ref` (your OAuth client id — the partner's identifier,

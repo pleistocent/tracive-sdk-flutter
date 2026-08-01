@@ -43,7 +43,9 @@ final client = TraciveClient(
     scopes: const [TraciveScopes.scammerCheck],
   ),
   // `installUrl` — where a user without the Tracive app is sent — defaults to
-  // the install page every Tracive SDK opens. Pass one only to override it.
+  // the install page every Tracive SDK opens. Pass one only to override it, and
+  // pass a real URL: only omitting it means "use the default", so a blank
+  // string is an override with a blank value. See `doc/oauth.md`.
   // environment: TraciveEnvironment.sandbox,  // while you are developing
 );
 ```

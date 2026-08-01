@@ -288,6 +288,34 @@ void main() {
       expect(url.path, '/app');
       expect(url.queryParameters['ref'], 'c');
     });
+
+    test('a blank override is kept, not read as "use the default"', () {
+      // Only `null` means "not configured". A blank string is a value that was
+      // configured, and it is used as given.
+      //
+      // This is a deliberate divergence from the Kotlin SDK, which trims an
+      // override and falls back to its default when nothing is left. Both
+      // behaviours are defensible; this is the one the SDKs are converging on.
+      // A blank install URL is nearly always a build variable that did not
+      // expand, and the failure modes are not symmetric: opening the default
+      // sends a partner's users somewhere the partner did not configure and
+      // never sees, because the link opens and the flow returns the same
+      // `AuthAppNotInstalled` either way. Keeping the blank value opens
+      // nothing and shows up the first time anyone tries it.
+      for (final blank in <String>['', '   ']) {
+        expect(_oauth(installUrl: blank).installUrl, blank);
+        expect(
+          TraciveClient(
+            mode: _oauthMode,
+            installUrl: blank,
+            transport: _FakeTransport((_) => fail('unexpected request')),
+            tokenStore: InMemoryTokenStore(),
+            launcher: _FakeLauncher(installed: true),
+          ).oauth!.installUrl,
+          blank,
+        );
+      }
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -327,6 +355,30 @@ void main() {
       await oauth.authorize();
 
       expect(launcher.opened.single.host, Uri.parse(_installUrl).host);
+    });
+
+    test('a blank install link opens nowhere, not the default', () async {
+      // The behavioural half of the rule the builder test above pins: what a
+      // blank override actually hands the OS. Substituting the default here
+      // would send a partner's users to a link the partner did not configure,
+      // and neither the partner nor the user could tell — the flow returns
+      // `AuthAppNotInstalled` in both cases, so nothing downstream differs.
+      final launcher = _FakeLauncher(installed: false);
+      final oauth = _oauth(launcher: launcher, installUrl: '');
+
+      final result = await oauth.authorize();
+
+      expect(result, isA<AuthAppNotInstalled>());
+      final opened = launcher.opened.single;
+      expect(
+        opened.host,
+        isNot(Uri.parse(TraciveOAuth.defaultInstallUrl).host),
+        reason: 'a blank override must not become the default link',
+      );
+      // Nothing an OS can open: no scheme, no host. That is the point — it
+      // fails where it is configured rather than working against the wrong URL.
+      expect(opened.hasScheme, isFalse);
+      expect(opened.host, isEmpty);
     });
 
     test('the presence check runs before anything is generated', () async {

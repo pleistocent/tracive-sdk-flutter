@@ -103,7 +103,16 @@ until it is frozen at `1.0.0`.
   because the URL was not yet confirmed and a wrong default would have been
   invisible in development while being a 404 for every partner's first user
   without the app; the URL is confirmed now, so the argument goes back to being
-  an override. Passing one still works and still wins.
+  an override. Passing one still works and still wins. **Only omitting it means
+  "use the default":** a blank or whitespace-only `installUrl` is an override
+  with a blank value and is used as given, not replaced by the default link.
+  That was already the behaviour; it is now documented on the parameter and
+  pinned by a test, because it is the kind of thing a later "tidy-up" removes.
+  A blank value is nearly always a build variable that did not expand, and
+  substituting the default would send a partner's users to a link the partner
+  never configured with nothing to show for it — `authorize()` returns
+  `AuthAppNotInstalled` either way and this SDK logs nothing — whereas keeping
+  it opens nothing and surfaces the mistake the first time the path is used.
 - **The install link now carries `ref=<clientId>` and
   `utm_source=tracive-sdk-flutter`**, replacing `utm_source=<clientId>` and
   `utm_medium=tracive_sdk_flutter`, to match the other Tracive SDKs. Both

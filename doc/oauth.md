@@ -267,6 +267,17 @@ fresh PKCE pair anyway.
 > 404 for every partner's first user without the app. The URL is confirmed now,
 > so the argument is back to being an override.
 
+**Only "not passed" means "use the default".** A blank or whitespace-only
+`installUrl` is an override with a blank value, and it is used as given rather
+than quietly replaced by the link above. That is deliberate. A blank value is
+nearly always a build variable that did not expand, and the two possible
+behaviours fail very differently: substituting the default sends your users to a
+link you never configured, and neither you nor they can tell, because
+`authorize()` returns `AuthAppNotInstalled` either way and this SDK logs
+nothing. Keeping the blank value opens nothing, so the mistake shows up the
+first time anybody without the Tracive app tries it. Pass a real URL, or pass
+nothing.
+
 ---
 
 ## Testing it without a backend

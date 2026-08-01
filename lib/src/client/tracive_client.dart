@@ -83,7 +83,9 @@ class TraciveClient {
   ///
   /// The first four parameters are the configuration. [installUrl] applies in
   /// OAuth mode only and defaults to [TraciveOAuth.defaultInstallUrl], so pass
-  /// it only to override that link. The rest are seams:
+  /// it only to override that link — and pass a real URL when you do, because
+  /// only `null` means "use the default"; a blank string is an override and is
+  /// used as given (see [TraciveOAuth.installUrl] for why). The rest are seams:
   /// [transport] and [clock] are named as such by the cross-SDK contract;
   /// [retryPolicy], [cache], [tokenStore], [launcher] and [oauth] are additive,
   /// and every one of them has a working default, so an app passes none of
