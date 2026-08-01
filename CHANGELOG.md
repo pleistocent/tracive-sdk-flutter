@@ -54,13 +54,29 @@ until it is frozen at `1.0.0`.
   round trip. The React Native SDK had it; Kotlin, Swift and this SDK did not.
 
   **What you will observe:** a second `checkScammer` for the same identifier,
-  detail level and locale, started while the first is still on the wire, joins
-  that request and both callers get the same answer, stamped `Origin.server`.
-  The latch is released the moment the request settles — successfully or not —
-  so it never serves a stale answer and never pins a failure in place. Checks
-  that do not overlap are unaffected: that is the cache's job, and its rules
-  have not changed. The detail level and the locale are part of the key, so a
-  minimal result is never handed to a caller who asked for full.
+  detail level, locale and `idempotencyKey`, started while the first is still on
+  the wire, joins that request and both callers get the same answer, stamped
+  `Origin.server`. The latch is released the moment the request settles —
+  successfully or not — so it never serves a stale answer and never pins a
+  failure in place. Checks that do not overlap are unaffected: that is the
+  cache's job, and its rules have not changed. The detail level and the locale
+  are part of the key, so a minimal result is never handed to a caller who asked
+  for full.
+
+  **Your own `idempotencyKey` is part of the key too**, and it is the one piece
+  of it that is a statement of intent rather than a description of the question.
+  Two overlapping checks carrying two different keys of yours are two
+  transactions you deliberately told this client apart, so they are two
+  requests, each sent under the key you gave it — collapsing them would have put
+  only the first key on the wire and left the second transaction never made. A
+  check carrying one of your keys likewise never joins a flight started without
+  one, which is what keeps its retry budget: only a key of yours makes a check
+  safe to repeat after a 5xx or a timeout, and joining would have taken that
+  away silently. The per-call key this SDK generates when you supply none is
+  *not* in the latch key — it is unique per call, so it would give every check a
+  flight of its own — and a blank key is no key here, exactly as on the wire.
+  Two unkeyed checks, which is what a double-tapped button and a list cell
+  rendered twice both are, still share one request and one charge.
 
 - **A 401 now triggers the refresh whenever it is not terminal**, rather than
   only when the body carries exactly `expired_token`. A bare

@@ -639,6 +639,12 @@ void main() {
     test('are one request and one charge', () async {
       // The gate is what makes this a concurrency test rather than a scheduling
       // one: neither check can answer until both are on the wire.
+      //
+      // It is also what pins the *generated* key out of the latch key. Neither
+      // call supplied one, so each is given a per-call key of its own — and a
+      // latch keyed off the key actually sent would therefore give every unkeyed
+      // check a flight to itself and turn the feature off, with only this
+      // assertion to notice.
       final gate = Completer<TraciveHttpResponse>();
       final transport = _FakeTransport((_) => gate.future);
       final client = _client(transport: transport);
@@ -718,6 +724,120 @@ void main() {
         transport.to('/scammer-checks').map((r) => _bodyOf(r)['locale']),
         containsAll(<String>['id', 'en']),
       );
+    });
+
+    test("differing only in the caller's idempotency key are not shared",
+        () async {
+      // Two keys are the caller saying "these are two billable transactions".
+      // Sharing one flight between them answered both from one request, sent
+      // under whichever key arrived first — so the second caller's transaction
+      // never reached the server under the name they gave it, and they were
+      // never told. The generated key already refuses to be derived from the
+      // query for this exact reason; the latch was doing it through another
+      // door.
+      final gate = Completer<TraciveHttpResponse>();
+      final transport = _FakeTransport((_) => gate.future);
+      final client = _client(transport: transport);
+
+      final first = client.checkScammer(
+        query,
+        source: Source.server,
+        idempotencyKey: 'txn-1',
+      );
+      final second = client.checkScammer(
+        query,
+        source: Source.server,
+        idempotencyKey: 'txn-2',
+      );
+      await Future<void>.delayed(Duration.zero);
+      gate.complete(_ok(_checkBody()));
+      await Future.wait<CheckResult>(<Future<CheckResult>>[first, second]);
+
+      final sent = transport.to('/scammer-checks');
+      expect(sent, hasLength(2));
+      expect(
+        sent.map((request) => request.header('idempotency-key')),
+        containsAll(<String>['txn-1', 'txn-2']),
+        reason: 'each transaction must reach the server under its own key',
+      );
+    });
+
+    test('a keyed check does not join an unkeyed flight', () async {
+      // The retry budget keys off the caller's key alone. A keyed caller that
+      // joined an unkeyed flight would lose it without being told: a 5xx or a
+      // timeout would be surfaced immediately on a check the caller had gone to
+      // the trouble of making safe to repeat.
+      final gate = Completer<TraciveHttpResponse>();
+      final transport = _FakeTransport((_) => gate.future);
+      final client = _client(transport: transport);
+
+      final unkeyed = client.checkScammer(query, source: Source.server);
+      final keyed = client.checkScammer(
+        query,
+        source: Source.server,
+        idempotencyKey: 'txn-1',
+      );
+      await Future<void>.delayed(Duration.zero);
+      gate.complete(_ok(_checkBody()));
+      await Future.wait<CheckResult>(<Future<CheckResult>>[unkeyed, keyed]);
+
+      final keys = transport
+          .to('/scammer-checks')
+          .map((request) => request.header('idempotency-key'))
+          .toList();
+      expect(keys, hasLength(2));
+      expect(keys, contains('txn-1'));
+      expect(keys.where((key) => key!.startsWith('sdk-')), hasLength(1));
+    });
+
+    test('carrying the same caller key are one transaction, and are shared',
+        () async {
+      // The other direction. One key twice is one transaction named once, so
+      // including the key in the latch must not stop these two sharing — a
+      // per-call latch would be no latch at all.
+      final gate = Completer<TraciveHttpResponse>();
+      final transport = _FakeTransport((_) => gate.future);
+      final client = _client(transport: transport);
+
+      final first = client.checkScammer(
+        query,
+        source: Source.server,
+        idempotencyKey: 'txn-1',
+      );
+      final second = client.checkScammer(
+        query,
+        source: Source.server,
+        idempotencyKey: 'txn-1',
+      );
+      await Future<void>.delayed(Duration.zero);
+      gate.complete(_ok(_checkBody()));
+      await Future.wait<CheckResult>(<Future<CheckResult>>[first, second]);
+
+      final sent = transport.to('/scammer-checks');
+      expect(sent, hasLength(1));
+      expect(sent.single.header('idempotency-key'), 'txn-1');
+    });
+
+    test('are not split by a blank caller key, which is no key at all',
+        () async {
+      // `'   '` buys no retry budget and is replaced on the wire by a generated
+      // key. It must not split the latch either, or blankness would be the one
+      // value that costs a second charge while granting nothing in return.
+      final gate = Completer<TraciveHttpResponse>();
+      final transport = _FakeTransport((_) => gate.future);
+      final client = _client(transport: transport);
+
+      final unkeyed = client.checkScammer(query, source: Source.server);
+      final blank = client.checkScammer(
+        query,
+        source: Source.server,
+        idempotencyKey: '   ',
+      );
+      await Future<void>.delayed(Duration.zero);
+      gate.complete(_ok(_checkBody()));
+      await Future.wait<CheckResult>(<Future<CheckResult>>[unkeyed, blank]);
+
+      expect(transport.to('/scammer-checks'), hasLength(1));
     });
 
     test('are latched only while they overlap', () async {

@@ -202,7 +202,8 @@ class TraciveClient {
   final TraciveClock _clock;
   final RetryPolicy _retryPolicy;
 
-  /// Checks currently on the wire, keyed by row key, detail level and locale.
+  /// Checks currently on the wire, keyed by row key, detail level, locale and
+  /// the caller's own idempotency key.
   ///
   /// The latch itself, and the reasoning for it, is on [_fetchCheckLatched].
   final Map<String, Future<CheckResult>> _inFlightChecks =
@@ -241,6 +242,14 @@ class TraciveClient {
   /// cells — is billed once. Both callers get the same answer, stamped
   /// [Origin.server], because that is where it came from. Checks that do not
   /// overlap are the cache's business, not this one's.
+  ///
+  /// **Your [idempotencyKey] is part of what "identical" means.** Two
+  /// overlapping checks that carry different keys of yours are two transactions
+  /// you deliberately told this client apart, so they are two requests; a check
+  /// carrying one of your keys never joins a flight started without it, which is
+  /// what keeps its retry budget. Sharing still covers the case the latch exists
+  /// for, because a double-tapped button and a list cell rendered twice go
+  /// through one code path with one set of options.
   ///
   /// Throws a [TraciveException] subtype from the error-code table, or
   /// [TraciveCacheMissException] when `source: Source.cache` finds no live
@@ -491,9 +500,28 @@ class TraciveClient {
   /// question hands somebody the wrong answer. Every Tracive SDK spells this
   /// key the same way.
   ///
-  /// The caller's `idempotencyKey` is deliberately *not* in the key. Two
-  /// callers asking the same question are one billable operation whatever they
-  /// each named it, and one of the two keys is the one that reaches the server.
+  /// It carries the **caller's** idempotency key as well, when there is one,
+  /// because that key is an explicit statement that this check is a transaction
+  /// of the caller's own. Leaving it out overrode that statement twice over: a
+  /// caller who supplied a key could join a flight started by one who did not,
+  /// silently losing the retry budget that only a caller's key grants; and two
+  /// overlapping checks carrying two different keys — the caller saying these
+  /// are two billable transactions — were collapsed into one request under
+  /// whichever key happened to arrive first. [_generatedIdempotencyKey] refuses
+  /// to derive a key from the query for the same reason, "since that would
+  /// collapse two deliberate re-checks of the same identifier into one"; the
+  /// latch was doing exactly that through another door. What the latch exists
+  /// for is untouched, because a double-tapped button and a list cell rendered
+  /// twice reach this method through one code path with one set of options, and
+  /// so still share a flight.
+  ///
+  /// The **generated** key must never go in here. It is unique per call, so
+  /// including it would give every unkeyed check a latch of its own and turn the
+  /// feature off entirely — which is why the key is read here, where a caller's
+  /// key and no key are still distinguishable, rather than in [_fetchCheck]
+  /// where one has already been substituted for the other. A blank key is no
+  /// key, in the latch exactly as on the wire. The caller's key goes last, so a
+  /// value containing the separator cannot be read as another segment.
   ///
   /// Nothing is awaited between reading the map and writing it — this method is
   /// not `async` for exactly that reason. An `await` in that gap is the whole
@@ -514,8 +542,8 @@ class TraciveClient {
     required String? locale,
     required String? idempotencyKey,
   }) {
-    final latchKey =
-        '${cacheKeyFor(query)}|${detail.wireValue}|${locale ?? ''}';
+    final latchKey = '${cacheKeyFor(query)}|${detail.wireValue}|'
+        '${locale ?? ''}|${_callerIdempotencyKey(idempotencyKey) ?? ''}';
     final existing = _inFlightChecks[latchKey];
     if (existing != null) return existing;
 
@@ -541,8 +569,7 @@ class TraciveClient {
     required String? locale,
     required String? idempotencyKey,
   }) async {
-    final trimmed = idempotencyKey?.trim();
-    final callerKey = trimmed != null && trimmed.isNotEmpty ? trimmed : null;
+    final callerKey = _callerIdempotencyKey(idempotencyKey);
     final body = jsonEncode(<String, Object?>{
       // phase 1 always sends USER.
       'creditSource': Billing.userCreditSource,
@@ -685,6 +712,19 @@ class TraciveClient {
       }
       throw failure;
     }
+  }
+
+  /// The caller's own idempotency key, or `null` when they supplied none.
+  ///
+  /// Trimmed, because a stray space would make this client's post-refresh
+  /// replay a different key from the attempt it repeats — the one thing an
+  /// idempotency key must never be. A value that is blank once trimmed is no
+  /// key at all: it buys no retry budget, a generated key is sent in its place,
+  /// and it does not split the latch either. One reading of "the caller
+  /// supplied a key", used everywhere that answer decides anything.
+  static String? _callerIdempotencyKey(String? idempotencyKey) {
+    final trimmed = idempotencyKey?.trim();
+    return trimmed == null || trimmed.isEmpty ? null : trimmed;
   }
 
   /// A per-call key for a check the caller did not key itself.
