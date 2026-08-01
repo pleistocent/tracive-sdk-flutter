@@ -41,14 +41,12 @@ until it is frozen at `1.0.0`.
   that was not needed. This is the branch every Tracive SDK is standardising on;
   the React Native SDK already recovers here.
 
-  One caveat worth knowing if you implement your own `TokenStore`: the shipped
-  `SecureStorageTokenStore` reports a record with a blank access token as *not
-  signed in* — its `read()` answers `null` — so on the default store the repair
-  does not come up. It is reached through a store that hands back what it
-  stored. If you write your own vault, hand the record back rather than dropping
-  it: a blank access token beside a live refresh token is a grant this SDK can
-  now repair, and dropping it is what turns a repairable grant into a fresh
-  consent.
+  The shipped `SecureStorageTokenStore` keeps such a record now, and
+  `isAuthorized` reports it as authorized, so the repair is reached on the
+  default store. Both ask `TraciveTokens.isUsable`, which is true when *either*
+  credential is live. If you implement your own `TokenStore`, hand back what you
+  stored rather than dropping a record whose access token is blank — dropping it
+  is what turns a repairable grant into a fresh consent.
 - **The query fold now reproduces JavaScript's string semantics, not Dart's.**
   The API folds in JavaScript, and the folded key *is* the record key, so a
   one-code-point difference is a guaranteed miss — and a miss is billed. Three

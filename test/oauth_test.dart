@@ -971,6 +971,48 @@ void main() {
       expect((await store.read())?.refreshToken, 'refresh-token-2');
     });
 
+    test('a damaged record still counts as authorized, because it is', () async {
+      // `isAuthorized` gates the host app's routing. If it answered false for a
+      // record `ensureAccessToken` can repair, the app would send the user back
+      // through consent to replace a grant that was never lost — and the repair
+      // below would never get the chance to run.
+      final repairable = _oauth(
+        tokenStore: InMemoryTokenStore(
+          tokens: const TraciveTokens(
+            accessToken: '',
+            refreshToken: 'refresh-token-1',
+          ),
+        ),
+        transport: _FakeTransport((_) => fail('nothing should be sent')),
+      );
+      expect(await repairable.isAuthorized, isTrue);
+
+      // A record holding neither credential is genuinely not signed in.
+      final empty = _oauth(
+        tokenStore: InMemoryTokenStore(
+          tokens: const TraciveTokens(accessToken: ''),
+        ),
+        transport: _FakeTransport((_) => fail('nothing should be sent')),
+      );
+      expect(await empty.isAuthorized, isFalse);
+    });
+
+    test('isUsable is what the store and isAuthorized both ask', () {
+      // The shipped secure store cannot be exercised here — its test harness
+      // deliberately touches no platform channel — so the decision it makes is
+      // pinned as the predicate instead of as a round trip through the plugin.
+      const both = TraciveTokens(accessToken: 'at', refreshToken: 'rt');
+      const accessOnly = TraciveTokens(accessToken: 'at');
+      const refreshOnly = TraciveTokens(accessToken: '', refreshToken: 'rt');
+      const neither = TraciveTokens(accessToken: '');
+
+      expect(both.isUsable, isTrue);
+      expect(accessOnly.isUsable, isTrue);
+      expect(refreshOnly.isUsable, isTrue,
+          reason: 'a live refresh token is a real credential');
+      expect(neither.isUsable, isFalse);
+    });
+
     test('an empty access token with no refresh token is still a typed error',
         () async {
       // Nothing to spend, so there is nothing to recover: the user really does

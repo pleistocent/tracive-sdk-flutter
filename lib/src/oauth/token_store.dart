@@ -113,6 +113,15 @@ class TraciveTokens {
   /// consent.
   bool get canRefresh => (refreshToken ?? '').isNotEmpty;
 
+  /// Whether this record is worth keeping — it holds at least one live
+  /// credential.
+  ///
+  /// A record with only a refresh token counts. `ensureAccessToken` repairs it
+  /// with a single refresh, so discarding it would cost the user a trip back
+  /// through consent to replace something that still works. Only a record
+  /// holding neither is genuinely "not signed in".
+  bool get isUsable => hasAccessToken || canRefresh;
+
   /// Whether [accessToken] is past [expiresAt] at [now]. An unknown
   /// [expiresAt] answers `false`.
   ///

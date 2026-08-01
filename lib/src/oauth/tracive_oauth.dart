@@ -259,9 +259,17 @@ class TraciveOAuth {
   /// its *own* account, which is not the same event as [signOut].
   TokenStore get tokenStore => _tokenStore;
 
-  /// Whether a usable access token is stored.
-  Future<bool> get isAuthorized async =>
-      (await _tokenStore.read())?.hasAccessToken ?? false;
+  /// Whether a grant the SDK can still use is stored.
+  ///
+  /// True when there is an access token, and also when there is only a refresh
+  /// token — [ensureAccessToken] repairs that record rather than failing on it,
+  /// so answering `false` would send a host app to consent for a grant that is
+  /// still good. Matches the sibling SDKs, which all define this as "a usable
+  /// record exists" rather than "an access token exists".
+  Future<bool> get isAuthorized async {
+    final tokens = await _tokenStore.read();
+    return tokens?.isUsable ?? false;
+  }
 
   /// Scopes the server granted, or `[]` when not authorized.
   Future<List<String>> grantedScopes() async =>

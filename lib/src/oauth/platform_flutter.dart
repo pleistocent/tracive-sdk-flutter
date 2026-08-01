@@ -106,9 +106,15 @@ class SecureStorageTokenStore extends TokenStore {
     final json = decodeStorageJson(await _storage.read(key: _tokensKey));
     if (json == null) return null;
     final tokens = TraciveTokens.fromStorageJson(json);
-    // An entry that decoded but carries no access token is corrupt. Treat it as
-    // "not signed in" rather than handing an empty bearer token to the API.
-    return tokens.hasAccessToken ? tokens : null;
+    // An entry carrying neither credential is unusable — treat it as "not
+    // signed in". One that has lost its access token but kept a live refresh
+    // token is not: `ensureAccessToken` repairs it with a single refresh.
+    //
+    // This used to drop the whole record whenever the access token was blank,
+    // to keep an empty bearer off the wire. That guard now lives where the
+    // token is used, so all this one did was take a working refresh token down
+    // with the damaged half and charge the user a fresh consent for it.
+    return tokens.isUsable ? tokens : null;
   }
 
   @override

@@ -255,11 +255,13 @@ calls.
   from then on. With **no** refresh token beside it there is nothing to spend,
   and `TraciveInvalidTokenException` is still the answer.
 
-  The shipped `SecureStorageTokenStore` reports such a record as "not signed in"
-  (`read()` answers `null`), so on the default store this does not arise. If you
-  implement your own `TokenStore`, hand back what you stored rather than
-  dropping a record whose access token is blank: the SDK can repair it, and
-  dropping it is what turns a repairable grant into a fresh consent.
+  The shipped `SecureStorageTokenStore` keeps such a record, and `isAuthorized`
+  answers `true` for it — both ask `TraciveTokens.isUsable`, which is true when
+  either credential is live. That matters together: a store that dropped the
+  record, or an `isAuthorized` that ignored it, would each on their own route
+  the user back through consent before the repair could run. If you implement
+  your own `TokenStore`, hand back what you stored rather than dropping a record
+  whose access token is blank.
 - **`401 grant_revoked`** clears the stored tokens and surfaces
   `TraciveGrantRevokedException`. It is not retried; retrying with a dead
   refresh token is precisely what reuse detection is looking for.
