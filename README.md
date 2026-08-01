@@ -13,8 +13,7 @@ handle against Tracive's scam reports, from a Flutter app.
 Three things, stated plainly, because finding them out later is expensive:
 
 1. **The backend Open API is not live yet.** No `/v1/*` route, no
-   `/oauth/token`, nothing. This SDK is built against a frozen contract
-   and
+   `/oauth/token`, nothing. This SDK is built against a frozen contract, and
    every one of its tests runs **with no network, by design**. You can
    integrate, compile and unit-test today. You cannot get a real answer.
 2. **phase 1 is OAuth mode only.** `TraciveMode.proxy(...)` exists in the type

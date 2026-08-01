@@ -70,8 +70,7 @@ until it is frozen at `1.0.0`.
 ## [0.1.0] — 2026-07-31
 
 First release. phase 1: **OAuth mode only, and the backend Open API is not live
-yet.** Everything below is built against a frozen contract
-; no code path in
+yet.** Everything below is built against a frozen contract; no code path in
 this package has ever spoken to a Tracive server, because there is not one to
 speak to. Treat the wire-level behaviour as unverified against a live
 implementation until the API ships.

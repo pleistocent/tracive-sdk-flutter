@@ -75,8 +75,9 @@ void main() {
     });
 
     test('still forbids a DOMAIN builder', () {
-      // The plan lists a DOMAIN input type; the backend dropped it, so a
-      // `DOMAIN_...` key could never match - and a miss is billed. There is
+      // The Tracive API indexes five input types and DOMAIN is not one of
+      // them, so a `DOMAIN_...` key could never match - and a miss is billed.
+      // There is
       // deliberately no `TraciveQuery.domain()`, and `QueryType` has no
       // `domain` member. If this assertion ever fails because the fixture
       // changed, that is the signal to add the builder - not before.
