@@ -32,6 +32,47 @@ import 'package:tracive_sdk/src/cache/tracive_cache.dart';
 import 'package:tracive_sdk/src/oauth/platform_flutter.dart';
 
 void main() {
+  group('the cache key survives a transient Keystore failure', () {
+    test('a read that fails once is retried before the key is destroyed',
+        () async {
+      // The old code deleted the entry on the *first* error. Deleting is not
+      // recoverable: the key is gone, the encrypted database can no longer be
+      // opened, it is rebuilt empty, and every identifier in it costs a credit
+      // again. A Keystore read fails transiently for ordinary reasons — the
+      // device has not been unlocked since boot, another process holds the
+      // keystore — and treating one of those as "this entry is corrupt" is a
+      // very expensive way to be careful.
+      final storage = _FlakyStorage(failFirstReads: 1, value: 'the-key');
+      final store = SecureStorageCacheSecretStore(storage: storage);
+
+      expect(await store.read('entry'), 'the-key');
+      expect(storage.reads, 2, reason: 'the read was not retried');
+      expect(storage.deletes, 0, reason: 'the key was destroyed anyway');
+    });
+
+    test('a read that fails twice does give up, and clears the entry',
+        () async {
+      // The genuinely-undecryptable case is real and has to stay recoverable:
+      // returning null makes the caller mint a fresh key, which rebuilds the
+      // database. Two failures a moment apart are the evidence for it; one is
+      // not evidence of anything.
+      final storage = _FlakyStorage(failFirstReads: 2, value: 'the-key');
+      final store = SecureStorageCacheSecretStore(storage: storage);
+
+      expect(await store.read('entry'), isNull);
+      expect(storage.reads, 2);
+      expect(storage.deletes, 1);
+    });
+
+    test('a read that works first time is not retried', () async {
+      final storage = _FlakyStorage(failFirstReads: 0, value: 'the-key');
+      final store = SecureStorageCacheSecretStore(storage: storage);
+
+      expect(await store.read('entry'), 'the-key');
+      expect(storage.reads, 1);
+    });
+  });
+
   group('token storage options', () {
     final options = SecureStorageTokenStore.defaultSecureStorage;
 
@@ -88,4 +129,52 @@ void main() {
       cacheKey.iOptions.params['accessibility'],
     );
   });
+}
+
+/// A `FlutterSecureStorage` whose first [failFirstReads] reads throw.
+///
+/// Models a keystore that is not ready yet rather than one that is broken —
+/// the distinction the retry exists to make.
+class _FlakyStorage extends FlutterSecureStorage {
+  _FlakyStorage({required this.failFirstReads, required this.value});
+
+  /// How many leading reads should fail.
+  final int failFirstReads;
+
+  /// What a successful read returns.
+  final String value;
+
+  /// How many times [read] was called.
+  int reads = 0;
+
+  /// How many times [delete] was called.
+  int deletes = 0;
+
+  @override
+  Future<String?> read({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    reads++;
+    if (reads <= failFirstReads) throw StateError('keystore not ready');
+    return value;
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    deletes++;
+  }
 }

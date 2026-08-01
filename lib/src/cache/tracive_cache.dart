@@ -179,15 +179,33 @@ class SecureStorageCacheSecretStore extends CacheSecretStore {
 
   FlutterSecureStorage get _target => _storage ?? defaultSecureStorage;
 
-  /// Reads an entry, treating an unreadable store as an empty one.
+  /// Reads an entry, treating an unreadable store as an empty one — but only
+  /// after a second attempt.
   ///
-  /// Android's EncryptedSharedPreferences can end up undecryptable (a known
-  /// failure after some backup/restore and keystore-reset paths). Returning
-  /// `null` makes the caller mint a fresh key, which then fails to open the old
-  /// database file, which is then rebuilt — the same recovery as any other
-  /// key mismatch. Throwing here would instead disable the cache permanently.
+  /// Android's EncryptedSharedPreferences can end up genuinely undecryptable (a
+  /// known failure after some backup/restore and keystore-reset paths).
+  /// Returning `null` makes the caller mint a fresh key, which then fails to
+  /// open the old database file, which is then rebuilt — the same recovery as
+  /// any other key mismatch. Throwing here would instead disable the cache
+  /// permanently.
+  ///
+  /// The retry is what separates that case from the one it used to be confused
+  /// with. A Keystore read can also fail transiently — the device has not been
+  /// unlocked since boot, another process holds the keystore, the plugin's
+  /// channel is not up yet — and the old code deleted the entry on the first
+  /// error either way. Deleting is not recoverable: the key is gone, so the
+  /// cache is rebuilt from scratch and every identifier in it costs a credit
+  /// again. Two failures a moment apart are much more likely to mean the entry
+  /// really is unreadable; one is not evidence of anything.
   @override
   Future<String?> read(String key) async {
+    try {
+      return await _target.read(key: key);
+    } on Object {
+      // Fall through to the retry below rather than destroying the key on the
+      // strength of a single error.
+    }
+    await Future<void>.delayed(readRetryDelay);
     try {
       return await _target.read(key: key);
     } on Object {
@@ -195,6 +213,13 @@ class SecureStorageCacheSecretStore extends CacheSecretStore {
       return null;
     }
   }
+
+  /// How long to wait before re-reading an entry whose first read failed.
+  ///
+  /// Short enough not to be felt on a cache open, long enough to be past the
+  /// transient causes — a keystore that is not ready yet, or a moment of
+  /// contention.
+  static const Duration readRetryDelay = Duration(milliseconds: 50);
 
   @override
   Future<void> write(String key, String value) =>
