@@ -38,6 +38,53 @@ void main() {
   // ---------------------------------------------------------------------------
   // The table itself, row by row.
   // ---------------------------------------------------------------------------
+  group('server text never reaches toString()', () {
+    test('a server message stays on .message and off toString()', () {
+      // `toString()` is what lands in crash reports and log aggregators. This
+      // SDK vouches for every message it writes itself; it cannot vouch for the
+      // server's, and an `invalid_request` that echoes the offending query
+      // would put a phone number or a bank account in there.
+      final mapped = TraciveException.fromApiError(
+        statusCode: 400,
+        code: 'invalid_request',
+        message: 'query +6281234567891 is not indexable',
+        checkId: 'chk_9',
+      );
+
+      expect(mapped.messageFromServer, isTrue);
+      expect(
+        mapped.message,
+        'query +6281234567891 is not indexable',
+        reason: 'a caller that deliberately wants the server text still has it',
+      );
+      expect(mapped.toString(), isNot(contains('6281234567891')));
+      expect(mapped.toString(), contains('invalid_request'));
+      expect(mapped.toString(), contains('chk_9'));
+    });
+
+    test('this SDK\'s own messages are still printed', () {
+      // The point is not to print less; it is to print only what this SDK
+      // wrote. A default message carries no identifier by construction.
+      final mapped = TraciveException.fromApiError(
+        statusCode: 402,
+        code: 'insufficient_credits',
+      );
+
+      expect(mapped.messageFromServer, isFalse);
+      expect(mapped.toString(), contains(mapped.message));
+    });
+
+    test('an exception constructed inside the SDK prints its message', () {
+      const error = TraciveInvalidTokenException(
+        'Not authorized: no access token is stored.',
+        code: 'invalid_token',
+        statusCode: 401,
+      );
+      expect(error.messageFromServer, isFalse);
+      expect(error.toString(), contains('no access token is stored'));
+    });
+  });
+
   group('error-code table', () {
     void expectsMapping(
       String name, {

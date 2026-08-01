@@ -35,8 +35,14 @@
 //   (unrecognised code)       -> TraciveUnknownException(code)
 //
 // PRIVACY: no constructor here ever takes a raw identifier (phone / account /
-// e-mail) or a token, and no `toString()` prints one. Messages are either
-// literals written in this SDK or the server's own `error.message`.
+// e-mail) or a token, and no `toString()` prints one.
+//
+// That second promise needs a mechanism, not just care, because a message is
+// not always this SDK's: `fromApiError` puts the server's own `error.message`
+// on the exception, and an `invalid_request` that echoes the offending query
+// would carry an identifier this SDK never chose to handle. Such a message is
+// marked `messageFromServer`, kept on `.message` for a caller who wants it, and
+// left out of `toString()` — which is the thing that reaches crash reports.
 
 /// Base type for every error the Tracive SDK raises.
 ///
@@ -48,10 +54,26 @@ sealed class TraciveException implements Exception {
     this.code,
     this.statusCode,
     this.checkId,
+    this.messageFromServer = false,
   });
 
-  /// Human-readable description. Never contains a raw identifier or a token.
+  /// Human-readable description.
+  ///
+  /// When [messageFromServer] is `false` this is a sentence written in this
+  /// SDK, and it contains no raw identifier and no token. When it is `true`,
+  /// the text came off the wire and this SDK cannot make that promise about
+  /// it — which is why [toString] leaves it out.
   final String message;
+
+  /// Whether [message] is the server's own `error.message` rather than one of
+  /// this SDK's.
+  ///
+  /// Server text is useful and is kept, but it is not this SDK's to vouch for:
+  /// an `invalid_request` that echoes the offending query would put a phone
+  /// number or a bank account into [message], and [toString] lands in crash
+  /// reports and log aggregators. So the text stays reachable on [message] for
+  /// a caller who deliberately wants it, and stays out of [toString].
+  final bool messageFromServer;
 
   /// The wire `error.code` when this error came from the API, else `null`.
   final String? code;
@@ -76,14 +98,27 @@ sealed class TraciveException implements Exception {
   factory TraciveException.network(Object cause, [StackTrace? stackTrace]) =
       TraciveNetworkException;
 
+  /// A diagnostic line safe to put in a log or a crash report.
+  ///
+  /// Deliberately omits [message] when [messageFromServer] is `true`. This SDK
+  /// controls every message it writes and none of them carries an identifier;
+  /// it controls none of the server's, and an `invalid_request` that echoes the
+  /// offending query would put a phone number or a bank account into every
+  /// crash report the app ever files. The type, the code, the status and the
+  /// `checkId` are what a reader needs to act, and all four are this SDK's or
+  /// the protocol's rather than free text.
   @override
   String toString() {
-    final buffer = StringBuffer(runtimeType.toString())
-      ..write(': ')
-      ..write(message);
+    final buffer = StringBuffer(runtimeType.toString());
+    if (!messageFromServer) {
+      buffer
+        ..write(': ')
+        ..write(message);
+    }
     if (code != null) buffer.write(' (code: $code)');
     if (statusCode != null) buffer.write(' (http: $statusCode)');
     if (checkId != null) buffer.write(' (checkId: $checkId)');
+    if (messageFromServer) buffer.write(' (server message omitted)');
     return buffer.toString();
   }
 
@@ -101,9 +136,13 @@ sealed class TraciveException implements Exception {
     Duration? retryAfter,
   }) {
     final normalizedCode = code?.trim().toLowerCase();
-    final text = (message == null || message.trim().isEmpty)
-        ? _defaultMessageFor(statusCode, normalizedCode)
-        : message.trim();
+    // Whether the sentence below is the server's or this SDK's. It decides
+    // whether `toString()` may print it — see
+    // [TraciveException.messageFromServer].
+    final fromServer = message != null && message.trim().isNotEmpty;
+    final text = fromServer
+        ? message.trim()
+        : _defaultMessageFor(statusCode, normalizedCode);
 
     switch (normalizedCode) {
       case 'invalid_request':
@@ -112,6 +151,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'unsupported_input_type':
         return TraciveUnsupportedInputTypeException(
@@ -119,6 +159,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'unsupported_credit_source':
         return TraciveUnsupportedCreditSourceException(
@@ -126,6 +167,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'invalid_token':
         return TraciveInvalidTokenException(
@@ -133,6 +175,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'expired_token':
         return TraciveExpiredTokenException(
@@ -140,6 +183,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'grant_revoked':
         return TraciveGrantRevokedException(
@@ -147,6 +191,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'invalid_api_key':
         return TraciveInvalidApiKeyException(
@@ -154,6 +199,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'insufficient_user_credits':
         return TraciveInsufficientCreditsException(
@@ -161,6 +207,7 @@ sealed class TraciveException implements Exception {
           message: text,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'insufficient_credits':
         return TraciveInsufficientCreditsException(
@@ -168,6 +215,7 @@ sealed class TraciveException implements Exception {
           message: text,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'insufficient_partner_balance':
         return TraciveInsufficientCreditsException(
@@ -175,6 +223,7 @@ sealed class TraciveException implements Exception {
           message: text,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'missing_scope':
         return TraciveMissingScopeException(
@@ -182,6 +231,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'detail_not_permitted':
         return TraciveDetailNotPermittedException(
@@ -189,6 +239,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'credential_mismatch':
         return TraciveCredentialMismatchException(
@@ -196,6 +247,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'partner_suspended':
         return TracivePartnerSuspendedException(
@@ -203,6 +255,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'idempotency_conflict':
         return TraciveIdempotencyConflictException(
@@ -210,6 +263,7 @@ sealed class TraciveException implements Exception {
           code: normalizedCode,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
       case 'rate_limited':
         return TraciveRateLimitedException(
@@ -217,6 +271,7 @@ sealed class TraciveException implements Exception {
           message: text,
           statusCode: statusCode,
           checkId: checkId,
+          messageFromServer: fromServer,
         );
     }
 
@@ -228,6 +283,7 @@ sealed class TraciveException implements Exception {
         code: normalizedCode,
         message: text,
         checkId: checkId,
+        messageFromServer: fromServer,
       );
     }
     if (statusCode == 429) {
@@ -236,6 +292,7 @@ sealed class TraciveException implements Exception {
         message: text,
         statusCode: statusCode,
         checkId: checkId,
+        messageFromServer: fromServer,
       );
     }
     return TraciveUnknownException(
@@ -294,6 +351,7 @@ final class TraciveInvalidRequestException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -309,6 +367,7 @@ final class TraciveUnsupportedInputTypeException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -321,6 +380,7 @@ final class TraciveUnsupportedCreditSourceException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -333,6 +393,7 @@ final class TraciveInvalidTokenException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -346,6 +407,7 @@ final class TraciveExpiredTokenException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 
   @override
@@ -362,6 +424,7 @@ final class TraciveGrantRevokedException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -379,6 +442,7 @@ final class TraciveInvalidApiKeyException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -411,6 +475,7 @@ final class TraciveInsufficientCreditsException extends TraciveException {
     String? message,
     int? statusCode = 402,
     super.checkId,
+    super.messageFromServer,
   }) : super(
           message ?? 'Insufficient credits (${which.wireCode})',
           code: which.wireCode,
@@ -430,6 +495,7 @@ final class TraciveMissingScopeException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
     this.requiredScope,
   });
 
@@ -446,6 +512,7 @@ final class TraciveDetailNotPermittedException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -458,6 +525,7 @@ final class TraciveCredentialMismatchException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -470,6 +538,7 @@ final class TracivePartnerSuspendedException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -483,6 +552,7 @@ final class TraciveIdempotencyConflictException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
@@ -495,7 +565,11 @@ final class TraciveRateLimitedException extends TraciveException {
     String message = 'Rate limited',
     int? statusCode = 429,
     super.checkId,
-  }) : super(message, code: 'rate_limited', statusCode: statusCode);
+    bool messageFromServer = false,
+  }) : super(message,
+            code: 'rate_limited',
+            statusCode: statusCode,
+            messageFromServer: messageFromServer);
 
   /// Value of the `Retry-After` response header, when the server sent one.
   final Duration? retryAfter;
@@ -542,7 +616,12 @@ final class TraciveServerException extends TraciveException {
     String? code,
     String message = 'Server error',
     String? checkId,
-  }) : super(message, code: code, statusCode: statusCode, checkId: checkId);
+    bool messageFromServer = false,
+  }) : super(message,
+            code: code,
+            statusCode: statusCode,
+            checkId: checkId,
+            messageFromServer: messageFromServer);
 
   @override
   bool get isRetryable => true;
@@ -559,6 +638,7 @@ final class TraciveUnknownException extends TraciveException {
     super.code,
     super.statusCode,
     super.checkId,
+    super.messageFromServer,
   });
 }
 
