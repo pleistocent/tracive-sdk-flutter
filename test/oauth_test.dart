@@ -667,6 +667,66 @@ void main() {
       expect(result, isA<AuthAuthorized>());
     });
 
+    test(
+        'a forged redirect against a stale attempt reports the mismatch, '
+        'not the staleness', () async {
+      // The ordering test. `state` is compared before expiry, so a URL that
+      // fails the state check gets the same answer whatever the record's age —
+      // and, crucially, does not erase it. Checking expiry first would answer
+      // "expired" here, which tells whoever sent the URL that an attempt exists
+      // and has gone stale, and would clear the record on the way out, handing
+      // any installed app a way to cancel a consent in progress.
+      final clock = MutableClock(_t0);
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(
+        tokenStore: store,
+        transport: _FakeTransport(
+          (_) => fail('a forged redirect must not reach the token endpoint'),
+        ),
+        clock: clock,
+      );
+      await _startFlow(oauth, store);
+
+      clock.advance(const Duration(minutes: 30));
+      final result = await oauth.handleCallback(
+        _callback('not-the-state', code: 'auth-code'),
+      );
+
+      expect(result, isA<AuthFailed>());
+      expect((result as AuthFailed).error, isA<TraciveStateMismatchException>(),
+          reason: 'a forgery learns nothing about the record it did not match');
+      expect(await store.readPending(), isNotNull,
+          reason: 'and cannot cancel the attempt by being late about it');
+    });
+
+    test('a genuine late redirect still reports the expiry, not a mismatch',
+        () async {
+      // The other half. Putting `state` first would be worth nothing if it cost
+      // the accurate message for the honest case — it does not, because that
+      // message only means anything once the state has matched.
+      final clock = MutableClock(_t0);
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(
+        tokenStore: store,
+        transport: _FakeTransport(
+          (_) => fail('an expired attempt must not reach the token endpoint'),
+        ),
+        clock: clock,
+      );
+      final pending = await _startFlow(oauth, store);
+
+      clock.advance(const Duration(minutes: 30));
+      final result = await oauth.handleCallback(
+        _callback(pending.state, code: 'auth-code'),
+      );
+
+      expect(result, isA<AuthFailed>());
+      expect(
+          (result as AuthFailed).error, isA<TraciveInvalidRequestException>());
+      expect(await store.readPending(), isNull,
+          reason: 'an attempt the user really did abandon is erased');
+    });
+
     test('a redirect just outside the window is refused, unread', () async {
       final clock = MutableClock(_t0);
       final store = InMemoryTokenStore();

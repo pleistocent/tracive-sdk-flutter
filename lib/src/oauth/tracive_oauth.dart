@@ -458,6 +458,28 @@ class TraciveOAuth {
         ),
       );
     }
+    // `state` is checked BEFORE expiry, and the order is load-bearing in two
+    // directions.
+    //
+    // It is the security check, and a security check should not be reachable
+    // only after a non-security one has passed. It also gives every forged
+    // redirect the same answer: checking expiry first would let one learn
+    // whether an attempt exists *and* whether it has gone stale, which is a
+    // fact about this user's session handed to anyone who can call `open`.
+    //
+    // Nothing is lost by the ordering, which is the part that is easy to get
+    // backwards. The accurate "it expired" message only means anything when the
+    // state matched — a genuinely late redirect has a matching state, so it
+    // still reaches the branch below and still gets told the truth. A forged one
+    // never reaches it.
+    final returnedState = parameters['state'];
+    if (returnedState == null ||
+        !_constantTimeEquals(returnedState, pending.state)) {
+      // Do NOT clear the pending record here. A hostile or stray redirect must
+      // not be able to cancel the flow the user is genuinely in the middle of.
+      return const AuthResult.failed(TraciveStateMismatchException());
+    }
+
     if (pending.isStaleAt(_clock.now(), maxAge: pendingAuthorizationMaxAge)) {
       await _forgetPending();
       return const AuthResult.failed(
@@ -465,14 +487,6 @@ class TraciveOAuth {
           'The authorization attempt expired; start it again',
         ),
       );
-    }
-
-    final returnedState = parameters['state'];
-    if (returnedState == null ||
-        !_constantTimeEquals(returnedState, pending.state)) {
-      // Do NOT clear the pending record here. A hostile or stray redirect must
-      // not be able to cancel the flow the user is genuinely in the middle of.
-      return const AuthResult.failed(TraciveStateMismatchException());
     }
 
     final error = parameters['error'];
