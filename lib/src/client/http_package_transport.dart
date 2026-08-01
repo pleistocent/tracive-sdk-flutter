@@ -6,11 +6,23 @@
 // is what lets the whole client layer be exercised by a plain `dart test` run
 // against a fake transport.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
 import 'http_transport.dart';
+
+/// Thrown inside [HttpPackageTransport.send] when a response arrives after the
+/// caller has already timed out. Never escapes the method: the caller has its
+/// [TimeoutException] by then, and this only exists to end the drained
+/// exchange.
+class _AbandonedExchange implements Exception {
+  const _AbandonedExchange();
+
+  @override
+  String toString() => 'The response arrived after the caller timed out';
+}
 
 /// The default transport. Wraps a `package:http` [http.Client].
 ///
@@ -42,7 +54,14 @@ class HttpPackageTransport extends HttpTransport {
   final http.Client _client;
   final bool _ownsClient;
 
-  /// Per-request timeout. A hung socket otherwise hangs the caller's UI.
+  /// Per-request timeout, covering the **whole** exchange: sending the request,
+  /// receiving the headers, and reading the body to the last byte.
+  ///
+  /// Bounding the whole exchange rather than just the headers is not a detail.
+  /// `Client.send` completes as soon as the response headers arrive, so a
+  /// timeout attached only to it is already satisfied by a server that answers
+  /// promptly and then stops sending the body — and the caller waits for ever,
+  /// which is the exact failure this field exists to prevent.
   final Duration timeout;
 
   /// Whether to follow 3xx responses. Off by default — see the class docs.
@@ -62,13 +81,69 @@ class HttpPackageTransport extends HttpTransport {
       outbound.bodyBytes = utf8.encode(body);
     }
 
-    final streamed = await _client.send(outbound).timeout(timeout);
-    final response = await http.Response.fromStream(streamed);
-    return TraciveHttpResponse(
-      statusCode: response.statusCode,
-      headers: response.headers,
-      body: utf8.decode(response.bodyBytes, allowMalformed: true),
-    );
+    // Flipped when the caller gives up, so that a response arriving afterwards
+    // can be thrown away deliberately instead of being left dangling.
+    var abandoned = false;
+    // The body is read through a subscription this method keeps hold of,
+    // rather than through `Response.fromStream`, for one reason: a stalled body
+    // has to be *cancellable*. `fromStream` hands the subscription to a future
+    // nobody can reach, so a server that sends headers and then stops leaves a
+    // live listener on a socket that never returns to the pool — and the
+    // client's retry loop can do that three times for one call.
+    StreamSubscription<List<int>>? bodyReader;
+    final bodyBytes = Completer<List<int>>();
+
+    Future<TraciveHttpResponse> exchange() async {
+      final streamed = await _client.send(outbound);
+      if (abandoned) {
+        // The caller gave up before the headers even landed. `package:http`
+        // cannot abort the request, so consume the response and let go of it.
+        await streamed.stream.listen(null).cancel();
+        throw const _AbandonedExchange();
+      }
+      final collected = <int>[];
+      bodyReader = streamed.stream.listen(
+        collected.addAll,
+        onError: (Object error, StackTrace stackTrace) {
+          if (!bodyBytes.isCompleted) {
+            bodyBytes.completeError(error, stackTrace);
+          }
+        },
+        onDone: () {
+          if (!bodyBytes.isCompleted) bodyBytes.complete(collected);
+        },
+        cancelOnError: true,
+      );
+      return TraciveHttpResponse(
+        statusCode: streamed.statusCode,
+        headers: streamed.headers,
+        body: utf8.decode(await bodyBytes.future, allowMalformed: true),
+      );
+    }
+
+    final pending = exchange();
+    // Once the timeout below has fired, nothing is listening to `pending` any
+    // more, and an unlistened error future is reported as an unhandled
+    // asynchronous error — which in a host app means a crash report for a
+    // request the SDK deliberately discarded. This listener is what makes
+    // discarding it silent.
+    unawaited(pending.then<void>((_) {}, onError: (Object _) {}));
+
+    try {
+      return await pending.timeout(timeout);
+    } on TimeoutException {
+      abandoned = true;
+      final reader = bodyReader;
+      if (reader != null) {
+        await reader.cancel();
+        if (!bodyBytes.isCompleted) {
+          // Cancelling means `onDone` will never fire, so settle the exchange
+          // here rather than leaving a future pending for the process's life.
+          bodyBytes.completeError(const _AbandonedExchange());
+        }
+      }
+      rethrow;
+    }
   }
 
   @override
