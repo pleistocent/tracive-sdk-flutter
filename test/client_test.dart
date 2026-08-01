@@ -130,9 +130,18 @@ void main() {
         source: Source.server,
         idempotencyKey: '  9f3c-1  ',
       );
-      // Trimmed: a stray space would make the replay a different key, which is
-      // the one thing an idempotency key must never be.
-      expect(transport.requests.last.header('idempotency-key'), '9f3c-1');
+      // Sent exactly as given, whitespace and all. This used to be trimmed, on
+      // the grounds that a stray space would make the replay a different key —
+      // but the replay reuses the string this call captured, so it never
+      // differs either way. What trimming did change is the one thing the
+      // assertion above cares about: the partner recorded '  9f3c-1  ' against
+      // their transaction, and a server holding '9f3c-1' cannot be reconciled
+      // with their ledger on a disputed charge. Kotlin, Swift and React Native
+      // all pass the value through untouched.
+      expect(
+        transport.requests.last.header('idempotency-key'),
+        '  9f3c-1  ',
+      );
 
       await client.checkScammer(
         query,

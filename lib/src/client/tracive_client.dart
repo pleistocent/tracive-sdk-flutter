@@ -723,8 +723,12 @@ class TraciveClient {
   /// and it does not split the latch either. One reading of "the caller
   /// supplied a key", used everywhere that answer decides anything.
   static String? _callerIdempotencyKey(String? idempotencyKey) {
-    final trimmed = idempotencyKey?.trim();
-    return trimmed == null || trimmed.isEmpty ? null : trimmed;
+    // Only the "is there a key here" reading trims. The value goes out exactly as the caller
+    // wrote it, whitespace included, because it is what the server deduplicates on and what the
+    // partner recorded against their transaction — trimming it would send a key that differs from
+    // the one in their ledger. The sibling SDKs spell it the same way.
+    if (idempotencyKey == null || idempotencyKey.trim().isEmpty) return null;
+    return idempotencyKey;
   }
 
   /// A per-call key for a check the caller did not key itself.
