@@ -138,8 +138,16 @@ strings or commit messages — may name any of the following:
 Say **"the Tracive API"** or **"the server"**. Say **"record key"**. Say **"phase 1" / "phase 2"**.
 
 The single allowed exception is the Android application id `com.pleistocent.tracive`, which the
-app-presence check genuinely needs. No other application id belongs here — a non-production variant
-appears nowhere in shipping code, so naming one only discloses that it exists.
+app-presence check genuinely needs, plus this repository's own GitHub path. No other application id
+belongs here — a non-production variant appears nowhere in shipping code, so naming one only
+discloses that it exists.
+
+The second half of that is not a loophole, it is the difference between an *internal* repository and
+this one. A published package has to name where it lives: the path is in `pubspec.yaml`'s
+`repository` and `issue_tracker`, in the README's CI badge, in `SECURITY.md`'s reporting address and
+in the changelog's compare links, and it is the install instruction. The rule as written forbade
+what the package necessarily ships, which makes it a rule nobody can follow rather than a rule
+anybody breaks. Any *other* repository under that organisation is still an internal name.
 
 There is no automated scan in this repository, which puts it on you and on the reviewer. Read your
 diff the way a stranger would, before it is public and permanent.
