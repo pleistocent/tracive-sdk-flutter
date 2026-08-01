@@ -617,8 +617,11 @@ class TraciveOAuth {
   /// The state is reachable from a damaged storage record — a partial write, a
   /// save interrupted by process death, a restored backup — because
   /// [TraciveTokens.fromStorageJson] defaults a missing `accessToken` to `''`.
-  /// It never arrives from the token endpoint, whose answer is rejected when it
-  /// carries no `access_token`.
+  /// A whitespace-only value is the same case and is treated as the same case:
+  /// [TraciveTokens.hasAccessToken] tests blankness, not emptiness, so `'   '`
+  /// is repaired here rather than sent as `Bearer    `. It never arrives from
+  /// the token endpoint, whose answer is rejected when it carries no usable
+  /// `access_token`.
   ///
   /// Nothing downstream of here can recover it, which is why the branch has to
   /// be here rather than on the 401 path. An empty bearer is not answered with
@@ -669,11 +672,21 @@ class TraciveOAuth {
     // over as it is, with no expiry check and no extra work of any kind.
     if (tokens != null && tokens.hasAccessToken) return tokens.accessToken;
     if (tokens != null && tokens.canRefresh) {
-      // The blank-token repair. `staleAccessToken: ''` is the token this caller
-      // would otherwise have sent, and passing it is what lets [refreshTokens]
-      // notice that somebody else has already repaired the record and hand back
-      // what they stored instead of spending a second rotation on it.
-      final refreshed = await refreshTokens(staleAccessToken: '');
+      // The blank-token repair. The stale token passed is the one this caller
+      // would otherwise have sent — the damaged value itself, whatever it is —
+      // because that is what lets [refreshTokens] notice that somebody else has
+      // already repaired the record and hand back what they stored instead of
+      // spending a second rotation on it.
+      //
+      // It used to be the literal `''`, which was right only while `''` was the
+      // only damaged value there could be. Once a whitespace-only token counts
+      // as blank too, a hard-coded empty string makes every caller look like
+      // one that lost a race: [refreshTokens] compares the stored token against
+      // the argument, finds `'   ' != ''`, and hands the damaged record straight
+      // back as if a sibling had already repaired it. The repair would return a
+      // token and the token would be the broken one.
+      final refreshed =
+          await refreshTokens(staleAccessToken: tokens.accessToken);
       return refreshed.accessToken;
     }
     throw const TraciveInvalidTokenException(
@@ -803,23 +816,26 @@ class TraciveOAuth {
   /// could be silently undone by a response that arrived a moment later.
   Future<void> signOut() async {
     final tokens = await _tokenStore.read();
-    final refreshToken = tokens?.refreshToken;
-    final token = (refreshToken != null && refreshToken.isNotEmpty)
-        ? refreshToken
-        : tokens?.accessToken;
+    // Which credential to present is asked of the record itself, so "there is a
+    // refresh token" means the same thing here as everywhere else — blank, not
+    // empty. A whitespace-only value revokes nothing and would have been sent
+    // in preference to the access token, ending the round trip having ended
+    // nothing.
+    final revokingRefreshToken = tokens?.canRefresh ?? false;
+    final token =
+        revokingRefreshToken ? tokens!.refreshToken : tokens?.accessToken;
 
     await _discardCredentials();
 
-    if (token != null && token.isNotEmpty) {
+    if (token != null && token.trim().isNotEmpty) {
       try {
         await _postForm(
           environment.resolve(revokePath),
           buildRevokeForm(
             token: token,
             clientId: mode.clientId,
-            tokenTypeHint: (refreshToken != null && refreshToken.isNotEmpty)
-                ? 'refresh_token'
-                : 'access_token',
+            tokenTypeHint:
+                revokingRefreshToken ? 'refresh_token' : 'access_token',
           ),
         );
       } on TraciveException {
@@ -1079,9 +1095,12 @@ class TraciveOAuth {
       fallbackScopes: mode.scopes,
     );
     if (!tokens.hasAccessToken) {
+      // Blank counts as absent. A reply carrying `"access_token": "   "` is
+      // malformed, and storing it would manufacture on the healthy path the
+      // damaged record `ensureAccessToken` exists to repair on the sick one.
       throw TraciveServerException(
         statusCode: response.statusCode,
-        message: 'The token endpoint returned no access_token',
+        message: 'The token endpoint returned no usable access_token',
       );
     }
     return tokens;

@@ -10,6 +10,37 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **A blank token now means whitespace-only as well as empty.** The repair for
+  a damaged grant asked whether the stored access token was *empty*, so a value
+  of `'   '` was read as a token that is present and went out as
+  `Authorization: Bearer    `. That is answered `invalid_token`, which this SDK
+  treats as terminal, so the record failed every call from then on and failed by
+  telling the user to authorize again — while the refresh token beside it was a
+  live credential the whole time. This is one step past the empty-token case
+  fixed earlier, and it survived because the rule was written as "empty" rather
+  than "blank".
+
+  Every place that decides whether a token is present now tests blankness:
+  `TraciveTokens.hasAccessToken`, `TraciveTokens.canRefresh` and therefore
+  `isUsable` and `TraciveOAuth.isAuthorized`, the token store's own read, the
+  revocation call's choice of credential, and the reply from the token
+  endpoint — a response carrying `"access_token": "   "` is now rejected as
+  malformed instead of stored.
+
+  The refresh token matters more here than it looks. Presenting one marks it
+  spent *before* the answer arrives, and a request that dies without an answer
+  leaves that marker in place on purpose, so offering a whitespace-only value
+  bought a certain rejection and could then let a single timeout refuse a grant
+  that was never renewable to begin with.
+
+  **What you will observe:** nothing, on a healthy grant. On a damaged one, the
+  blank access token is repaired with a single refresh — as an empty one already
+  was — rather than being sent. The repair now hands the refresh the damaged
+  value itself instead of a literal `''`: the refresh compares the stored token
+  against that argument to recognise a caller who lost a race, so a hard-coded
+  empty string made every such caller look raced and handed the damaged record
+  straight back. Kotlin already tested blankness.
+
 - **Overlapping identical checks are now one request and one charge.** Two
   checks of the same identifier that were in flight at the same time both read
   the cache, both missed, both POSTed and both were billed — the cache write is

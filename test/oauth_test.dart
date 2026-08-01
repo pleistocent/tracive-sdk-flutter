@@ -1074,6 +1074,107 @@ void main() {
       expect(neither.isUsable, isFalse);
     });
 
+    test('"present" means non-blank, not merely non-empty', () {
+      // Whitespace is damage of exactly the same kind as the empty string, and
+      // the rule was written as "empty" — which is how `'   '` went on
+      // surviving every guard that `''` had been taught to fail.
+      for (final blank in <String>[' ', '   ', '\t', '\n', ' \t\n ']) {
+        expect(TraciveTokens(accessToken: blank).hasAccessToken, isFalse,
+            reason: 'a blank access token is not an access token');
+        expect(
+          TraciveTokens(accessToken: 'at', refreshToken: blank).canRefresh,
+          isFalse,
+          reason: 'a blank refresh token cannot refresh anything',
+        );
+        expect(
+          TraciveTokens(accessToken: blank, refreshToken: blank).isUsable,
+          isFalse,
+          reason: 'two blanks are not a grant',
+        );
+      }
+    });
+
+    test('a whitespace-only access token is repaired, not sent', () async {
+      // One step past the empty-token case. `Bearer    ` is answered
+      // `invalid_token`, which this SDK treats as terminal, so nothing
+      // downstream can turn it away: the damaged record would fail every call
+      // from then on and fail by telling the user to authorize again.
+      //
+      // The stale token handed to the refresh is the damaged value itself, not
+      // a hard-coded `''`. `refreshTokens` compares the stored token against
+      // that argument to spot a caller who lost a race, so passing `''` here
+      // would make this caller look raced and hand the damaged record straight
+      // back — a repair that returns a token, and the token is the broken one.
+      final store = InMemoryTokenStore(
+        tokens: const TraciveTokens(
+          accessToken: '   ',
+          refreshToken: 'refresh-token-1',
+        ),
+      );
+      final transport = _FakeTransport((_) => _ok(_tokenBody()));
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      expect(await oauth.ensureAccessToken(), 'access-token-2');
+
+      expect(transport.requests, hasLength(1));
+      final refresh = transport.requests.single;
+      expect(refresh.url.path, endsWith('/oauth/token'));
+      expect(refresh.body, contains('refresh_token=refresh-token-1'));
+      expect(refresh.header('authorization'), isNull);
+      expect((await store.read())?.accessToken, 'access-token-2');
+    });
+
+    test(
+        'a whitespace-only access token with nothing to spend is a typed error',
+        () async {
+      final oauth = _oauth(
+        tokenStore: InMemoryTokenStore(
+          tokens: const TraciveTokens(accessToken: '   '),
+        ),
+        transport: _FakeTransport((_) => fail('nothing should be sent')),
+      );
+
+      await expectLater(
+        oauth.ensureAccessToken(),
+        throwsA(isA<TraciveInvalidTokenException>()),
+      );
+    });
+
+    test('a whitespace-only refresh token is refused before it is presented',
+        () async {
+      // Refusing locally is the whole point. Presenting a refresh token marks
+      // it spent *before* the answer comes back, and a request that dies
+      // without one leaves the marker in place on purpose — so offering a value
+      // that could never have been a credential buys a certain rejection and
+      // then lets one timeout refuse a grant that was never renewable.
+      //
+      // The transport answers normally rather than calling `fail()`. A `fail()`
+      // inside a transport is caught by `_postForm` and re-thrown as a Tracive
+      // exception, so the refusal this test is named after would look identical
+      // to a request that went out and came back badly — the assertion has to
+      // be that nothing was sent, not that something threw.
+      final transport = _FakeTransport((_) => _ok(_tokenBody()));
+      final oauth = _oauth(
+        tokenStore: InMemoryTokenStore(
+          tokens: const TraciveTokens(
+            accessToken: 'access-token-1',
+            refreshToken: '   ',
+          ),
+        ),
+        transport: transport,
+      );
+
+      await expectLater(
+        oauth.refreshTokens(),
+        throwsA(isA<TraciveInvalidTokenException>()),
+      );
+      expect(
+        transport.requests,
+        isEmpty,
+        reason: 'a blank refresh token must never reach the token endpoint',
+      );
+    });
+
     test('an empty access token with no refresh token is still a typed error',
         () async {
       // Nothing to spend, so there is nothing to recover: the user really does
@@ -1463,6 +1564,37 @@ void main() {
       await expectLater(
         oauth.refreshTokens(),
         throwsA(isA<TraciveServerException>()),
+      );
+    });
+
+    test('a whitespace-only access_token is rejected, not stored', () async {
+      // Blank counts as absent on the way in as well as on the way out.
+      // Storing it would manufacture, on the healthy path, exactly the damaged
+      // record that `ensureAccessToken` exists to repair on the sick one — and
+      // it would do it while spending the rotation that was the grant's one
+      // renewable credential.
+      final store = _authorizedStore();
+      final oauth = _oauth(
+        tokenStore: store,
+        transport: _FakeTransport(
+          (_) => _ok(
+            jsonEncode(<String, Object?>{
+              'access_token': '   ',
+              'refresh_token': 'refresh-token-2',
+              'expires_in': 3600,
+            }),
+          ),
+        ),
+      );
+
+      await expectLater(
+        oauth.refreshTokens(),
+        throwsA(isA<TraciveServerException>()),
+      );
+      expect(
+        (await store.read())?.accessToken,
+        'access-token-1',
+        reason: 'a malformed reply must not overwrite the stored grant',
       );
     });
   });

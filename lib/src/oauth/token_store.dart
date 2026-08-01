@@ -107,11 +107,26 @@ class TraciveTokens {
   final String tokenType;
 
   /// Whether there is an access token at all.
-  bool get hasAccessToken => accessToken.isNotEmpty;
+  ///
+  /// **Blank, not empty.** A whitespace-only value is damage of exactly the
+  /// same kind as `''` — a partial write, a truncated backup, a store that
+  /// round-tripped through a text field — and it is damage nothing downstream
+  /// can survive: `'Bearer    '` on the wire is answered `invalid_token`, which
+  /// this SDK treats as terminal, so the record fails every call from then on
+  /// and fails by telling the user to authorize again. Reading it as "a token
+  /// is present" is what sends it. Every Tracive SDK spells this test as
+  /// blankness.
+  bool get hasAccessToken => accessToken.trim().isNotEmpty;
 
   /// Whether a refresh is possible without sending the user back through
   /// consent.
-  bool get canRefresh => (refreshToken ?? '').isNotEmpty;
+  ///
+  /// Blank for the same reason, and one of its own: presenting a refresh token
+  /// is not free. The server rotates on use and watches for reuse, and this SDK
+  /// records the value as spent before the answer comes back — so offering a
+  /// whitespace-only one buys a certain rejection and then makes a later
+  /// timeout look like the reuse of a token that was never a credential.
+  bool get canRefresh => (refreshToken ?? '').trim().isNotEmpty;
 
   /// Whether this record is worth keeping — it holds at least one live
   /// credential.
