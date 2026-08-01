@@ -83,7 +83,7 @@ class TraciveOAuth {
     TraciveClock? clock,
     Random? random,
     this.refreshSkew = const Duration(seconds: 60),
-    this.pendingAuthorizationMaxAge = const Duration(minutes: 30),
+    this.pendingAuthorizationMaxAge = PendingAuthorization.defaultMaxAge,
   })  : _transport = transport ?? createDefaultHttpTransport(),
         _tokenStore = tokenStore ?? platform.createDefaultTokenStore(),
         _launcher = launcher ?? platform.createDefaultAuthLauncher(),
@@ -182,6 +182,17 @@ class TraciveOAuth {
   final Duration refreshSkew;
 
   /// How long a started-but-unfinished authorization stays resumable.
+  ///
+  /// Defaults to [PendingAuthorization.defaultMaxAge] — ten minutes, the same
+  /// in every Tracive SDK — because ten minutes is how long the authorization
+  /// code itself lives. Holding the pending record any longer cannot rescue a
+  /// flow the server has already given up on; it only leaves the PKCE verifier
+  /// and a still-acceptable `state` on the device for longer. That reasoning,
+  /// and why the value used to be thirty minutes, is on the constant.
+  ///
+  /// Overriding it is a real seam, not a knob to widen casually: a longer
+  /// window here is a longer replay window for an unfinished redirect, and it
+  /// puts this SDK out of step with its siblings.
   final Duration pendingAuthorizationMaxAge;
 
   final HttpTransport _transport;

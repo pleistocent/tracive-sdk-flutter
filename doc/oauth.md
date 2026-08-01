@@ -31,6 +31,22 @@ anything is generated or persisted, so a user who does not have the app never
 has a PKCE pair minted, never has a `state` stored, and never has an OAuth
 parameter leak into an install-attribution chain.
 
+The `state` and the verifier are then persisted, before the authorize URL is
+opened, rather than held in a field — Android may collect your app while the
+user is consenting. That pending record expires **ten minutes** after
+`authorize()`, the same window in every Tracive SDK. Ten is the lifetime of the
+authorization code the record exists to redeem (RFC 6749 §4.1.2 recommends at
+most ten minutes), so once that code is dead nothing on the device can complete
+the exchange. A longer window therefore recovers nothing, and it keeps the
+verifier and a still-acceptable `state` on the device for longer — a wider
+replay window for a redirect the user never finished.
+
+A redirect that arrives after the window fails with
+`TraciveInvalidRequestException` and the record is erased; the user starts
+again. `TraciveOAuth(pendingAuthorizationMaxAge: …)` overrides the window, and
+widening it widens that replay window, so treat it as a seam rather than a
+knob.
+
 ### In code
 
 ```dart

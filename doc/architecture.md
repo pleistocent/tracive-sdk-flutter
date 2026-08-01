@@ -97,6 +97,7 @@ sequenceDiagram
         OS->>App: deep link
         App->>SDK: handleCallback with the incoming URL
         SDK->>Store: readPending
+        Note over SDK,Store: A record older than ten minutes is erased and refused.<br/>That is the authorization code's own lifetime, so a wider<br/>window redeems nothing and only keeps the verifier and a<br/>still-acceptable state on the device for longer.
         SDK->>SDK: verify state first, in constant time
         alt public client, the default
             SDK->>Api: POST oauth/token, code plus code_verifier

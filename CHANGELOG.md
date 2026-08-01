@@ -145,6 +145,34 @@ until it is frozen at `1.0.0`.
   **If you pass `installUrl` from a build variable, make sure it is set, or stop
   passing it.** The migration is one line either way: drop the argument to take
   the shared default, or pass a real URL.
+- **A started-but-unfinished authorization now expires ten minutes after
+  `authorize()`, not thirty**, which is the window every Tracive SDK uses.
+  `pendingAuthorizationMaxAge` is still a constructor parameter and a value you
+  pass still wins; only the default moved. It also has a name now —
+  `PendingAuthorization.defaultMaxAge` — so that the constructor default and
+  `PendingAuthorization.isStaleAt`'s own default are one constant instead of two
+  literals free to drift apart, which is exactly what they had already done here
+  relative to the sibling SDKs.
+
+  Ten is not a shorter guess at how long a user takes to consent. It is the
+  lifetime of the authorization code the pending record exists to redeem —
+  RFC 6749 §4.1.2 recommends a maximum of ten minutes for it — and once that
+  code has expired, the exchange cannot succeed no matter what the device still
+  holds. So the extra twenty minutes bought no recovery whatsoever. What they
+  did buy was exposure: for that whole time the PKCE `code_verifier` sat in
+  secure storage as the proof of possession for a code that no longer exists,
+  next to a `state` this SDK would still accept — which is to say a replay
+  window for a redirect the user never finished. Three times the exposure, for
+  none of the recovery, and no way to notice, because nothing pinned the number.
+
+  **What changes for a caller is narrow.** A redirect arriving between ten and
+  thirty minutes after `authorize()` now returns
+  `AuthFailed(TraciveInvalidRequestException)` — "the authorization attempt
+  expired; start it again" — instead of attempting an exchange the server would
+  reject anyway; the user is told to start over without the round trip. Inside
+  ten minutes nothing changed. If you have a reason to want a wider window, pass
+  `pendingAuthorizationMaxAge` explicitly and know that you are widening a
+  replay window to do it.
 - **The install link now carries `ref=<clientId>` and
   `utm_source=tracive-sdk-flutter`**, replacing `utm_source=<clientId>` and
   `utm_medium=tracive_sdk_flutter`, to match the other Tracive SDKs. Both

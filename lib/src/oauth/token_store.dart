@@ -187,9 +187,33 @@ class PendingAuthorization {
   /// When the flow was started, in UTC. Used to expire an abandoned attempt.
   final DateTime createdAt;
 
+  /// How long a started-but-unfinished authorization stays resumable.
+  ///
+  /// Ten minutes, and the same ten in every Tracive SDK. The number is not a
+  /// guess at how long a user takes to consent — it is the lifetime of the
+  /// authorization code this record exists to redeem, which RFC 6749 §4.1.2
+  /// recommends be at most ten minutes. Once the code has expired server-side
+  /// the exchange cannot succeed, whatever is still on disk, so holding the
+  /// record longer recovers exactly nothing.
+  ///
+  /// What a longer window does do is keep two secrets alive past their use.
+  /// [codeVerifier] is the proof of possession for that dead code, and [state]
+  /// is a nonce this SDK will still accept — so a wider window is a wider
+  /// replay window for a redirect the user never finished. This was thirty
+  /// minutes, which bought no recovery and tripled both.
+  ///
+  /// A caller who genuinely needs a different window passes
+  /// `TraciveOAuth.pendingAuthorizationMaxAge`; changing *this* value changes
+  /// what every Tracive SDK agrees on, so change it in all of them or not at
+  /// all.
+  static const Duration defaultMaxAge = Duration(minutes: 10);
+
   /// Whether this attempt is older than [maxAge] at [now].
-  bool isStaleAt(DateTime now,
-          {Duration maxAge = const Duration(minutes: 30)}) =>
+  ///
+  /// [maxAge] defaults to [defaultMaxAge], which is also what
+  /// `TraciveOAuth.pendingAuthorizationMaxAge` defaults to — one constant, so
+  /// the two cannot drift apart.
+  bool isStaleAt(DateTime now, {Duration maxAge = defaultMaxAge}) =>
       now.toUtc().difference(createdAt.toUtc()) > maxAge;
 
   /// Serialised form for a [TokenStore]. Written to secure storage only.

@@ -634,6 +634,63 @@ void main() {
       expect(await store.readPending(), isNull);
     });
 
+    // The three tests below pin the pending window at ten minutes. They are
+    // separate on purpose: a single test would stop at its first failed
+    // assertion, so the boundary halves would never run on the very drift they
+    // exist to catch.
+    //
+    // The window is a cross-SDK contract — every Tracive SDK expires a pending
+    // authorization after the same ten minutes — and nothing here used to
+    // assert the number at all, which is how this SDK came to ship thirty while
+    // its siblings shipped ten. The two-hour test above passes under either
+    // value, so it pins nothing.
+    test('the shipped pending window is ten minutes', () {
+      expect(PendingAuthorization.defaultMaxAge, const Duration(minutes: 10));
+      expect(_oauth().pendingAuthorizationMaxAge, const Duration(minutes: 10));
+    });
+
+    test('a redirect just inside the window is still exchanged', () async {
+      final clock = MutableClock(_t0);
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(
+        tokenStore: store,
+        transport: _FakeTransport((_) => _ok(_tokenBody())),
+        clock: clock,
+      );
+      final pending = await _startFlow(oauth, store);
+
+      clock.advance(const Duration(minutes: 9, seconds: 59));
+      final result = await oauth.handleCallback(
+        _callback(pending.state, code: 'auth-code'),
+      );
+
+      expect(result, isA<AuthAuthorized>());
+    });
+
+    test('a redirect just outside the window is refused, unread', () async {
+      final clock = MutableClock(_t0);
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(
+        tokenStore: store,
+        transport: _FakeTransport(
+          (_) => fail('an expired attempt must not reach the token endpoint'),
+        ),
+        clock: clock,
+      );
+      final pending = await _startFlow(oauth, store);
+
+      clock.advance(const Duration(minutes: 10, seconds: 1));
+      final result = await oauth.handleCallback(
+        _callback(pending.state, code: 'auth-code'),
+      );
+
+      expect(result, isA<AuthFailed>());
+      expect(
+          (result as AuthFailed).error, isA<TraciveInvalidRequestException>());
+      // The verifier is erased rather than left on the device.
+      expect(await store.readPending(), isNull);
+    });
+
     test('access_denied is a denial, not a failure', () async {
       final store = InMemoryTokenStore();
       final oauth = _oauth(tokenStore: store);
