@@ -203,6 +203,16 @@ class TraciveOAuth {
   final TraciveClock _clock;
   final Random? _random;
 
+  /// Names the authorization this process started, or `null` when it started
+  /// none. Backs [pendingAuthorizationId]; see that member for why it is held
+  /// in memory rather than beside the record on disk.
+  String? _pendingAuthorizationId;
+
+  /// Distinguishes one attempt from the next within this process. Not a
+  /// secret and never sent anywhere — a counter is enough, and it is what the
+  /// Kotlin SDK uses, so an id read in one is recognisable in the other.
+  int _authorizationCounter = 0;
+
   /// The single-flight latch. Non-null exactly while a refresh is in
   /// flight; every other caller awaits this future instead of starting a
   /// second refresh.
@@ -337,6 +347,9 @@ class TraciveOAuth {
     // can be collected while the user is consenting, and a verifier that lived
     // only in a field would be gone when the App Link brings the app back.
     await _tokenStore.writePending(pending);
+    // The id is taken only once the record is safely stored, so a store that
+    // refused leaves nothing for a later cancel to claim it cancelled.
+    _pendingAuthorizationId = 'authorization-${++_authorizationCounter}';
 
     final url = buildAuthorizeUrl(
       environment: environment,
@@ -349,7 +362,7 @@ class TraciveOAuth {
     );
 
     if (!await _launcher.openExternally(url)) {
-      await _tokenStore.writePending(null);
+      await _forgetPending();
       return const AuthResult.failed(
         TraciveInvalidRequestException(
           'The operating system refused to open the Tracive authorization page',
@@ -413,7 +426,7 @@ class TraciveOAuth {
       );
     }
     if (pending.isStaleAt(_clock.now(), maxAge: pendingAuthorizationMaxAge)) {
-      await _tokenStore.writePending(null);
+      await _forgetPending();
       return const AuthResult.failed(
         TraciveInvalidRequestException(
           'The authorization attempt expired; start it again',
@@ -432,7 +445,7 @@ class TraciveOAuth {
 
     final error = parameters['error'];
     if (error != null && error.isNotEmpty) {
-      await _tokenStore.writePending(null);
+      await _forgetPending();
       if (error == 'access_denied') return const AuthResult.denied();
       final description = parameters['error_description'];
       return AuthResult.failed(
@@ -447,7 +460,7 @@ class TraciveOAuth {
 
     final code = parameters['code'];
     if (code == null || code.isEmpty) {
-      await _tokenStore.writePending(null);
+      await _forgetPending();
       return const AuthResult.failed(
         TraciveInvalidRequestException(
           'The redirect carried no authorization code',
@@ -459,7 +472,7 @@ class TraciveOAuth {
       // No exchange here. The code and verifier go to the partner's own
       // backend, which holds the client secret. Nothing is stored here —
       // this SDK never sees a token on this path.
-      await _tokenStore.writePending(null);
+      await _forgetPending();
       return AuthResult.codeReceived(
         code: code,
         codeVerifier: pending.codeVerifier,
@@ -479,12 +492,63 @@ class TraciveOAuth {
       );
       if (epoch != _credentialEpoch) throw _discardedMidFlight;
       await _tokenStore.write(tokens);
-      await _tokenStore.writePending(null);
+      await _forgetPending();
       return AuthResult.authorized(tokens.grantedScopes);
     } on TraciveException catch (error) {
-      await _tokenStore.writePending(null);
+      await _forgetPending();
       return AuthResult.failed(error);
     }
+  }
+
+  /// The id of the authorization this process is waiting on, or `null` when it
+  /// started none.
+  ///
+  /// Read it once [authorize] has returned and hand it back to
+  /// [cancelPendingAuthorization] later. That is the only way a cancel can be
+  /// sure of what it is cancelling.
+  ///
+  /// It lives in memory, deliberately, and is therefore `null` after a process
+  /// death even when a record is still on disk. A cancel is a *this process saw
+  /// the browser close* signal, and a process that did not open a browser has no
+  /// such signal to disambiguate — so a cancel naming an id from an earlier
+  /// process is refused rather than guessed at. It is **not** `state`: `state`
+  /// travels to the authorization server and comes back on the redirect, and
+  /// this never leaves the device.
+  String? get pendingAuthorizationId => _pendingAuthorizationId;
+
+  /// Abandons the pending authorization, so nothing can complete it later.
+  ///
+  /// Call this when the browser closes without a redirect — the user pressed
+  /// back, or dismissed the Custom Tab. Nothing will ever arrive in that case,
+  /// and without this the record sits on the device with a live PKCE verifier
+  /// beside the `state` it answers to until it ages out, which is ten minutes
+  /// by default ([pendingAuthorizationMaxAge]).
+  ///
+  /// **Pass [authorizationId] whenever you can.** A browser-closed signal
+  /// arrives from the widget or the platform lifecycle, not from the code that
+  /// started the flow, and it can arrive late. Consider the double tap:
+  /// [authorize] runs twice, the second call supersedes the first, and *then*
+  /// the first browser's close event turns up. Cancelling unconditionally at
+  /// that point kills the second attempt — the one the user is looking at.
+  /// With the id, a stale signal is recognised and ignored.
+  ///
+  /// Returns whether a pending authorization was abandoned. `false` means there
+  /// was nothing pending, or that what is pending is not what [authorizationId]
+  /// named.
+  ///
+  /// It does not throw, on the same terms as [handleCallback]: it is called
+  /// from a lifecycle callback, and a store that refuses is reported as "there
+  /// was nothing to cancel" rather than as an exception the caller has no move
+  /// against.
+  Future<bool> cancelPendingAuthorization({String? authorizationId}) async {
+    final current = _pendingAuthorizationId;
+    if (authorizationId != null && authorizationId != current) return false;
+    // The store is consulted only when this process is holding nothing of its
+    // own, which is the one case where the answer cannot be known without
+    // looking: a record left behind by an earlier process.
+    if (current == null && await _readPendingQuietly() == null) return false;
+    await _forgetPendingQuietly();
+    return true;
   }
 
   /// The stored bearer access token.
@@ -733,6 +797,10 @@ class TraciveOAuth {
     _credentialEpoch++;
     _refreshInFlight = null;
     _spentRefreshTokens.clear();
+    // The shipped store erases the pending record along with the tokens, so
+    // holding on to the id would let a later cancel report that it abandoned an
+    // attempt that is no longer there.
+    _pendingAuthorizationId = null;
     await _tokenStore.clear();
   }
 
@@ -768,16 +836,39 @@ class TraciveOAuth {
     'like this — and start the flow again.',
   );
 
-  /// Erases the pending record, swallowing a store that refuses.
+  /// Erases the pending record and forgets which attempt this process was
+  /// waiting on.
   ///
-  /// Used only on paths that are already reporting a failure, where a second
-  /// error from the same broken store would replace an accurate answer with a
-  /// less accurate one.
+  /// The two always move together. Leaving the id behind after the record is
+  /// gone would let a later [cancelPendingAuthorization] report `true` for an
+  /// attempt that was already spent.
+  Future<void> _forgetPending() async {
+    _pendingAuthorizationId = null;
+    await _tokenStore.writePending(null);
+  }
+
+  /// [_forgetPending], swallowing a store that refuses.
+  ///
+  /// Used on paths that are already reporting an outcome, where a second error
+  /// from the same broken store would replace an accurate answer with a less
+  /// accurate one.
   Future<void> _forgetPendingQuietly() async {
     try {
-      await _tokenStore.writePending(null);
+      await _forgetPending();
     } catch (_) {
       // Nothing to do, and nothing that can be done.
+    }
+  }
+
+  /// The stored pending record, reporting a store that refuses as absence.
+  ///
+  /// The caller could do nothing with the distinction: either way there is no
+  /// record this process can act on.
+  Future<PendingAuthorization?> _readPendingQuietly() async {
+    try {
+      return await _tokenStore.readPending();
+    } catch (_) {
+      return null;
     }
   }
 

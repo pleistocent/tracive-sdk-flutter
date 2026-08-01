@@ -1614,6 +1614,147 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // Abandoning a flow the user walked away from.
+  //
+  // A browser that closes without a redirect produces no signal of its own: the
+  // OS does not tell the SDK, and nothing ever arrives at handleCallback. The
+  // record therefore sits on the device with a live PKCE verifier beside a
+  // `state` this SDK will still accept, until it ages out ten minutes later.
+  // The host app is the only party that knows the browser closed, so it is the
+  // only party that can say so.
+  // ---------------------------------------------------------------------------
+  group('cancelPendingAuthorization', () {
+    test('erases the record a started flow left on the device', () async {
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(tokenStore: store);
+
+      await oauth.authorize();
+      expect(await store.readPending(), isNotNull);
+
+      expect(await oauth.cancelPendingAuthorization(), isTrue);
+      expect(
+        await store.readPending(),
+        isNull,
+        reason: 'the verifier must not outlive the flow that generated it',
+      );
+    });
+
+    test('answers false when nothing is pending', () async {
+      final oauth = _oauth(tokenStore: InMemoryTokenStore());
+      expect(await oauth.cancelPendingAuthorization(), isFalse);
+    });
+
+    test('answers false the second time — one attempt cancels once', () async {
+      final oauth = _oauth(tokenStore: InMemoryTokenStore());
+      await oauth.authorize();
+
+      expect(await oauth.cancelPendingAuthorization(), isTrue);
+      expect(await oauth.cancelPendingAuthorization(), isFalse);
+    });
+
+    test('a stale id does not cancel the attempt that superseded it', () async {
+      // The double tap, which is the whole reason the id exists. `authorize`
+      // runs twice; the second call supersedes the first; and only then does
+      // the first browser's close event arrive. Cancelling unconditionally
+      // there would kill the attempt the user is actually looking at.
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(tokenStore: store);
+
+      await oauth.authorize();
+      final firstId = oauth.pendingAuthorizationId;
+      await oauth.authorize();
+      final secondId = oauth.pendingAuthorizationId;
+
+      expect(firstId, isNotNull);
+      expect(secondId, isNot(firstId));
+
+      expect(
+        await oauth.cancelPendingAuthorization(authorizationId: firstId),
+        isFalse,
+        reason: 'a late signal about a superseded attempt must be ignored',
+      );
+      expect(
+        await store.readPending(),
+        isNotNull,
+        reason: 'the live attempt must survive the stale cancel',
+      );
+
+      expect(
+        await oauth.cancelPendingAuthorization(authorizationId: secondId),
+        isTrue,
+      );
+      expect(await store.readPending(), isNull);
+    });
+
+    test('the id is never the state, and never leaves the device', () async {
+      final launcher = _FakeLauncher(installed: true);
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(launcher: launcher, tokenStore: store);
+
+      await oauth.authorize();
+
+      final id = oauth.pendingAuthorizationId!;
+      final pending = (await store.readPending())!;
+      expect(id, isNot(pending.state));
+      expect(launcher.opened.single.toString(), isNot(contains(id)));
+    });
+
+    test('an id from a previous process is refused, but a bare cancel is not',
+        () async {
+      // A cancel is a "this process saw the browser close" signal, and a
+      // process that did not open the browser has no such signal to
+      // disambiguate. Naming an id it never issued is refused; cancelling
+      // whatever is on disk is still allowed, which is what lets a host clean
+      // up after a process death.
+      final store = InMemoryTokenStore();
+      await _oauth(tokenStore: store).authorize();
+
+      final restarted = _oauth(tokenStore: store);
+      expect(restarted.pendingAuthorizationId, isNull);
+      expect(
+        await restarted.cancelPendingAuthorization(
+          authorizationId: 'authorization-1',
+        ),
+        isFalse,
+      );
+      expect(await store.readPending(), isNotNull);
+
+      expect(await restarted.cancelPendingAuthorization(), isTrue);
+      expect(await store.readPending(), isNull);
+    });
+
+    test('a spent attempt cannot be cancelled afterwards', () async {
+      // handleCallback erases the record on every terminal outcome, so the id
+      // must go with it — otherwise a later cancel reports that it abandoned
+      // something that was already finished.
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(tokenStore: store);
+      await oauth.authorize();
+      final state = (await store.readPending())!.state;
+
+      final result = await oauth.handleCallback(
+        Uri.parse(
+          'https://partner.example/oauth/callback'
+          '?state=$state&error=access_denied',
+        ),
+      );
+
+      expect(result, isA<AuthDenied>());
+      expect(oauth.pendingAuthorizationId, isNull);
+      expect(await oauth.cancelPendingAuthorization(), isFalse);
+    });
+
+    test('a store that refuses is reported as nothing to cancel', () async {
+      // Called from a lifecycle callback, so it follows handleCallback's rule:
+      // no throw, and an answer the caller can act on.
+      final oauth = _oauth(
+        tokenStore: _RefusingStore(onReadPending: true, onWritePending: true),
+      );
+      expect(await oauth.cancelPendingAuthorization(), isFalse);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Neither half of the flow may throw at its caller.
   //
   // `handleCallback` is called from the host app's App Link / Universal Link

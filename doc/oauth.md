@@ -48,6 +48,38 @@ again. `TraciveOAuth(pendingAuthorizationMaxAge: …)` overrides the window, and
 widening it widens that replay window, so treat it as a seam rather than a
 knob.
 
+### Cancelling a flow the user walked away from
+
+Ten minutes is the ceiling, not the target. If the user dismisses the Custom Tab
+or presses back, no redirect will ever arrive and there is nothing to wait for —
+but the SDK cannot see that, because the OS does not report it. Your app can, so
+tell it:
+
+```dart
+final oauth = client.oauth!;
+await oauth.authorize();
+final attempt = oauth.pendingAuthorizationId;
+
+// ... later, when your app is resumed with no redirect having arrived:
+await oauth.cancelPendingAuthorization(authorizationId: attempt);
+```
+
+That erases the record, and with it the live verifier sitting beside a `state`
+the SDK would still accept.
+
+**Pass the id whenever you can.** The browser-closed signal reaches you from a
+lifecycle callback, not from the code that started the flow, and it can arrive
+late — consider a double tap, where `authorize()` runs twice and only then does
+the *first* browser's close event turn up. An unconditional cancel there kills
+the attempt the user is actually looking at; a cancel naming the first id is
+recognised as stale and ignored.
+
+The id lives in memory, so it is `null` after a process death even when a record
+is still on disk, and an id from an earlier process is refused. Calling
+`cancelPendingAuthorization()` with no id still erases whatever is stored, which
+is how you clean up after one. It returns whether anything was abandoned, and
+like `handleCallback` it does not throw.
+
 ### In code
 
 ```dart

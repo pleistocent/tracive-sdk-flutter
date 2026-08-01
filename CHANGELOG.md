@@ -8,6 +8,21 @@ until it is frozen at `1.0.0`.
 
 ## [Unreleased]
 
+### Added
+
+- **`TraciveOAuth.cancelPendingAuthorization()` and
+  `TraciveOAuth.pendingAuthorizationId`.** A browser that closes without a
+  redirect produces no signal the SDK can see, so a flow the user walked away
+  from left its record on the device — a live PKCE verifier beside a `state`
+  still acceptable — until it aged out ten minutes later. The host app is the
+  only party that knows the browser closed; now it can say so. The Kotlin and
+  Swift SDKs already had this.
+
+  Pass `authorizationId` when you can: a browser-closed signal arrives from a
+  lifecycle callback, not from the code that started the flow, and it can
+  arrive late enough to cancel an attempt that has already superseded it. See
+  [`doc/oauth.md`](doc/oauth.md).
+
 ### Fixed
 
 - **`TraciveOAuth.authorize()` and `handleCallback()` no longer throw at their
