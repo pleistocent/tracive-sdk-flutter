@@ -68,11 +68,56 @@ String generateCacheDatabaseKey({Random? random}) {
 /// unreadable. That is handled where the database is opened — the file is
 /// discarded and rebuilt — because a cache that cannot be read is worth
 /// nothing, and the alternative is an SDK that never opens its cache again.
+///
+/// **Single-flight.** Concurrent callers share one flight; see
+/// [_keyRequestsInFlight] for why that is a correctness requirement and not an
+/// optimisation.
 Future<String> readOrCreateCacheDatabaseKey(
   CacheSecretStore store, {
   String entry = cacheDatabaseKeyEntry,
   Random? random,
-}) async {
+}) {
+  final request = (store, entry);
+  final joined = _keyRequestsInFlight[request];
+  if (joined != null) return joined;
+
+  // Registered synchronously, before the first `await` inside the helper can
+  // yield, so no second caller can slip through between the lookup above and
+  // this line.
+  // The callback body is a statement, not an expression, on purpose:
+  // `Map.remove` returns the value it removed, `whenComplete` awaits a Future
+  // its callback returns, and the value being removed here *is* this flight —
+  // so an arrow body makes the future wait for itself and never completes.
+  final flight =
+      _readOrCreateCacheDatabaseKey(store, entry, random).whenComplete(() {
+    _keyRequestsInFlight.remove(request);
+  });
+  _keyRequestsInFlight[request] = flight;
+  return flight;
+}
+
+/// Flights of [readOrCreateCacheDatabaseKey] that have not finished, keyed by
+/// the store instance and the entry name.
+///
+/// Without this, two callers that both find the entry empty both generate a key
+/// and both write it. The loser's key is silently overwritten — and the
+/// database opened under it is then undecryptable, which `openTraciveCache`
+/// recovers from by deleting the file and rebuilding it. Every identifier in
+/// that cache costs a credit again. It is not an exotic interleaving either:
+/// any app that calls `openTraciveCache()` from two places, or from a
+/// `FutureBuilder` that rebuilds, reaches it.
+///
+/// Entries are removed when their flight settles, so this holds nothing between
+/// calls. It is keyed by store *identity* rather than being a single slot
+/// because a host may legitimately keep more than one store.
+final Map<(CacheSecretStore, String), Future<String>> _keyRequestsInFlight =
+    <(CacheSecretStore, String), Future<String>>{};
+
+Future<String> _readOrCreateCacheDatabaseKey(
+  CacheSecretStore store,
+  String entry,
+  Random? random,
+) async {
   final existing = await store.read(entry);
   if (existing != null && existing.isNotEmpty) return existing;
   final created = generateCacheDatabaseKey(random: random);

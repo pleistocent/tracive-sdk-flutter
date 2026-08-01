@@ -675,6 +675,40 @@ void main() {
       expect(database.rows, isEmpty);
     });
   });
+
+  // --------------------------------------------------------------------------
+  // The two open paths are read-then-write races, and both fail expensively:
+  // a lost database key means the file cannot be decrypted, which the SDK
+  // recovers from by rebuilding the cache — so every identifier in it costs a
+  // credit again.
+  // --------------------------------------------------------------------------
+  group('concurrent open', () {
+    test('two callers asking for the key at once get the same key', () async {
+      // Both find the entry empty, both mint a key, both write. The loser's key
+      // is the one the database was opened under, and it is now gone.
+      final store = _CountingSecretStore();
+
+      final a = readOrCreateCacheDatabaseKey(store);
+      final b = readOrCreateCacheDatabaseKey(store);
+      final keys = await Future.wait(<Future<String>>[a, b]);
+
+      expect(keys.first, keys.last, reason: 'the callers disagree on the key');
+      expect(store.writes, 1, reason: 'the key was minted twice');
+      expect(await store.read(cacheDatabaseKeyEntry), keys.first);
+    });
+
+    test('a later caller still gets the stored key', () async {
+      // The latch must not outlive its flight, or the second run of an app
+      // would be handed a stale future.
+      final store = _CountingSecretStore();
+      final first = await readOrCreateCacheDatabaseKey(store);
+      final second = await readOrCreateCacheDatabaseKey(store);
+
+      expect(second, first);
+      expect(store.writes, 1);
+      expect(store.reads, 2, reason: 'the second call really did read again');
+    });
+  });
 }
 
 /// A result with the shape of a `POST /scammer-checks` answer.
@@ -914,5 +948,34 @@ class _FakeCacheDatabase extends CacheDatabase {
   @override
   Future<void> close() async {
     closed = true;
+  }
+}
+
+/// A [CacheSecretStore] that counts what it is asked to do.
+///
+/// Its `read` is `async`, which is all it takes to reproduce the race: the
+/// await gives a second caller a turn before the first has written anything.
+/// A real Keystore read, which crosses a platform channel, gives it far more.
+class _CountingSecretStore extends CacheSecretStore {
+  final Map<String, String> _entries = <String, String>{};
+
+  int reads = 0;
+  int writes = 0;
+
+  @override
+  Future<String?> read(String key) async {
+    reads++;
+    return _entries[key];
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    writes++;
+    _entries[key] = value;
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    _entries.remove(key);
   }
 }
