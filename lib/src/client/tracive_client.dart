@@ -353,10 +353,44 @@ class TraciveClient {
     return oauth!.handleCallback(url);
   }
 
-  /// Revokes the grant best-effort and clears local tokens.
+  /// Revokes the grant best-effort, clears the local tokens, and **empties the
+  /// result cache**.
+  ///
+  /// The cache goes too, and that is not housekeeping. Its rows were fetched
+  /// under the grant of the user who just signed out — they are that person's
+  /// check history, which is to say a list of who they suspected of fraud — and
+  /// the next person to use this device must not inherit it. Leaving them
+  /// behind also means the SDK keeps serving verdicts obtained under consent
+  /// that has just been withdrawn.
+  ///
+  /// ## Why the client owns this, when [close] deliberately does not
+  ///
+  /// [close] refuses to touch [cache] because a cache can be shared between
+  /// clients and is often built and owned by the host app: closing something
+  /// you did not open is how another client's next read fails.
+  ///
+  /// Sign-out is the opposite case, and sharing is the reason rather than the
+  /// objection. The obligation attaches to the **data**, not to who holds the
+  /// handle: a shared cache means the departing user's verdicts are visible to
+  /// *more* clients, not fewer. Nor could a narrower clear be written even if
+  /// one were wanted — the row key is `SHA-256(searchQueryIndex)` and carries
+  /// no user, so a row cannot be attributed to whoever fetched it, and
+  /// "everything" is the only set that certainly contains theirs.
+  ///
+  /// Closing is destructive and terminal; clearing is not. A cache that has
+  /// been emptied still works — the next check for each identifier simply costs
+  /// a credit, which is exactly the right price for the first check after a
+  /// sign-out. That asymmetry is why one of these methods may act on a shared
+  /// cache and the other may not.
+  ///
+  /// The tokens are discarded first, so a cache that refuses to empty surfaces
+  /// its failure without having blocked the sign-out itself. If this throws,
+  /// the grant is already gone and the verdicts are not — which is worth
+  /// knowing, and is why the failure is not swallowed.
   Future<void> signOut() async {
     _ensureOAuthMode();
-    return oauth!.signOut();
+    await oauth!.signOut();
+    await cache.clear();
   }
 
   /// Releases the HTTP transport. Call it when the client is done with.

@@ -49,6 +49,20 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **`TraciveClient.signOut()` now empties the result cache as well as the
+  tokens.** It only cleared the tokens, so the cached rows stayed readable
+  afterwards: the departing user's check history — a list of who they suspected
+  of fraud — sitting on the device for whoever picked it up next, and served to
+  them at zero cost with no network call, so nothing anywhere recorded that one
+  person had read another's result. Kotlin was the only SDK doing this.
+
+  **What you will observe:** the first check for each identifier after a
+  sign-out costs a credit, which is the correct price for the first check of a
+  new session. `signOut()` now surfaces a failure from the cache rather than
+  completing silently — the tokens are discarded first, so a cache that refuses
+  to empty cannot leave a live grant behind, but you are told that the verdicts
+  survived when the grant did not.
+
 - **`TraciveOAuth.authorize()` and `handleCallback()` no longer throw at their
   caller.** Both delegate to collaborators that can fail outside this SDK's
   control — the secure store, the app-presence probe, the browser launch — and

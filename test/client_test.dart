@@ -952,6 +952,101 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // Sign-out.
+  //
+  // The cached rows are the departing user's check history — a list of who they
+  // suspected of fraud — held under a grant that no longer exists. The next
+  // person to pick up this device must not inherit it, and the SDK must not go
+  // on serving verdicts obtained under consent that has just been withdrawn.
+  // ---------------------------------------------------------------------------
+  group('signOut', () {
+    test('empties the result cache as well as the tokens', () async {
+      final clock = MutableClock(_t0);
+      final cache = CheckCache.inMemory(clock: clock.now);
+      await cache.write(query, _cachedResult(clock.now(), reportTotal: 7));
+      final store = _authorizedStore();
+      final transport = _FakeTransport((_) => _ok('{}'));
+      final client = _client(
+        transport: transport,
+        cache: cache,
+        clock: clock,
+        tokenStore: store,
+      );
+
+      await client.signOut();
+
+      expect(await store.read(), isNull);
+      expect(
+        await cache.read(query),
+        isNull,
+        reason: "the departing user's verdicts must not survive their session",
+      );
+    });
+
+    test('the next user does not read the previous one\'s verdict', () async {
+      // The failure stated from the arriving user's side. Without the clear,
+      // their very first check is answered from the departed user's row — at
+      // zero cost, with no network call, and therefore with nothing anywhere
+      // recording that one person read another's result.
+      final clock = MutableClock(_t0);
+      final cache = CheckCache.inMemory(clock: clock.now);
+      await cache.write(query, _cachedResult(clock.now(), reportTotal: 7));
+      final store = _authorizedStore();
+      final transport = _FakeTransport(
+        (request) => request.url.path.endsWith('/oauth/revoke')
+            ? _ok('{}')
+            : _ok(_checkBody()),
+      );
+      final client = _client(
+        transport: transport,
+        cache: cache,
+        clock: clock,
+        tokenStore: store,
+      );
+
+      await client.signOut();
+
+      // Somebody else signs in on the same device, sharing the same cache.
+      await store.write(
+        TraciveTokens(
+          accessToken: 'access-token-1',
+          refreshToken: 'refresh-token-1',
+          expiresAt: _t0.add(const Duration(hours: 1)),
+          grantedScopes: const <String>['scammer.check'],
+        ),
+      );
+
+      final result =
+          await client.checkScammer(query, source: Source.cacheFirst);
+
+      expect(
+        result.origin,
+        Origin.server,
+        reason: 'the answer must come from the server, not from the last user',
+      );
+      expect(transport.to('/scammer-checks'), hasLength(1));
+      expect(result.reportTotal, isNot(7));
+    });
+
+    test('the tokens are gone even when the cache refuses to empty', () async {
+      // Ordering, asserted rather than assumed: a broken cache must not be able
+      // to leave a live grant on the device. The failure is still surfaced —
+      // the caller has been told the tokens went and the verdicts did not.
+      final store = _authorizedStore();
+      final cache = CheckCache.inMemory();
+      await cache.close();
+      final client = _client(
+        transport: _FakeTransport((_) => _ok('{}')),
+        cache: cache,
+        tokenStore: store,
+      );
+
+      await expectLater(client.signOut(), throwsA(isA<Object>()));
+      expect(await store.read(), isNull);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Proxy mode — phase 2.
   // ---------------------------------------------------------------------------
   group('Proxy mode (phase 2)', () {
