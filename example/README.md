@@ -53,5 +53,5 @@ example runs anywhere, including desktop, with no plugin. See
 |---|---|
 | [`lib/main.dart`](lib/main.dart) | Client construction — note there is no API-key parameter, in any mode — plus the whole check flow and the `disclaimer` being surfaced. |
 | [`lib/demo_backend.dart`](lib/demo_backend.dart) | The fake transport. Copy this shape for your own tests. |
-| [`lib/main.dart`](lib/main.dart) (`main()`) | Installing `UnormNormalizer` for full Unicode NFC, which matters if you accept non-Latin identifiers. It ships with the SDK; installing it is one line. |
+| [`lib/main.dart`](lib/main.dart) (`main()`) | That there is nothing to install for Unicode NFC. The SDK folds every query through full NFC by default, so a non-Latin identifier produces the same key here as it does on the server. |
 | [`test/widget_test.dart`](test/widget_test.dart) | Widget tests asserting a cache hit does no network I/O, and that invalid input never reaches the wire. |

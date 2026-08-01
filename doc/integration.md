@@ -248,39 +248,67 @@ may have just revoked consent for.
 
 The query grammar folds e-mail addresses, bank codes, chains, platforms and
 handles through **Unicode NFC** — and Dart's core library has no NFC. The SDK
-therefore ships `DefaultNormalizer`, a dependency-free implementation of the
-composition half of the algorithm.
+ships its own, and **you do not have to install anything**: the default is
+`UnormNormalizer`, full Unicode NFC, backed by `unorm_dart`. That package is
+already a declared dependency of this SDK, so it costs you nothing to add and
+nothing to configure.
 
-It is **exact** for ASCII, Latin, Greek, Cyrillic and Hangul, and for any input
-that is already decomposed (which is what Apple platforms hand back). It
-diverges from full NFC in three narrow cases: singleton decompositions
-(U+212B ANGSTROM SIGN), composition-excluded characters (U+0958 DEVANAGARI QA,
-the Hebrew presentation forms), and already-composed text followed by a
-lower-class combining mark. Measured, not assumed: 565 of 63 488 BMP characters
-fed raw, and zero divergences over 16 467 already-decomposed inputs.
+This matters because the folded key **is** the record key. A key that differs
+from the server's by one code point resolves to a record that does not exist,
+so the check misses — and a miss is billed, with nothing in the response to
+notice it by. Full NFC by default is what keeps this SDK's keys identical to
+the Kotlin, Swift and React Native SDKs', which get NFC from their platforms.
 
-Every divergence produces a **different key from the server's**, and a miss is
-billed. If your app accepts identifiers where those characters are plausible,
-install the full implementation at start-up. The SDK ships it as
-`UnormNormalizer`, so this is the whole change — one line, no adapter to write:
+### Measured, not assumed
+
+`UnormNormalizer` was checked against Python 3's `unicodedata` at Unicode
+16.0.0 — the release the server's JavaScript engine folds against. It agrees on
+63 487 of the 63 488 BMP code points fed in raw, and on all 20 000 randomly
+generated multi-code-point sequences over a deliberately hostile alphabet
+(combining marks, Hangul jamo, Indic and Tamil two-part vowels, Tibetan, Kana
+voicing marks, Hebrew presentation forms, Arabic hamza carriers).
+
+The single divergence is **U+D7A4**: `unorm_dart` treats it as a Hangul
+syllable and decomposes it, but the Hangul Syllables block ends at U+D7A3 and
+U+D7A4 is unassigned, so true NFC leaves it alone. It is left uncorrected
+deliberately — no input method produces an unassigned code point, and owning a
+patch around a third-party bug means re-verifying it on every release of that
+package. Ordinary Hangul is unaffected: the composition direction is correct.
+
+### The opt-out, and when it is worth taking
+
+`DefaultNormalizer` is also shipped: dependency-free, implementing the
+composition half of the algorithm only. It is **exact** for ASCII, Latin,
+Greek, Cyrillic and Hangul, and for any input that is already decomposed (which
+is what Apple platforms hand back). It diverges from full NFC in three narrow
+cases: singleton decompositions (U+212B ANGSTROM SIGN), composition-excluded
+characters (U+0958 DEVANAGARI QA, the Hebrew presentation forms), and
+already-composed text followed by a lower-class combining mark. Measured the
+same way: 565 of 63 488 BMP characters fed raw, and zero divergences over
+16 467 already-decomposed inputs.
+
+It is faster — roughly 25 ns per fold for an ASCII identifier against about
+3 µs for full NFC. Read those as absolutes before reading them as a ratio: one
+fold happens per query, which is one per check, which is one network round trip
+of tens of milliseconds. Folding 10 000 identifiers costs about 30 ms in total.
+
+So install it only if you have measured a problem *and* your identifiers stay
+inside its documented scope:
 
 ```dart
 import 'package:tracive_sdk/tracive_sdk.dart';
 
 void main() {
-  TraciveNormalization.normalizer = const UnormNormalizer();
+  // Only with the trade above understood: 565 BMP code points then fold to a
+  // key the server does not hold, and each resulting miss is billed.
+  TraciveNormalization.normalizer = const DefaultNormalizer();
   runApp(const MyApp());
 }
 ```
 
-Set it once, before building any query. (`example/lib/main.dart` does exactly
-this.)
-
-`UnormNormalizer` is backed by `unorm_dart`, which is already a declared
-dependency of this SDK — you do not add anything to your `pubspec.yaml`. It is
-**not** the default: switching the default would change every existing
-integrator's folded keys, and therefore their cache keys, in a patch release.
-Opting in is a decision your app makes knowingly.
+Whichever you install, install it once, before building any query. Changing it
+afterwards throws `StateError`: the folded key is also the cache key, so a
+mid-run swap orphans every row written before it.
 
 ---
 

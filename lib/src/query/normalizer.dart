@@ -6,36 +6,35 @@
 // ---------------------------------------------------------------------------
 // PACKAGING NOTE — read this before editing pubspec.yaml
 // ---------------------------------------------------------------------------
-// **This file** has no package dependency. It imports dart:core only, on
-// purpose: the default fold must never fail to compile, or be slowed down,
-// because of an optional package.
-//
 // The grammar requires Unicode NFC and **Dart's core library does not provide
 // it** (there is no `String.normalize()`; that is a JS/Kotlin/Swift luxury).
-// So this file ships a small, self-contained implementation — see the honest
-// scope statement on [DefaultNormalizer] — behind the [Normalizer] seam.
+// Two implementations ship, and the seam between them is [Normalizer]:
 //
-// A full-Unicode implementation is shipped separately, in
-// `lib/src/query/unorm_normalizer.dart`, backed by `unorm_dart` (a declared
-// dependency in pubspec.yaml — version `^0.3.2`, which is the only major
-// series that package has ever published). It is exported from the public
-// barrel and installed by the host app in one line:
+// * [UnormNormalizer] (`lib/src/query/unorm_normalizer.dart`), backed by
+//   `unorm_dart` — **full NFC, and the default.**
+// * [DefaultNormalizer], below — dependency-free, the composition half of the
+//   algorithm only, and therefore an opt-*out* rather than the default.
 //
-//     void main() {
-//       TraciveNormalization.normalizer = const UnormNormalizer();
-//       runApp(...);
-//     }
+// It used to be the other way round, on the reasoning that the default fold
+// should not depend on a package. That reasoning did not survive contact with
+// pubspec.yaml: `unorm_dart` is a **declared, non-optional dependency** of this
+// package, so every integrator already resolves it, ships it and pays for it.
+// Defaulting to the incomplete fold bought nothing and cost 565 code points
+// that fold to a different key from the server's — and a miss is billed. The
+// three sibling SDKs all default to full NFC with no opt-in at all.
 //
-// Keeping the two in separate files is the point: the dependency is reachable
-// for the apps that need exactness, and absent from the default path for the
-// apps that do not. See `doc/integration.md` § Unicode normalisation.
+// This file consequently does have a package dependency now, one hop away
+// through the import below. That is the price of the default being correct.
+// See `doc/integration.md` § Unicode normalisation.
 // ---------------------------------------------------------------------------
+
+import 'unorm_normalizer.dart';
 
 /// Applies Unicode Normalization Form C.
 ///
-/// Injected rather than hard-wired because Dart has no core-library NFC, so the
-/// quality of the answer depends on which implementation the host app chooses.
-/// The default is [DefaultNormalizer].
+/// Injected rather than hard-wired because Dart has no core-library NFC, so
+/// which implementation folds the key is a decision somebody has to make. This
+/// SDK makes it: the default is [UnormNormalizer], which is full NFC.
 abstract class Normalizer {
   /// Allows `const` implementations.
   const Normalizer();
@@ -47,11 +46,13 @@ abstract class Normalizer {
 /// Where the query builders look up the [Normalizer] to use.
 ///
 /// This holder is **Dart-only plumbing**: the Kotlin and Swift SDKs get NFC
-/// from the platform and expose no equivalent. It exists so a host app that
-/// accepts identifiers outside [DefaultNormalizer]'s documented scope can swap
-/// in a full-Unicode implementation:
-///
-///     TraciveNormalization.normalizer = const UnormNormalizer();
+/// from the platform and expose no equivalent. **An app does not have to touch
+/// it.** The shipped default is [UnormNormalizer] — full Unicode NFC, the same
+/// answer the sibling SDKs give — so nothing needs installing to get a correct
+/// fold. It stays a seam for the two cases that are genuinely a decision: an
+/// app that has measured the fold as too slow and knows its identifiers are
+/// ASCII can install [DefaultNormalizer], and an app that wants its own
+/// implementation can install that.
 ///
 /// **Set it once, during start-up, before building any query — and this is
 /// enforced.** The normalizer decides the folded key, which is both what goes
@@ -63,7 +64,7 @@ abstract class Normalizer {
 class TraciveNormalization {
   TraciveNormalization._();
 
-  static Normalizer _normalizer = const DefaultNormalizer();
+  static Normalizer _normalizer = const UnormNormalizer();
   static bool _hasFolded = false;
 
   /// The normalizer every `TraciveQuery` builder folds through.
@@ -105,12 +106,18 @@ class TraciveNormalization {
   /// legitimately installs several normalizers in one process, which is exactly
   /// what the latch is there to stop an application doing.
   static void resetForTesting() {
-    _normalizer = const DefaultNormalizer();
+    _normalizer = const UnormNormalizer();
     _hasFolded = false;
   }
 }
 
 /// Dependency-free NFC covering the composition half of the algorithm.
+///
+/// **This is not the default** — [UnormNormalizer] is. Install this one only
+/// if you have measured the full fold as too expensive for your workload *and*
+/// you know your identifiers stay inside the scope documented below. The
+/// divergences are silent and each one costs a credit, so it is a trade to
+/// make deliberately, with numbers, and not a tidier-looking default.
 ///
 /// ## What it does
 ///
@@ -157,10 +164,13 @@ class TraciveNormalization {
 ///   of it.
 ///
 /// Every one of those cases produces a *different key from the server's*, and
-/// a miss is still billed — so if your app accepts identifiers where
-/// they are plausible, inject a full implementation (see the packaging note at
-/// the top of this file). For ASCII, Latin, Greek, Cyrillic and Hangul input
-/// this class is exact, and ASCII takes a zero-allocation fast path.
+/// a miss is still billed. That is why this class stopped being the default.
+/// For ASCII, Latin, Greek, Cyrillic and Hangul input it is exact, and ASCII
+/// takes a zero-allocation fast path — measured at about 25 ns per fold on a
+/// desktop VM against roughly 3 µs for [UnormNormalizer]. That ratio is what a
+/// caller is buying; the absolute numbers are what it is worth, and one fold
+/// per check against a network round trip is why the default went the other
+/// way.
 ///
 /// The tables below are generated data, not hand-written; the generator is
 /// reproduced in a comment beside them so the values can be regenerated and

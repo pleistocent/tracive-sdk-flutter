@@ -29,10 +29,11 @@ import 'package:tracive_sdk/tracive_sdk.dart';
 import 'demo_backend.dart';
 
 void main() {
-  // Full Unicode NFC, installed once before any query is built. The SDK's
-  // built-in normalizer is dependency-free and exact for Latin/Greek/Cyrillic/
-  // Hangul; this adapter covers the rest. See `doc/integration.md`.
-  TraciveNormalization.normalizer = const UnormNormalizer();
+  // Nothing is installed here on purpose. The SDK already folds every query
+  // through full Unicode NFC (`UnormNormalizer`), so an integrator has nothing
+  // to configure to get a key that matches the server's. The seam exists for
+  // the app that has measured the fold as too slow and knows its identifiers
+  // are ASCII; see `doc/integration.md` before taking it.
   runApp(const TraciveExampleApp());
 }
 

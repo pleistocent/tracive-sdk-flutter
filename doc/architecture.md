@@ -465,11 +465,14 @@ Three points the boxes compress:
   leaves alone), and `\D` is ASCII-only, so Arabic-Indic digits are stripped
   rather than converted. NFC is applied to e-mails, handles and code fields, and
   **not** to bank account ids, crypto addresses or phone numbers.
-- **NFC comes from an injectable normalizer.** Dart's core library has no NFC,
-  so the default is `DefaultNormalizer` — exact for ASCII, Latin, Greek,
-  Cyrillic, Hangul and any already-decomposed input, and divergent from full NFC
-  in three narrow cases. If your app accepts identifiers where those are
-  plausible, install `UnormNormalizer` once at start-up. See
+- **NFC comes from an injectable normalizer, and the default is the full one.**
+  Dart's core library has no NFC, so the SDK ships two implementations behind
+  one seam. `UnormNormalizer` — full Unicode NFC — is what folds every query
+  unless a host app deliberately replaces it, which is what keeps this SDK's
+  keys identical to the three that get NFC from their platforms.
+  `DefaultNormalizer` is the dependency-free opt-out: exact for ASCII, Latin,
+  Greek, Cyrillic, Hangul and any already-decomposed input, and divergent from
+  full NFC on 565 BMP code points fed raw. See
   [`integration.md` § Unicode normalisation](integration.md#unicode-normalisation).
 
 `test/fixtures/query-grammar-vectors.json` pins all of this. It is vendored

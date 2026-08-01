@@ -784,17 +784,24 @@ void main() {
   // --------------------------------------------------------------------------
   // NFC. Read `lib/src/query/normalizer.dart` before changing anything here.
   //
-  // Dart's core library has no NFC. `DefaultNormalizer` therefore ships the
-  // composition half of the algorithm - canonical ordering plus canonical
-  // composition over every BMP primary composite, plus algorithmic Hangul -
-  // which is exactly NFC for already-decomposed input. That is what the
-  // `email-nfc-decomposed` vector above exercises for real: its input really is
-  // 'e' + U+0301, not a precomposed U+00E9 (asserted below).
+  // Dart's core library has no NFC, so this SDK ships two implementations
+  // behind one seam, and which of them is the DEFAULT is the thing these tests
+  // exist to pin.
   //
-  // It is NOT full NFC, and these tests say so out loud rather than pretending
-  // otherwise: there is no canonical *decomposition* step, so singletons and
-  // composition-excluded characters come out unchanged. Where that matters,
-  // inject a full implementation - the last test here proves the seam works.
+  // `UnormNormalizer` is the default: full NFC, the same answer the three
+  // sibling SDKs get from their platforms. `DefaultNormalizer` is the opt-out:
+  // dependency-free, and only the composition half of the algorithm - canonical
+  // ordering plus canonical composition over every BMP primary composite, plus
+  // algorithmic Hangul. That is exactly NFC for already-decomposed input, which
+  // is what the `email-nfc-decomposed` vector above exercises for real: its
+  // input really is 'e' + U+0301, not a precomposed U+00E9 (asserted below).
+  //
+  // The distinction is invisible to the shared fixture, and that is the trap
+  // worth naming here. Every NFC vector in it supplies input that is already
+  // decomposed, which is precisely the case the incomplete fold handles
+  // correctly - so a green fixture proved nothing about the 565 BMP code points
+  // that only differ when the input arrives RAW. The tests below feed raw
+  // input for that reason.
   // --------------------------------------------------------------------------
   group('NFC (DefaultNormalizer)', () {
     const normalizer = DefaultNormalizer();
@@ -870,8 +877,11 @@ void main() {
     test('an injected normalizer is what the builders actually use', () {
       addTearDown(TraciveNormalization.resetForTesting);
 
+      // Installed before the first fold of this test, so the latch is open.
+      TraciveNormalization.normalizer = const DefaultNormalizer();
+
       // The platform segment folds NFC -> uppercase, and U+212B is its own
-      // uppercase, so the shipped normalizer leaves the singleton in the key.
+      // uppercase, so the incomplete fold leaves the singleton in the key.
       expect(
         TraciveQuery.username(platform: '\u212B', handle: 'x').searchQueryIndex,
         'USERNAME_\u212B_x',
@@ -915,7 +925,7 @@ void main() {
       addTearDown(TraciveNormalization.resetForTesting);
       TraciveQuery.phone('+6281234567891');
       expect(
-        () => TraciveNormalization.normalizer = const DefaultNormalizer(),
+        () => TraciveNormalization.normalizer = const UnormNormalizer(),
         returnsNormally,
       );
     });
@@ -924,12 +934,72 @@ void main() {
       // A host may reasonably read it to log its configuration. Doing so must
       // not stop it being installed afterwards.
       addTearDown(TraciveNormalization.resetForTesting);
-      expect(TraciveNormalization.normalizer, isA<DefaultNormalizer>());
+      expect(TraciveNormalization.normalizer, isA<UnormNormalizer>());
       expect(
         () =>
             TraciveNormalization.normalizer = const _AngstromAwareNormalizer(),
         returnsNormally,
       );
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // The DEFAULT fold is full NFC.
+  //
+  // Every assertion below feeds RAW, non-decomposed input. That is the whole
+  // point: the shared fixture's NFC vectors all supply input that is already
+  // decomposed, so they pass under either implementation and cannot see this
+  // difference. Raw input is where the 565-code-point gap lives.
+  //
+  // Each of these would have failed before full NFC became the default, and it
+  // would have failed silently in production rather than loudly here: the key
+  // simply resolves to a record the server does not hold, the check misses, and
+  // the miss is billed.
+  // --------------------------------------------------------------------------
+  group('NFC (the shipped default)', () {
+    test('the default normalizer is the full-NFC one', () {
+      expect(TraciveNormalization.normalizer, isA<UnormNormalizer>());
+    });
+
+    test('decomposes a singleton fed in raw', () {
+      // U+212B ANGSTROM SIGN -> U+00C5, and U+2126 OHM SIGN -> U+03A9. These
+      // are the two singletons `DefaultNormalizer` names in its own documented
+      // limitations, and it leaves both exactly as they arrived.
+      expect(TraciveNormalization.fold('Å'), 'Å');
+      expect(TraciveNormalization.fold('Ω'), 'Ω');
+    });
+
+    test('decomposes a composition-excluded character fed in raw', () {
+      // U+0958 DEVANAGARI LETTER QA is excluded from composition, so true NFC
+      // decomposes it to U+0915 U+093C and leaves it decomposed.
+      expect(TraciveNormalization.fold('क़'), 'क़');
+    });
+
+    test('reorders through a decomposition, not only around one', () {
+      // U+00E9 is already composed and U+0327 has the lower combining class, so
+      // reaching the right answer requires decomposing first: true NFC yields
+      // U+0229 (e with cedilla) + U+0301. A fold with no decomposition step has
+      // nothing to reorder and leaves the pair as typed.
+      expect(TraciveNormalization.fold('ȩ́'), 'ȩ́');
+    });
+
+    test('a query builder folds a raw singleton the way the server does', () {
+      // The end-to-end shape of the bug this closes. The platform segment is
+      // NFC then uppercase, and U+212B is its own uppercase, so an incomplete
+      // fold puts U+212B into the record key where the server put U+00C5.
+      expect(
+        TraciveQuery.username(platform: 'Å', handle: 'x').searchQueryIndex,
+        'USERNAME_Å_x',
+      );
+    });
+
+    test('already-decomposed input still folds as the fixture expects', () {
+      // The property the fixture does cover, asserted here too so that a later
+      // change to the default cannot trade one class of correctness for the
+      // other without something going red.
+      expect(TraciveNormalization.fold('café'), 'café');
+      expect(TraciveNormalization.fold('한'), '한');
+      expect(TraciveNormalization.fold('budi@gmail.com'), 'budi@gmail.com');
     });
   });
 }

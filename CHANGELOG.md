@@ -10,6 +10,49 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **Unicode NFC is now full NFC by default.** `TraciveNormalization` installed
+  `DefaultNormalizer`, which does canonical ordering and canonical composition
+  but **no canonical decomposition step**. Its own documentation measured the
+  gap and then left it as the default: **565 of the 63 488 BMP code points**
+  fold to a different key from the server's when they arrive raw rather than
+  pre-decomposed — 493 singleton decompositions such as U+212B ANGSTROM SIGN,
+  plus 72 composition-excluded pairs such as U+0958 DEVANAGARI QA. Full
+  correctness was available, as `UnormNormalizer`, behind an opt-in line in
+  `main()` that an integrator had to read the source to discover.
+
+  The folded key **is** the record key. Each of those 565 code points therefore
+  produced a lookup for a record that does not exist: the check missed, the miss
+  was billed, and nothing in the response distinguished it from a genuine "no
+  reports on file". The Kotlin, Swift and React Native SDKs all fold with full
+  NFC and offer no opt-in at all, so this was also the one place where four SDKs
+  disagreed about what a given identifier is called.
+
+  `UnormNormalizer` is now the default. `DefaultNormalizer` remains exported as
+  a deliberate opt-*out* for an app that has measured the fold as too expensive
+  and knows its identifiers stay in scope.
+
+  **What you will observe:** an identifier containing one of those code points
+  now folds to the same `searchQueryIndex` the server computes — so a check that
+  used to miss now hits. Everything already correct is unchanged: 20 000
+  randomly generated multi-code-point sequences and every already-decomposed
+  input fold byte-identically to before. Cached rows written by an earlier
+  version under the old fold are orphaned for the affected identifiers only;
+  they expire on their own TTL.
+
+  **What it costs:** nothing to install — `unorm_dart` was already a declared,
+  non-optional dependency of this package, so it was being resolved and shipped
+  either way. Throughput goes from about 25 ns to about 3 µs per fold for an
+  ASCII identifier. One fold happens per check, against a network round trip of
+  tens of milliseconds.
+
+  **One known divergence, stated rather than hidden:** `unorm_dart` decomposes
+  U+D7A4, which is unassigned — the Hangul Syllables block ends at U+D7A3 — so
+  a key containing it still folds differently from the server's. It is left
+  uncorrected: no input method produces an unassigned code point, and patching
+  around a third-party bug means re-verifying the patch on every release of that
+  package. Verified against Python 3 `unicodedata` at Unicode 16.0.0: 63 487 of
+  63 488 BMP code points agree, and this is the one that does not.
+
 - **A stored grant whose access token is blank now refreshes instead of asking
   the user to authorize again.** `TraciveOAuth.ensureAccessToken()` treated a
   blank access token exactly like an empty store: it threw
