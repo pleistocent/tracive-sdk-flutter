@@ -136,7 +136,8 @@ class TraciveOAuth {
   /// second refresh.
   Future<TraciveTokens>? _refreshInFlight;
 
-  /// The refresh token most recently handed to the server.
+  /// The refresh tokens this flow has actually handed to the server, oldest
+  /// first.
   ///
   /// A refresh token is single-use, and presenting one twice is precisely what
   /// reuse detection looks for — the server answers by revoking the whole
@@ -145,9 +146,23 @@ class TraciveOAuth {
   /// first caller has just spent. This records what has been spent so such a
   /// caller can be turned away on the token's identity rather than on timing.
   ///
+  /// It is a short history rather than a single slot because a store read can
+  /// outlive more than one rotation. With one slot, a snapshot taken before the
+  /// first of two rotations was no longer recognised by the time it arrived —
+  /// the slot had moved on to the second token — and went straight back on the
+  /// wire. How far back this reaches is not safety-critical, though: the flight
+  /// itself re-reads the store and sends what it finds there, so a snapshot
+  /// older than this history causes at worst one redundant refresh, never a
+  /// reuse. See [_performRefresh].
+  ///
   /// Cleared whenever the stored tokens are, so a fresh authorization starts
   /// from a clean slate.
-  String? _spentRefreshToken;
+  final List<String> _spentRefreshTokens = <String>[];
+
+  /// How many spent refresh tokens to remember. Comfortably more rotations than
+  /// a single store read can realistically span; see [_spentRefreshTokens] for
+  /// why an under-estimate here is not a correctness problem.
+  static const int _spentRefreshTokenHistory = 8;
 
   /// Which generation of credentials this flow is currently working with.
   ///
@@ -375,23 +390,24 @@ class TraciveOAuth {
     return refreshed.accessToken;
   }
 
-  /// Refreshes the tokens, **single-flight** — §6.
+  /// Refreshes the tokens, **single-flight**.
   ///
-  /// > "Auto-refresh on 401 `expired_token`, **single-flight**: concurrent 401s
-  /// > must trigger exactly one refresh; the others await its result. Getting
-  /// > this wrong trips the server's refresh-token **reuse detection**, which
-  /// > revokes the whole grant."
+  /// Concurrent 401s must trigger exactly one refresh and the others must await
+  /// its result. Getting this wrong presents a rotated refresh token twice,
+  /// which trips the server's reuse detection and revokes the whole grant.
   ///
-  /// Three guards, and all three are needed:
+  /// Four guards, and all four are needed:
   ///
   /// 1. **The latch.** While a refresh is in flight, every other caller awaits
-  ///    that same future. N concurrent 401s produce one `POST /oauth/token`.
+  ///    that same future. N concurrent 401s produce one token request.
   /// 2. **The stale-token check.** A request whose 401 arrives *after* another
   ///    request already refreshed would otherwise start a second, pointless
   ///    refresh. Passing [staleAccessToken] — the token the failed request
   ///    actually used — lets this method notice that the stored token has moved
   ///    on and return it untouched.
-  /// 3. **The spent-token check** ([_spentRefreshToken]).
+  /// 3. **The spent-token check** ([_spentRefreshTokens]).
+  /// 4. **The flight's own store re-read** ([_performRefresh]), which decides
+  ///    what actually goes on the wire.
   ///
   /// The third guard exists because the first two leave a real gap, and it is
   /// worth being precise about which one. It is true that the code between
@@ -415,6 +431,13 @@ class TraciveOAuth {
   /// latch — there is nothing left to observe. The guard has to be on the
   /// token's identity rather than on timing, which is what the third check is.
   /// Please do not "simplify" it back out.
+  ///
+  /// The fourth guard is what makes the third one's memory an optimisation
+  /// rather than a security boundary. A snapshot can be several rotations old,
+  /// and no bounded history recognises all of them; so a flight never sends the
+  /// snapshot it was started from. It re-reads the store and sends whatever is
+  /// live there, which means the worst a snapshot too old to be recognised can
+  /// cause is one redundant refresh.
   ///
   /// On `invalid_grant` / `grant_revoked` the stored tokens are cleared and
   /// [TraciveGrantRevokedException] is thrown. **Do not retry that** — retrying
@@ -441,8 +464,7 @@ class TraciveOAuth {
     final inFlight = _refreshInFlight;
     if (inFlight != null) return inFlight;
 
-    if (_spentRefreshToken != null &&
-        current.refreshToken == _spentRefreshToken) {
+    if (_spentRefreshTokens.contains(current.refreshToken)) {
       // No flight is running, yet this token has already been spent by one that
       // finished: `current` is a snapshot from before that flight's write. Do
       // not send it. Re-read and hand back whatever that flight stored.
@@ -461,7 +483,7 @@ class TraciveOAuth {
       );
     }
 
-    return _startRefresh(current);
+    return _startRefresh();
   }
 
   /// Erases the stored tokens without calling the server.
@@ -527,8 +549,18 @@ class TraciveOAuth {
   Future<void> _discardCredentials() async {
     _credentialEpoch++;
     _refreshInFlight = null;
-    _spentRefreshToken = null;
+    _spentRefreshTokens.clear();
     await _tokenStore.clear();
+  }
+
+  /// Records [token] as handed to the server, evicting the oldest entry once
+  /// the history is full.
+  void _markSpent(String token) {
+    if (_spentRefreshTokens.contains(token)) return;
+    _spentRefreshTokens.add(token);
+    if (_spentRefreshTokens.length > _spentRefreshTokenHistory) {
+      _spentRefreshTokens.removeAt(0);
+    }
   }
 
   /// The error a caller gets when its tokens arrived after the credentials they
@@ -543,61 +575,81 @@ class TraciveOAuth {
     statusCode: 401,
   );
 
-  Future<TraciveTokens> _startRefresh(TraciveTokens current) {
+  Future<TraciveTokens> _startRefresh() {
     final completer = Completer<TraciveTokens>();
-    // Both set synchronously, before the first await inside `_performRefresh`
-    // can yield: the latch is what makes the flight "single", and recording the
-    // token as spent is what stops a later, stale snapshot of it being sent a
-    // second time once the latch has cleared.
+    // Set synchronously, before the first await inside `_performRefresh` can
+    // yield: the latch is what makes the flight "single", and every caller that
+    // arrives while it is up joins this future instead of starting a second
+    // flight.
     _refreshInFlight = completer.future;
-    _spentRefreshToken = current.refreshToken;
-    _performRefresh(current, _credentialEpoch).then(
+    _performRefresh(_credentialEpoch).then(
       (tokens) {
         _refreshInFlight = null;
         completer.complete(tokens);
       },
       onError: (Object error, StackTrace stackTrace) {
         _refreshInFlight = null;
-        // The flight failed, so this token was never exchanged for a new one:
-        // release the spent marker or a retry would be refused forever. Only a
-        // flight that SUCCEEDED leaves the marker standing, because only then
-        // has the server actually consumed the token.
-        if (_spentRefreshToken == current.refreshToken) {
-          _spentRefreshToken = null;
-        }
         completer.completeError(error, stackTrace);
       },
     );
     return completer.future;
   }
 
-  Future<TraciveTokens> _performRefresh(
-    TraciveTokens current,
-    int epoch,
-  ) async {
-    final response = await _postForm(
-      environment.resolve(tokenPath),
-      buildRefreshForm(
-        refreshToken: current.refreshToken!,
-        clientId: mode.clientId,
-      ),
-    );
-    if (!response.isSuccess) {
-      final error = mapTokenErrorResponse(response);
-      if (error is TraciveGrantRevokedException) await _discardCredentials();
-      throw error;
+  Future<TraciveTokens> _performRefresh(int epoch) async {
+    // Read the store again rather than trusting the caller's snapshot. The
+    // caller read before the latch was taken, so its record may be any number
+    // of rotations old; the store is the only authority on which refresh token
+    // is live. This is what keeps a snapshot older than the spent history from
+    // ever reaching the wire — it just causes a redundant refresh instead.
+    final current = await _tokenStore.read();
+    if (epoch != _credentialEpoch) throw _discardedMidFlight;
+    if (current == null || !current.canRefresh) {
+      throw const TraciveInvalidTokenException(
+        'No refresh token is stored; the user must authorize again',
+        code: 'invalid_token',
+        statusCode: 401,
+      );
     }
-    final tokens = _decodeTokenResponse(response, previous: current);
-    if (epoch != _credentialEpoch) {
-      // Signed out (or the grant was revoked) while this was on the wire. The
-      // server has issued a fresh pair, but nobody asked for it any more —
-      // writing it would undo the sign-out.
-      throw _discardedMidFlight;
+    final refreshToken = current.refreshToken!;
+    if (_spentRefreshTokens.contains(refreshToken)) {
+      throw const TraciveInvalidTokenException(
+        'The stored refresh token has already been used; '
+        'the user must authorize again',
+        code: 'invalid_token',
+        statusCode: 401,
+      );
     }
-    // One write for the pair. The refresh token rotates, so replacing them
-    // separately could strand a new access token beside a spent refresh token.
-    await _tokenStore.write(tokens);
-    return tokens;
+
+    _markSpent(refreshToken);
+    try {
+      final response = await _postForm(
+        environment.resolve(tokenPath),
+        buildRefreshForm(refreshToken: refreshToken, clientId: mode.clientId),
+      );
+      if (!response.isSuccess) {
+        final error = mapTokenErrorResponse(response);
+        if (error is TraciveGrantRevokedException) await _discardCredentials();
+        throw error;
+      }
+      final tokens = _decodeTokenResponse(response, previous: current);
+      if (epoch != _credentialEpoch) {
+        // Signed out (or the grant was revoked) while this was on the wire. The
+        // server has issued a fresh pair, but nobody asked for it any more —
+        // writing it would undo the sign-out.
+        throw _discardedMidFlight;
+      }
+      // One write for the pair. The refresh token rotates, so replacing them
+      // separately could strand a new access token beside a spent refresh
+      // token.
+      await _tokenStore.write(tokens);
+      return tokens;
+    } catch (_) {
+      // The flight failed, so release the marker or a retry would be refused
+      // forever. Whether that is the right thing to do for *every* kind of
+      // failure is a separate question.
+      _spentRefreshTokens.remove(refreshToken);
+      rethrow;
+    }
   }
 
   Future<TraciveTokens> _exchange({

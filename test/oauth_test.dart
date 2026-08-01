@@ -807,6 +807,84 @@ void main() {
       );
     });
 
+    test('a snapshot older than one rotation is still refused', () async {
+      // The reuse guard used to remember exactly ONE spent refresh token. After
+      // a second rotation the marker held R2 and no longer recognised R1, so a
+      // caller whose store read had been in flight across both rotations fell
+      // straight through and put R1 back on the wire — which is the signal
+      // reuse detection revokes the whole grant for.
+      //
+      // Reproduced naturally rather than by forcing the store: the stale caller
+      // issues its read FIRST, that read captures the pre-rotation snapshot,
+      // and it is held open until two other callers have each rotated.
+      final store = _StaleSnapshotStore(_tokensNumbered(1));
+      final staleReadResolves = Completer<void>();
+      store.readGates.add(staleReadResolves);
+      final transport = _RotatingTokenTransport();
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      // The caller with the doomed snapshot. Its read is gated open.
+      final stale = oauth.refreshTokens();
+
+      // Two complete rotations happen while that read is outstanding.
+      await oauth.refreshTokens();
+      await oauth.refreshTokens();
+      expect(
+        transport.presented,
+        <String>['refresh-token-1', 'refresh-token-2'],
+        reason: 'two rotations, each spending the token before it',
+      );
+      expect((await store.read())!.refreshToken, 'refresh-token-3');
+
+      staleReadResolves.complete();
+      final resolved = await stale;
+
+      expect(
+        transport.presented,
+        <String>['refresh-token-1', 'refresh-token-2'],
+        reason: 'the stale caller must not have presented a spent token',
+      );
+      expect(
+        resolved.refreshToken,
+        'refresh-token-3',
+        reason: 'it should be handed what the store actually holds',
+      );
+    });
+
+    test('the token presented is the stored one, never the caller snapshot',
+        () async {
+      // The guard above is a bounded history, so on its own it can only reach
+      // back so far. The invariant that does not depend on how far back it
+      // reaches is this one: whatever a caller's snapshot says, a flight sends
+      // the refresh token the store holds when the flight actually runs. Ten
+      // rotations is comfortably past any history a guard would keep.
+      final store = _StaleSnapshotStore(_tokensNumbered(1));
+      final staleReadResolves = Completer<void>();
+      store.readGates.add(staleReadResolves);
+      final transport = _RotatingTokenTransport();
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      final stale = oauth.refreshTokens();
+      for (var i = 0; i < 10; i++) {
+        await oauth.refreshTokens();
+      }
+      expect((await store.read())!.refreshToken, 'refresh-token-11');
+
+      staleReadResolves.complete();
+      final resolved = await stale;
+
+      expect(
+        transport.presented.toSet(),
+        hasLength(transport.presented.length),
+        reason: 'no refresh token may be presented to the server twice',
+      );
+      expect(
+        resolved.refreshToken,
+        (await store.read())!.refreshToken,
+        reason: 'the caller is handed the live pair, not a resurrected one',
+      );
+    });
+
     test('a failed refresh does not wedge the latch', () async {
       final store = _authorizedStore();
       var calls = 0;
@@ -1112,6 +1190,14 @@ Uri _callback(String state, {String? code}) => Uri.parse(
       '?state=$state${code == null ? '' : '&code=$code'}',
     );
 
+/// The Nth generation of a rotating pair, so a test can say which one it means.
+TraciveTokens _tokensNumbered(int generation) => TraciveTokens(
+      accessToken: 'access-token-$generation',
+      refreshToken: 'refresh-token-$generation',
+      expiresAt: _t0.add(const Duration(hours: 1)),
+      grantedScopes: const <String>['scammer.check'],
+    );
+
 String _tokenBody() => jsonEncode(<String, Object?>{
       'access_token': 'access-token-2',
       'refresh_token': 'refresh-token-2',
@@ -1176,6 +1262,41 @@ class _FakeLauncher extends AuthLauncher {
   }
 }
 
+/// A token endpoint that rotates: every refresh answers with the next
+/// generation of the pair, and records which refresh token it was given.
+///
+/// Lets a test say "this token was presented twice" as a fact about the wire
+/// rather than as a fact about the SDK's internal state.
+class _RotatingTokenTransport extends HttpTransport {
+  final List<TraciveHttpRequest> requests = <TraciveHttpRequest>[];
+
+  /// Every refresh token handed to the server, in order.
+  final List<String> presented = <String>[];
+
+  int _generation = 1;
+
+  @override
+  Future<TraciveHttpResponse> send(TraciveHttpRequest request) async {
+    requests.add(request);
+    presented.add(
+      RegExp(r'refresh_token=([^&]+)')
+              .firstMatch(request.body ?? '')
+              ?.group(1) ??
+          '?',
+    );
+    _generation++;
+    return _ok(
+      jsonEncode(<String, Object?>{
+        'access_token': 'access-token-$_generation',
+        'refresh_token': 'refresh-token-$_generation',
+        'token_type': 'Bearer',
+        'expires_in': 3600,
+        'scope': 'scammer.check',
+      }),
+    );
+  }
+}
+
 /// A [TokenStore] that captures its value BEFORE its own await and delivers it
 /// late, so a read issued early can resolve with a snapshot that is already out
 /// of date. Models real secure storage, whose native read may execute before
@@ -1188,12 +1309,23 @@ class _StaleSnapshotStore extends TokenStore {
 
   /// Delay applied to the Nth call to [read].
   final List<Duration> readDelays = <Duration>[];
+
+  /// Gate held by the Nth call to [read]. A non-null entry takes precedence
+  /// over [readDelays] and holds that read open until the test completes it,
+  /// which is how a read can be made to span an arbitrary number of rotations
+  /// without depending on wall-clock timing.
+  final List<Completer<void>?> readGates = <Completer<void>?>[];
   int _reads = 0;
 
   @override
   Future<TraciveTokens?> read() async {
     final snapshot = _tokens;
     final index = _reads++;
+    final gate = index < readGates.length ? readGates[index] : null;
+    if (gate != null) {
+      await gate.future;
+      return snapshot;
+    }
     await Future<void>.delayed(
       index < readDelays.length ? readDelays[index] : Duration.zero,
     );
