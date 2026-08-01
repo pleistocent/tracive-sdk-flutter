@@ -302,6 +302,49 @@ void main() {
       expect(jsToUpperCase('ﬁ'), 'FI'); // fi ligature
     });
 
+    test('the public builders fold non-Latin scripts to the server key', () {
+      // The gap that used to be here was invisible from the fixture, which
+      // exercises ASCII, U+00DF, U+0130 and NFC only: Dart's simple case
+      // mapping is several Unicode releases behind the engine the server folds
+      // in, so a Greek, Cherokee or Georgian identifier built a key that could
+      // not match — and the resulting miss was still billed. Asserted through
+      // the real builders, because that is the surface an integrator touches.
+
+      // Greek: the sigma ending the local part takes its word-final form.
+      expect(
+        TraciveQuery.email('\u{39D}\u{399}\u{39A}\u{39F}\u{3A3}@x.com')
+            .searchQueryIndex,
+        'EMAIL_\u{3BD}\u{3B9}\u{3BA}\u{3BF}\u{3C2}@x.com',
+      );
+      expect(
+        TraciveQuery.username(
+          platform: 'INSTAGRAM',
+          handle: '\u{39D}\u{399}\u{39A}\u{39F}\u{3A3}',
+        ).searchQueryIndex,
+        'USERNAME_INSTAGRAM_\u{3BD}\u{3B9}\u{3BA}\u{3BF}\u{3C2}',
+      );
+      // Cherokee: the capitals lowercase into the small-letter block.
+      expect(
+        TraciveQuery.email('\u{13A0}\u{13A1}@x.com').searchQueryIndex,
+        'EMAIL_\u{AB70}\u{AB71}@x.com',
+      );
+      // Georgian: a Mkhedruli bank code uppercases into Mtavruli.
+      expect(
+        TraciveQuery.bankAccount(
+          countryAlpha3: 'GEO',
+          bankCode: '\u{10D0}\u{10D1}',
+          account: '123',
+        ).searchQueryIndex,
+        'BANK_GEO_\u{1C90}\u{1C91}_123',
+      );
+      // Adlam: a supplementary-plane script, which the fold used to skip
+      // entirely because its scan looked at code units rather than runes.
+      expect(
+        TraciveQuery.email('\u{1E900}\u{1E901}@x.com').searchQueryIndex,
+        'EMAIL_\u{1E922}\u{1E923}@x.com',
+      );
+    });
+
     test('case mapping is locale-invariant', () {
       // Dart has no locale-sensitive case API, so there is no locale to pass
       // wrong - but the dotted/dotless Turkish pair is asserted anyway, because

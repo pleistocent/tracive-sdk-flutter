@@ -1,25 +1,47 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// JavaScript string semantics, hand-written — the SDK specification §3 and the
-// `crossLanguageSemantics` block of `test/fixtures/query-grammar-vectors.json`.
+// JavaScript string semantics, so that a key folded here is byte-identical to
+// the key the Tracive API folds. The rules below are the ones stated in the
+// `crossLanguageSemantics` block of `test/fixtures/query-grammar-vectors.json`,
+// which is vendored verbatim into every Tracive SDK.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// The Tracive backend folds query keys in JavaScript. Every SDK must produce a
-// byte-identical key, because the folded key is the record key: a
-// key that differs by one code point resolves to a document that does not
-// exist, the check misses — and per §3.2 a miss is still billed.
+// The Tracive API folds query keys in JavaScript. Every SDK must produce a
+// byte-identical key, because the folded key is the record key: a key that
+// differs by one code point resolves to a record that does not exist, the check
+// misses — and a miss is still billed to the caller.
 //
-// Dart's built-ins are NOT JavaScript's. The three divergences below were each
-// measured against this Dart SDK, not assumed:
+// Dart's built-ins are NOT JavaScript's. Three divergences, each measured
+// against this Dart SDK rather than assumed:
 //
-//  1. CASE MAPPING. `String.toUpperCase()` / `toLowerCase()` apply Unicode
-//     *simple* (one-to-one) case mapping. JavaScript applies the *full*
-//     mapping, which can change a string's length. Measured: Dart leaves
-//     U+00DF unchanged where JS yields 'SS', and maps U+0130 to a bare 'i'
-//     where JS yields 'i' + U+0307. 103 code points differ this way; they are
-//     tabulated below.
+//  1. CASE MAPPING. On the Dart VM (so: on Android and iOS), `toUpperCase()`
+//     and `toLowerCase()` apply Unicode *simple* (one-to-one) case mapping,
+//     taken from whichever Unicode release the Dart SDK was built against.
+//     JavaScript applies the *full* mapping from whichever release its engine
+//     was built against. Those disagree in two independent ways:
+//
+//       a. The full mapping can be longer than one code point. Dart leaves
+//          U+00DF alone where JavaScript yields `SS`; Dart maps U+0130 to a
+//          bare `i` where JavaScript yields `i` + U+0307.
+//       b. Dart's simple table is several Unicode releases behind, so whole
+//          living scripts map differently or not at all — Adlam, Cherokee,
+//          Georgian Mkhedruli/Mtavruli, Osage, Warang Citi, Medefaidrin, Old
+//          Hungarian, Latin Extended-D, Cyrillic.
+//
+//     Both are covered by the generated tables in `js_case_data.dart`. See
+//     [jsToUpperCase] for what is and is not guaranteed.
+//
+//     There is exactly one case mapping JavaScript applies that no
+//     per-code-point table can express: U+03A3 GREEK CAPITAL LETTER SIGMA
+//     lowercases to U+03C2 (final sigma) at the end of a word and to U+03C3
+//     everywhere else. That rule is implemented directly, in [jsToLowerCase].
+//     It is the *only* context-sensitive mapping: sweeping every code point
+//     U+0000–U+10FFFF in four different neighbourhoods (preceded by a cased
+//     letter, followed by one, preceded by a case-ignorable character, and
+//     preceded by a cased letter plus a case-ignorable one) turns up U+03A3 and
+//     nothing else.
 //
 //  2. TRIM. `String.trim()` follows the Unicode White_Space property *plus*
 //     U+FEFF. JavaScript's `String.prototype.trim()` strips a different set.
@@ -34,7 +56,48 @@
 //
 // Nothing here uses a locale. JavaScript's case mapping is locale-invariant,
 // so a Turkish-locale device must fold exactly like every other device.
+//
 // ---------------------------------------------------------------------------
+// WHAT IS STILL NOT GUARANTEED — read this before assuming the gap is closed
+// ---------------------------------------------------------------------------
+// Measured with `dart run tool/verify_js_case_fold.dart` against Node v26
+// (Unicode 17.0), which is the release `jsCaseUnicodeVersion` records:
+//
+//     per-code-point divergences over U+0000-U+10FFFF ....... 0
+//     per-string divergences over 200,013 folded samples .... 0
+//
+// That is a complete result *against that engine*. It is not a promise about
+// the engine the Tracive API happens to run, and the difference is not
+// hypothetical: case mapping is a function of the Unicode release, and two
+// scripts in the tables gained their case pairings very recently.
+//
+//   * Garay       (U+10D50-10D85, 44 table entries) — Unicode 16.0
+//   * Beria Erfe  (U+16EA0-16ED3, 50 table entries) — Unicode 17.0
+//
+// If the API's engine predates those releases it leaves those 94 code points
+// alone and this SDK folds them, so the keys differ. Nothing else in the
+// tables is younger than Unicode 14.0. Neither script is plausible in a bank
+// code, a chain code or a handle today, which is why this ships — but it is a
+// known, bounded divergence rather than none, and it is the reason
+// `jsCaseUnicodeVersion` exists. Point `tool/generate_js_case_data.dart` at the
+// API's own Node version to close it, and `tool/verify_js_case_fold.dart` to
+// re-measure.
+// ---------------------------------------------------------------------------
+
+import 'js_case_data.dart';
+
+/// U+03A3 GREEK CAPITAL LETTER SIGMA — the one code point whose lowercase form
+/// depends on the characters around it.
+const int _capitalSigma = 0x03A3;
+
+/// [_capitalSigma] as a string, for the fast-path scan.
+const String _capitalSigmaText = '\u{3A3}';
+
+/// U+03C2 GREEK SMALL LETTER FINAL SIGMA.
+const String _finalSigma = '\u{3C2}';
+
+/// U+03C3 GREEK SMALL LETTER SIGMA.
+const String _medialSigma = '\u{3C3}';
 
 /// The code points JavaScript's `String.prototype.trim()` strips.
 ///
@@ -90,173 +153,119 @@ String jsTrim(String value) {
   return value.substring(start, end);
 }
 
-/// Code points whose JavaScript uppercase mapping is longer than one code
-/// point, and which Dart's [String.toUpperCase] therefore gets wrong.
-///
-/// Generated by diffing Dart's own simple mapping against the Unicode full
-/// mapping (Unicode 16.0) over every code point, and keeping only the
-/// multi-code-point results. This is the unconditional half of
-/// `SpecialCasing.txt`; there are no locale-conditional entries here because
-/// JavaScript's `toUpperCase()` applies none.
-const Map<int, String> jsUppercaseSpecialCases = <int, String>{
-  0x00DF: 'SS', // U+0053 U+0053
-  0x0149: '\u{2BC}N', // U+02BC U+004E
-  0x01F0: 'J\u{30C}', // U+004A U+030C
-  0x0390: '\u{399}\u{308}\u{301}', // U+0399 U+0308 U+0301
-  0x03B0: '\u{3A5}\u{308}\u{301}', // U+03A5 U+0308 U+0301
-  0x0587: '\u{535}\u{552}', // U+0535 U+0552
-  0x1E96: 'H\u{331}', // U+0048 U+0331
-  0x1E97: 'T\u{308}', // U+0054 U+0308
-  0x1E98: 'W\u{30A}', // U+0057 U+030A
-  0x1E99: 'Y\u{30A}', // U+0059 U+030A
-  0x1E9A: 'A\u{2BE}', // U+0041 U+02BE
-  0x1F50: '\u{3A5}\u{313}', // U+03A5 U+0313
-  0x1F52: '\u{3A5}\u{313}\u{300}', // U+03A5 U+0313 U+0300
-  0x1F54: '\u{3A5}\u{313}\u{301}', // U+03A5 U+0313 U+0301
-  0x1F56: '\u{3A5}\u{313}\u{342}', // U+03A5 U+0313 U+0342
-  0x1F80: '\u{1F08}\u{399}', // U+1F08 U+0399
-  0x1F81: '\u{1F09}\u{399}', // U+1F09 U+0399
-  0x1F82: '\u{1F0A}\u{399}', // U+1F0A U+0399
-  0x1F83: '\u{1F0B}\u{399}', // U+1F0B U+0399
-  0x1F84: '\u{1F0C}\u{399}', // U+1F0C U+0399
-  0x1F85: '\u{1F0D}\u{399}', // U+1F0D U+0399
-  0x1F86: '\u{1F0E}\u{399}', // U+1F0E U+0399
-  0x1F87: '\u{1F0F}\u{399}', // U+1F0F U+0399
-  0x1F88: '\u{1F08}\u{399}', // U+1F08 U+0399
-  0x1F89: '\u{1F09}\u{399}', // U+1F09 U+0399
-  0x1F8A: '\u{1F0A}\u{399}', // U+1F0A U+0399
-  0x1F8B: '\u{1F0B}\u{399}', // U+1F0B U+0399
-  0x1F8C: '\u{1F0C}\u{399}', // U+1F0C U+0399
-  0x1F8D: '\u{1F0D}\u{399}', // U+1F0D U+0399
-  0x1F8E: '\u{1F0E}\u{399}', // U+1F0E U+0399
-  0x1F8F: '\u{1F0F}\u{399}', // U+1F0F U+0399
-  0x1F90: '\u{1F28}\u{399}', // U+1F28 U+0399
-  0x1F91: '\u{1F29}\u{399}', // U+1F29 U+0399
-  0x1F92: '\u{1F2A}\u{399}', // U+1F2A U+0399
-  0x1F93: '\u{1F2B}\u{399}', // U+1F2B U+0399
-  0x1F94: '\u{1F2C}\u{399}', // U+1F2C U+0399
-  0x1F95: '\u{1F2D}\u{399}', // U+1F2D U+0399
-  0x1F96: '\u{1F2E}\u{399}', // U+1F2E U+0399
-  0x1F97: '\u{1F2F}\u{399}', // U+1F2F U+0399
-  0x1F98: '\u{1F28}\u{399}', // U+1F28 U+0399
-  0x1F99: '\u{1F29}\u{399}', // U+1F29 U+0399
-  0x1F9A: '\u{1F2A}\u{399}', // U+1F2A U+0399
-  0x1F9B: '\u{1F2B}\u{399}', // U+1F2B U+0399
-  0x1F9C: '\u{1F2C}\u{399}', // U+1F2C U+0399
-  0x1F9D: '\u{1F2D}\u{399}', // U+1F2D U+0399
-  0x1F9E: '\u{1F2E}\u{399}', // U+1F2E U+0399
-  0x1F9F: '\u{1F2F}\u{399}', // U+1F2F U+0399
-  0x1FA0: '\u{1F68}\u{399}', // U+1F68 U+0399
-  0x1FA1: '\u{1F69}\u{399}', // U+1F69 U+0399
-  0x1FA2: '\u{1F6A}\u{399}', // U+1F6A U+0399
-  0x1FA3: '\u{1F6B}\u{399}', // U+1F6B U+0399
-  0x1FA4: '\u{1F6C}\u{399}', // U+1F6C U+0399
-  0x1FA5: '\u{1F6D}\u{399}', // U+1F6D U+0399
-  0x1FA6: '\u{1F6E}\u{399}', // U+1F6E U+0399
-  0x1FA7: '\u{1F6F}\u{399}', // U+1F6F U+0399
-  0x1FA8: '\u{1F68}\u{399}', // U+1F68 U+0399
-  0x1FA9: '\u{1F69}\u{399}', // U+1F69 U+0399
-  0x1FAA: '\u{1F6A}\u{399}', // U+1F6A U+0399
-  0x1FAB: '\u{1F6B}\u{399}', // U+1F6B U+0399
-  0x1FAC: '\u{1F6C}\u{399}', // U+1F6C U+0399
-  0x1FAD: '\u{1F6D}\u{399}', // U+1F6D U+0399
-  0x1FAE: '\u{1F6E}\u{399}', // U+1F6E U+0399
-  0x1FAF: '\u{1F6F}\u{399}', // U+1F6F U+0399
-  0x1FB2: '\u{1FBA}\u{399}', // U+1FBA U+0399
-  0x1FB3: '\u{391}\u{399}', // U+0391 U+0399
-  0x1FB4: '\u{386}\u{399}', // U+0386 U+0399
-  0x1FB6: '\u{391}\u{342}', // U+0391 U+0342
-  0x1FB7: '\u{391}\u{342}\u{399}', // U+0391 U+0342 U+0399
-  0x1FBC: '\u{391}\u{399}', // U+0391 U+0399
-  0x1FC2: '\u{1FCA}\u{399}', // U+1FCA U+0399
-  0x1FC3: '\u{397}\u{399}', // U+0397 U+0399
-  0x1FC4: '\u{389}\u{399}', // U+0389 U+0399
-  0x1FC6: '\u{397}\u{342}', // U+0397 U+0342
-  0x1FC7: '\u{397}\u{342}\u{399}', // U+0397 U+0342 U+0399
-  0x1FCC: '\u{397}\u{399}', // U+0397 U+0399
-  0x1FD2: '\u{399}\u{308}\u{300}', // U+0399 U+0308 U+0300
-  0x1FD3: '\u{399}\u{308}\u{301}', // U+0399 U+0308 U+0301
-  0x1FD6: '\u{399}\u{342}', // U+0399 U+0342
-  0x1FD7: '\u{399}\u{308}\u{342}', // U+0399 U+0308 U+0342
-  0x1FE2: '\u{3A5}\u{308}\u{300}', // U+03A5 U+0308 U+0300
-  0x1FE3: '\u{3A5}\u{308}\u{301}', // U+03A5 U+0308 U+0301
-  0x1FE4: '\u{3A1}\u{313}', // U+03A1 U+0313
-  0x1FE6: '\u{3A5}\u{342}', // U+03A5 U+0342
-  0x1FE7: '\u{3A5}\u{308}\u{342}', // U+03A5 U+0308 U+0342
-  0x1FF2: '\u{1FFA}\u{399}', // U+1FFA U+0399
-  0x1FF3: '\u{3A9}\u{399}', // U+03A9 U+0399
-  0x1FF4: '\u{38F}\u{399}', // U+038F U+0399
-  0x1FF6: '\u{3A9}\u{342}', // U+03A9 U+0342
-  0x1FF7: '\u{3A9}\u{342}\u{399}', // U+03A9 U+0342 U+0399
-  0x1FFC: '\u{3A9}\u{399}', // U+03A9 U+0399
-  0xFB00: 'FF', // U+0046 U+0046
-  0xFB01: 'FI', // U+0046 U+0049
-  0xFB02: 'FL', // U+0046 U+004C
-  0xFB03: 'FFI', // U+0046 U+0046 U+0049
-  0xFB04: 'FFL', // U+0046 U+0046 U+004C
-  0xFB05: 'ST', // U+0053 U+0054
-  0xFB06: 'ST', // U+0053 U+0054
-  0xFB13: '\u{544}\u{546}', // U+0544 U+0546
-  0xFB14: '\u{544}\u{535}', // U+0544 U+0535
-  0xFB15: '\u{544}\u{53B}', // U+0544 U+053B
-  0xFB16: '\u{54E}\u{546}', // U+054E U+0546
-  0xFB17: '\u{544}\u{53D}', // U+0544 U+053D
-};
-
-/// The single code point whose JavaScript lowercase mapping is longer than one
-/// code point.
-///
-/// U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE lowercases to `i` followed by
-/// U+0307 COMBINING DOT ABOVE. Dart drops the combining mark; a Turkish locale
-/// would drop it too. Both are wrong for this contract.
-const Map<int, String> jsLowercaseSpecialCases = <int, String>{
-  0x0130: 'i\u{307}', // U+0069 U+0307
-};
-
 /// Uppercases [value] with JavaScript's locale-invariant full case mapping.
-String jsToUpperCase(String value) =>
-    _mapCase(value, jsUppercaseSpecialCases, _upperOne);
-
-/// Lowercases [value] with JavaScript's locale-invariant full case mapping.
-String jsToLowerCase(String value) =>
-    _mapCase(value, jsLowercaseSpecialCases, _lowerOne);
-
-String _upperOne(String single) => single.toUpperCase();
-
-String _lowerOne(String single) => single.toLowerCase();
-
-/// Applies [fallback] code point by code point, overriding the code points in
-/// [specialCases] with their full mapping.
 ///
-/// Fast path: when [value] contains none of the special-case code points, Dart's
-/// own mapping is already correct for the whole string and is used as-is. Dart's
-/// case mapping is context-free, so mapping the whole string and mapping it code
-/// point by code point give the same answer — which is what makes the slow path
-/// below safe to mix with it.
-String _mapCase(
-  String value,
-  Map<int, String> specialCases,
-  String Function(String) fallback,
-) {
-  var needsSpecialCase = false;
-  for (var i = 0; i < value.length; i++) {
-    if (specialCases.containsKey(value.codeUnitAt(i))) {
-      needsSpecialCase = true;
-      break;
-    }
-  }
-  if (!needsSpecialCase) return fallback(value);
-
+/// ## What this guarantees
+///
+/// For every code point in Unicode [jsCaseUnicodeVersion], this returns what
+/// `String.prototype.toUpperCase()` returns in a JavaScript engine built
+/// against that release — on the Dart VM, on AOT, and on dart2js alike. The
+/// tables in `js_case_data.dart` hold the engine's answer rather than a patch
+/// to Dart's, so applying them on dart2js (where Dart's own case methods
+/// already compile to JavaScript's) changes nothing.
+///
+/// ## What it does not guarantee
+///
+/// The tables are a snapshot of one Unicode release. If the Tracive API's
+/// JavaScript engine is built against a *different* release, the two disagree
+/// on exactly the code points whose case mapping changed between them — in
+/// practice, the letters of scripts that gained a case pairing in the newer
+/// release. Regenerate against the API's engine with
+/// `dart run tool/generate_js_case_data.dart` when that happens;
+/// `--verify` checks the committed tables without writing.
+String jsToUpperCase(String value) {
+  if (!_containsAnyOf(value, jsUppercaseDeltas)) return value.toUpperCase();
   final buffer = StringBuffer();
-  // Iterating runes rather than code units keeps surrogate pairs together, so
-  // a non-BMP code point is handed to [fallback] whole.
   for (final rune in value.runes) {
-    final special = specialCases[rune];
-    if (special != null) {
-      buffer.write(special);
-    } else {
-      buffer.write(fallback(String.fromCharCode(rune)));
-    }
+    final mapped = jsUppercaseDeltas[rune];
+    buffer.write(mapped ?? String.fromCharCode(rune).toUpperCase());
   }
   return buffer.toString();
+}
+
+/// Lowercases [value] with JavaScript's locale-invariant full case mapping,
+/// including the Final_Sigma rule.
+///
+/// The same guarantees and the same Unicode-release caveat as [jsToUpperCase],
+/// plus one rule that is not a table lookup: U+03A3 GREEK CAPITAL LETTER SIGMA
+/// lowercases to U+03C2 when it ends a word and to U+03C3 otherwise, so
+/// `ΟΔΟΣ` folds to `οδος` and `ΟΔΟΣΑ` folds to `οδοσα`. Dart's own
+/// `toLowerCase` always produces U+03C3, which would build a key that misses
+/// for any Greek identifier ending in sigma.
+String jsToLowerCase(String value) {
+  final needsSigmaRule = value.contains(_capitalSigmaText);
+  if (!needsSigmaRule && !_containsAnyOf(value, jsLowercaseDeltas)) {
+    return value.toLowerCase();
+  }
+  // Decoded up front because the Final_Sigma condition looks both ways from the
+  // sigma, and it is defined over the *original* string, not the folded one.
+  final runes = value.runes.toList(growable: false);
+  final buffer = StringBuffer();
+  for (var index = 0; index < runes.length; index++) {
+    final rune = runes[index];
+    if (rune == _capitalSigma) {
+      buffer.write(_isFinalSigmaAt(runes, index) ? _finalSigma : _medialSigma);
+      continue;
+    }
+    final mapped = jsLowercaseDeltas[rune];
+    buffer.write(mapped ?? String.fromCharCode(rune).toLowerCase());
+  }
+  return buffer.toString();
+}
+
+/// Whether [value] contains any code point [table] maps.
+///
+/// Iterating runes rather than code units matters: the tables contain
+/// supplementary-plane code points (Adlam, Osage, Warang Citi, Medefaidrin,
+/// Old Hungarian), and a code-unit scan would only ever see their surrogate
+/// halves — which are not keys — and would wrongly take the fast path.
+///
+/// When nothing matches, Dart's own whole-string mapping is already the right
+/// answer: JavaScript's case mapping is per-code-point everywhere except
+/// U+03A3, which [jsToLowerCase] handles separately, so mapping the whole
+/// string and mapping it code point by code point agree.
+bool _containsAnyOf(String value, Map<int, String> table) {
+  for (final rune in value.runes) {
+    if (table.containsKey(rune)) return true;
+  }
+  return false;
+}
+
+/// The Unicode `Final_Sigma` condition from `SpecialCasing.txt`, evaluated at
+/// [index] of [runes].
+///
+/// It holds when the sigma is preceded by a cased letter (case-ignorable
+/// characters in between do not break the run) and is *not* followed by one on
+/// the same terms. It carries no language condition, so JavaScript's
+/// locale-invariant `toLowerCase()` applies it and Dart's does not.
+bool _isFinalSigmaAt(List<int> runes, int index) {
+  var before = index - 1;
+  while (before >= 0 && _inRanges(caseIgnorableRanges, runes[before])) {
+    before--;
+  }
+  if (before < 0 || !_inRanges(casedRanges, runes[before])) return false;
+
+  var after = index + 1;
+  while (after < runes.length && _inRanges(caseIgnorableRanges, runes[after])) {
+    after++;
+  }
+  return after >= runes.length || !_inRanges(casedRanges, runes[after]);
+}
+
+/// Binary search over a flattened, sorted list of inclusive `[start, end]`
+/// pairs.
+bool _inRanges(List<int> ranges, int codePoint) {
+  var low = 0;
+  var high = (ranges.length >> 1) - 1;
+  while (low <= high) {
+    final middle = (low + high) >> 1;
+    if (codePoint < ranges[middle << 1]) {
+      high = middle - 1;
+    } else if (codePoint > ranges[(middle << 1) + 1]) {
+      low = middle + 1;
+    } else {
+      return true;
+    }
+  }
+  return false;
 }
