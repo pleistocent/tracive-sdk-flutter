@@ -569,7 +569,7 @@ void main() {
     });
 
     test('proxy auth header values are not printable', () {
-      const mode = TraciveMode.proxy(
+      final mode = TraciveMode.proxy(
         baseUrl: 'https://proxy.example/v1',
         authHeaders: <String, String>{'X-Partner-Token': 'shhh'},
       );
@@ -577,6 +577,29 @@ void main() {
       expect(rendered, isNot(contains('shhh')));
       expect(rendered, contains('X-Partner-Token'));
       expect(rendered, contains('redacted'));
+    });
+
+    test('the auth headers are copied, not captured', () {
+      // A mode is a value, and this one holds credentials. A caller that kept
+      // the map it passed could otherwise change what this object claims to
+      // hold after it was built — and a proxy mode whose headers changed
+      // underneath it is a request signed with something nobody chose.
+      final supplied = <String, String>{'x-partner-key': 'first'};
+      final mode = TraciveProxyMode(
+        baseUrl: 'https://partner.example/tracive',
+        authHeaders: supplied,
+      );
+
+      supplied['x-partner-key'] = 'second';
+      supplied['x-extra'] = 'added later';
+
+      expect(mode.authHeaders['x-partner-key'], 'first');
+      expect(mode.authHeaders.containsKey('x-extra'), isFalse);
+      expect(
+        () => mode.authHeaders['x-partner-key'] = 'third',
+        throwsUnsupportedError,
+        reason: 'and the copy itself is not writable either',
+      );
     });
 
     test('a user name is not printable', () {
@@ -733,7 +756,7 @@ void main() {
         'oauth',
       );
       expect(
-        describe(const TraciveMode.proxy(baseUrl: 'https://p.example')),
+        describe(TraciveMode.proxy(baseUrl: 'https://p.example')),
         'proxy',
       );
     });
