@@ -802,6 +802,48 @@ void main() {
       );
       expect(transport.requests, isEmpty);
     });
+
+    test('a blank stored access token is refreshed before the check is sent',
+        () async {
+      // A damaged storage record: a partial write, a save interrupted by
+      // process death, a restored backup. The refresh token beside it is
+      // intact, so the grant is recoverable without consent — and it has to be
+      // recovered *here*, before the send, because `Bearer ` is answered
+      // `invalid_token` rather than `expired_token`, and `invalid_token` is
+      // terminal — as the "invalid_token does not refresh" test above pins. The
+      // caller sees a result, not an authorization error.
+      final transport = _FakeTransport((request) {
+        if (request.url.path.endsWith('/oauth/token')) return _ok(_tokenBody());
+        return _ok(_checkBody());
+      });
+      final store = InMemoryTokenStore(
+        tokens: const TraciveTokens(
+          accessToken: '',
+          refreshToken: 'refresh-token-1',
+          grantedScopes: <String>['scammer.check'],
+        ),
+      );
+      final client = _client(transport: transport, tokenStore: store);
+
+      final result = await client.checkScammer(query, source: Source.server);
+
+      expect(result.riskTier, RiskTier.high);
+      expect(transport.to('/oauth/token'), hasLength(1));
+      expect(transport.to('/scammer-checks'), hasLength(1));
+      expect(
+        transport.to('/scammer-checks').single.header('authorization'),
+        'Bearer access-token-2',
+        reason: 'the check must carry the token the refresh just minted',
+      );
+      expect(
+        transport.requests
+            .map((request) => request.header('authorization'))
+            .toList(),
+        isNot(contains('Bearer ')),
+        reason: 'an empty bearer must never reach the wire',
+      );
+      expect((await store.read())?.refreshToken, 'refresh-token-2');
+    });
   });
 
   // ---------------------------------------------------------------------------

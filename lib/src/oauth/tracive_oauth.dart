@@ -61,8 +61,11 @@ import 'token_store.dart';
 ///   `doc/oauth.md`; RFC 8252 §8.12).
 /// * It never sends `code_challenge_method=plain`.
 /// * It never puts an OAuth parameter on the install link.
-/// * It never refreshes on a clock. A token is refreshed when the server
-///   rejects it, and at no other moment — see [ensureAccessToken].
+/// * It never refreshes on a clock. A token it holds is refreshed when the
+///   server rejects it, and at no other moment. The one refresh that does not
+///   wait for a 401 is the repair of a stored grant whose access token is
+///   blank, where there is no token to send and therefore no rejection to wait
+///   for — see [ensureAccessToken].
 /// * It never sends an API key. There is no API key anywhere in this SDK,
 ///   in any mode.
 class TraciveOAuth {
@@ -433,16 +436,41 @@ class TraciveOAuth {
   /// PRIVACY: the return value is a credential. Do not log it, do not put it in
   /// an analytics event, do not attach it to a crash report.
   ///
-  /// Throws [TraciveInvalidTokenException] when nothing is stored — that is
-  /// "the user has not authorized", not an error worth retrying.
+  /// Throws [TraciveInvalidTokenException] when there is nothing to send and
+  /// nothing to refresh with — that is "the user has not authorized", not an
+  /// error worth retrying.
+  ///
+  /// ## A blank access token beside a refresh token is repaired, not rejected
+  ///
+  /// A stored grant whose access token is blank is **not** the same case as no
+  /// grant at all. The refresh token beside it is a perfectly good credential,
+  /// so it is spent and the token that comes back is returned. The user is not
+  /// sent through consent again for a grant that never stopped working. That is
+  /// the branch every Tracive SDK is standardising on.
+  ///
+  /// The state is reachable from a damaged storage record — a partial write, a
+  /// save interrupted by process death, a restored backup — because
+  /// [TraciveTokens.fromStorageJson] defaults a missing `accessToken` to `''`.
+  /// It never arrives from the token endpoint, whose answer is rejected when it
+  /// carries no `access_token`.
+  ///
+  /// Nothing downstream of here can recover it, which is why the branch has to
+  /// be here rather than on the 401 path. An empty bearer is not answered with
+  /// `401 expired_token`: a malformed one is `invalid_token`, which this SDK —
+  /// and every sibling — treats as terminal, so the request would not be
+  /// refreshed and retried. The damaged record would simply fail on every call
+  /// from then on, and fail by telling the user to authorize again.
+  ///
+  /// With no refresh token beside it there is nothing to spend, and the typed
+  /// error above is the honest answer.
   ///
   /// ## Refresh is reactive, and only reactive
   ///
   /// This method does **not** consult [TraciveTokens.expiresAt], and it never
-  /// refreshes. The stored token is sent; if the server answers
-  /// `401 expired_token`, `TraciveClient` refreshes once — single-flight, via
-  /// [refreshTokens] — and replays the request. Every Tracive SDK is
-  /// standardising on exactly that path, and only that path.
+  /// refreshes a token it actually holds. The stored token is sent; if the
+  /// server answers `401 expired_token`, `TraciveClient` refreshes once —
+  /// single-flight, via [refreshTokens] — and replays the request. Every
+  /// Tracive SDK is standardising on exactly that path, and only that path.
   ///
   /// Refreshing ahead of the timestamp was tried and removed, for three
   /// reasons:
@@ -471,14 +499,22 @@ class TraciveOAuth {
   /// than a default this SDK applies to every call on every device.
   Future<String> ensureAccessToken() async {
     final tokens = await _tokenStore.read();
-    if (tokens == null || !tokens.hasAccessToken) {
-      throw const TraciveInvalidTokenException(
-        'Not authorized: no access token is stored. Call authorize() first.',
-        code: 'invalid_token',
-        statusCode: 401,
-      );
+    // The common path, first and unchanged: a stored access token is handed
+    // over as it is, with no expiry check and no extra work of any kind.
+    if (tokens != null && tokens.hasAccessToken) return tokens.accessToken;
+    if (tokens != null && tokens.canRefresh) {
+      // The blank-token repair. `staleAccessToken: ''` is the token this caller
+      // would otherwise have sent, and passing it is what lets [refreshTokens]
+      // notice that somebody else has already repaired the record and hand back
+      // what they stored instead of spending a second rotation on it.
+      final refreshed = await refreshTokens(staleAccessToken: '');
+      return refreshed.accessToken;
     }
-    return tokens.accessToken;
+    throw const TraciveInvalidTokenException(
+      'Not authorized: no access token is stored. Call authorize() first.',
+      code: 'invalid_token',
+      statusCode: 401,
+    );
   }
 
   /// Refreshes the tokens, **single-flight**.

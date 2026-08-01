@@ -133,18 +133,22 @@ What the ordering buys, in the order it appears:
 
 ## C. Token lifecycle
 
-Every authorized request starts with `ensureAccessToken()`, which hands over
-whatever is stored **without consulting the expiry**. A refresh happens when the
-server says so — `401 expired_token` — and at no other moment. A refresh token is
-single-use, so presenting one twice is what the server's reuse detection looks
-for, and it answers by revoking the whole grant. Four guards keep that from
-happening, and the diagram is mostly those four guards.
+Every authorized request starts with `ensureAccessToken()`, which hands over the
+stored access token **without consulting the expiry**. A token the SDK holds is
+refreshed when the server says so — `401 expired_token` — and at no other moment.
+The one refresh that does not wait for a rejection is the repair of a stored
+grant whose access token is blank: there is no token to send, so there is no
+rejection to wait for. A refresh token is single-use, so presenting one twice is
+what the server's reuse detection looks for, and it answers by revoking the
+whole grant. Four guards keep that from happening, and the diagram is mostly
+those four guards.
 
 ```mermaid
 flowchart TD
     Start["ensureAccessToken"]
     Read["tokenStore.read"]
-    NoToken["TraciveInvalidTokenException<br/>the user never authorized"]
+    Blank{"is a refresh token<br/>stored beside it?"}
+    NoToken["TraciveInvalidTokenException<br/>nothing to send,<br/>nothing to refresh with"]
     Use["return the access token,<br/>whatever expiresAt says"]
     Send["send the request with it"]
     Done["done"]
@@ -168,7 +172,10 @@ flowchart TD
 
     Start --> Read
     Read -->|"nothing stored"| NoToken
-    Read -->|"anything stored"| Use
+    Read -->|"blank access token"| Blank
+    Read -->|"access token stored"| Use
+    Blank -->|"no"| NoToken
+    Blank -->|"yes"| Refresh
     Use --> Send
     Send -->|"2xx"| Done
     Send -->|"401 grant_revoked"| Revoked
@@ -194,6 +201,18 @@ flowchart TD
     Write --> Replay
     Replay --> Start
 ```
+
+**The blank-access-token branch** is the one entry into that chain where no
+request has been sent yet, so what follows a successful refresh there is the
+first send rather than a replay; everything between the two, guards included, is
+the same. It lives in `ensureAccessToken()` rather than on the 401 path because
+nothing on the 401 path could recover it: `Bearer ` is answered `invalid_token`,
+which is terminal — no refresh, grant discarded — and not `expired_token`, which
+is what the diagram's refresh hangs off. Such a record therefore never healed
+itself; it failed on every call, and it failed by demanding a consent that was
+not needed. With no refresh token stored beside the blank one there is nothing
+to spend, and the same `TraciveInvalidTokenException` is thrown as for an empty
+store.
 
 **Why one mechanism and not two.** Refreshing ahead of `expiresAt` was tried and
 removed. The reactive path is mandatory whatever else is true — a token can be

@@ -936,18 +936,48 @@ void main() {
       expect(await oauth.ensureAccessToken(), 'access-token-1');
     });
 
-    test('an empty access token is a typed error even beside a refresh token',
+    test('an empty access token beside a refresh token is repaired, not sent',
         () async {
       // Reachable only from a damaged storage record, since the token endpoint
       // response is rejected when it carries no `access_token`. It must not
-      // become `Bearer ` on the wire now that nothing downstream of the
-      // presence check can turn it away.
+      // become `Bearer ` on the wire — nothing downstream of here can turn it
+      // away, because an empty bearer is answered `invalid_token`, which is
+      // terminal, rather than `expired_token`, which refreshes.
+      //
+      // Refusing it outright is not the answer either: the refresh token beside
+      // it is a live credential, and spending it costs one round trip where
+      // consent costs the user a trip through the Tracive app.
+      final store = InMemoryTokenStore(
+        tokens: const TraciveTokens(
+          accessToken: '',
+          refreshToken: 'refresh-token-1',
+        ),
+      );
+      final transport = _FakeTransport((_) => _ok(_tokenBody()));
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      expect(await oauth.ensureAccessToken(), 'access-token-2');
+
+      // Exactly one request, and it is the refresh carrying the stored refresh
+      // token. No bearer of any kind travelled, so certainly no empty one.
+      expect(transport.requests, hasLength(1));
+      final refresh = transport.requests.single;
+      expect(refresh.url.path, endsWith('/oauth/token'));
+      expect(refresh.body, contains('refresh_token=refresh-token-1'));
+      expect(refresh.header('authorization'), isNull);
+      // The damaged record is repaired in the store, so the next call needs no
+      // refresh at all.
+      expect((await store.read())?.accessToken, 'access-token-2');
+      expect((await store.read())?.refreshToken, 'refresh-token-2');
+    });
+
+    test('an empty access token with no refresh token is still a typed error',
+        () async {
+      // Nothing to spend, so there is nothing to recover: the user really does
+      // have to authorize again. Still not `Bearer ` on the wire.
       final oauth = _oauth(
         tokenStore: InMemoryTokenStore(
-          tokens: const TraciveTokens(
-            accessToken: '',
-            refreshToken: 'refresh-token-1',
-          ),
+          tokens: const TraciveTokens(accessToken: ''),
         ),
         transport: _FakeTransport((_) => fail('nothing should be sent')),
       );

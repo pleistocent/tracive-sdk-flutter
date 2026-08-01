@@ -239,9 +239,27 @@ calls.
   optimisation — sending the same refresh token twice is what trips the
   server's refresh-token **reuse detection**, which revokes the whole grant.
 - **Nothing refreshes on a timer.** `ensureAccessToken()` hands over the stored
-  access token without looking at its expiry: the 401 above is the only thing
-  that triggers a refresh. That is the one strategy every Tracive SDK is
-  standardising on — see "Why there is no proactive refresh" below.
+  access token without looking at its expiry: a token the SDK actually holds is
+  refreshed when the server rejects it, and at no other moment. That is the one
+  strategy every Tracive SDK is standardising on — see "Why there is no
+  proactive refresh" below.
+- **A stored grant whose access token is blank is repaired, not refused.**
+  `ensureAccessToken()` spends the refresh token beside it and returns the token
+  that comes back, instead of raising `TraciveInvalidTokenException` and sending
+  the user back through consent. Such a record comes from damaged storage — a
+  partial write, a save interrupted by process death, a restored backup — and
+  the grant behind it never stopped working; one field of the local copy is
+  missing, which is not the same thing. It cannot be left to the 401 above,
+  because an empty bearer is answered `invalid_token`, which is terminal, rather
+  than `expired_token`, which refreshes — so the record would fail on every call
+  from then on. With **no** refresh token beside it there is nothing to spend,
+  and `TraciveInvalidTokenException` is still the answer.
+
+  The shipped `SecureStorageTokenStore` reports such a record as "not signed in"
+  (`read()` answers `null`), so on the default store this does not arise. If you
+  implement your own `TokenStore`, hand back what you stored rather than
+  dropping a record whose access token is blank: the SDK can repair it, and
+  dropping it is what turns a repairable grant into a fresh consent.
 - **`401 grant_revoked`** clears the stored tokens and surfaces
   `TraciveGrantRevokedException`. It is not retried; retrying with a dead
   refresh token is precisely what reuse detection is looking for.

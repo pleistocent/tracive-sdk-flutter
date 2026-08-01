@@ -10,6 +10,45 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **A stored grant whose access token is blank now refreshes instead of asking
+  the user to authorize again.** `TraciveOAuth.ensureAccessToken()` treated a
+  blank access token exactly like an empty store: it threw
+  `TraciveInvalidTokenException`, and the only move left to the integrator was
+  to send the user back through `authorize()` — through consent in the Tracive
+  app — while the refresh token sitting beside it was a live credential the
+  whole time. That refresh token is now spent and the access token it mints is
+  returned.
+
+  **What you will observe:** on such a record, a call that used to throw
+  `TraciveInvalidTokenException` now succeeds, after one extra round trip to
+  `POST /oauth/token`. Nothing else moved. A blank access token with **no**
+  refresh token beside it still throws the same exception with the same message
+  and sends nothing; an empty store is untouched; and a stored access token is
+  still handed over exactly as before, with no expiry check and no extra work.
+
+  The state is reachable from a damaged storage record — a partial write, a save
+  interrupted by process death, a restored backup — because
+  `TraciveTokens.fromStorageJson` defaults a missing `accessToken` to `''`. It
+  never arrives from the token endpoint, whose answer is rejected when it
+  carries no `access_token`.
+
+  Leaving it to the reactive 401 path was not an option, which is why the branch
+  is in `ensureAccessToken()` rather than next to the refresh-on-401. An empty
+  bearer is not answered `401 expired_token`; a malformed one is
+  `invalid_token`, and every Tracive SDK treats `invalid_token` as terminal — no
+  refresh, grant discarded. The damaged record therefore never healed itself on
+  the next request: it failed permanently, and it failed by demanding a consent
+  that was not needed. This is the branch every Tracive SDK is standardising on;
+  the React Native SDK already recovers here.
+
+  One caveat worth knowing if you implement your own `TokenStore`: the shipped
+  `SecureStorageTokenStore` reports a record with a blank access token as *not
+  signed in* — its `read()` answers `null` — so on the default store the repair
+  does not come up. It is reached through a store that hands back what it
+  stored. If you write your own vault, hand the record back rather than dropping
+  it: a blank access token beside a live refresh token is a grant this SDK can
+  now repair, and dropping it is what turns a repairable grant into a fresh
+  consent.
 - **The query fold now reproduces JavaScript's string semantics, not Dart's.**
   The API folds in JavaScript, and the folded key *is* the record key, so a
   one-code-point difference is a guaranteed miss — and a miss is billed. Three
