@@ -43,14 +43,17 @@ void main() {
 
   group('fixture', () {
     test('is the version this SDK was written against', () {
-      // Bumped to 2 when the fixture gained `crossLanguageSemantics`,
-      // `documentIdGuard` and the eight vectors that pin JavaScript's string
-      // semantics down (full case mapping, the JS trim set, ASCII-only \D).
-      expect(fixture['version'], 2);
+      // Version 2 added `crossLanguageSemantics`, `documentIdGuard` and the
+      // eight vectors that pin JavaScript's string semantics down (full case
+      // mapping, the JS trim set, ASCII-only \D). Version 3 corrected
+      // `nfcScope`, which used to read as though NFC applied to the social and
+      // chain platform codes but not to a bank code, and added the vector that
+      // pins the bank code's NFC step down.
+      expect(fixture['version'], 3);
     });
 
     test('carries the vectors it is supposed to', () {
-      expect(vectors, hasLength(33));
+      expect(vectors, hasLength(34));
       expect(rejected, hasLength(11));
     });
 
@@ -321,7 +324,8 @@ void main() {
       );
     });
 
-    test('NFC applies to email, username, platform and chain only', () {
+    test('NFC applies to email, username and every code field, nothing else',
+        () {
       expect(semantics['nfcScope'], contains('email'));
 
       // A decomposed 'e' + U+0301 composes in an e-mail...
@@ -336,6 +340,18 @@ void main() {
           handle: 'café',
         ).searchQueryIndex,
         'USERNAME_IG_café',
+      );
+      // ...and in a bank code, which is a code field like the social platform
+      // and the chain are. 'A' + U+0301 composes to U+00C1 before uppercasing,
+      // so an implementation that skips NFC here builds a key that misses.
+      expect(
+        TraciveQuery.bankAccount(
+          countryAlpha3: 'IDN',
+          bankCode: 'BCÁ',
+          account: '1234567890',
+        ).searchQueryIndex,
+        'BANK_IDN_BCÁ_1234567890',
+        reason: 'a bank code is NFC-folded before it is uppercased',
       );
       // ...but NOT in a crypto address...
       expect(
