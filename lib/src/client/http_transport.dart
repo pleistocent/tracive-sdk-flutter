@@ -1,10 +1,10 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The HTTP seam — the SDK specification §2 (`transport: HttpTransport? = null`, "test
-// seam; default = platform HTTP client").
+// The HTTP seam: `transport: HttpTransport? = null`, a test seam whose
+// default is the platform HTTP client.
 //
 // This interface exists so that **no test in this repo can reach a network**.
-// The Open API does not exist yet (spec preamble), so a test that opened a
+// The Open API does not exist yet, so a test that opened a
 // socket could only ever be aspirational; and once it does exist, a test suite
 // that talks to it is a test suite that fails when someone else's deploy is
 // mid-flight. Everything above this line is exercised against a fake.
@@ -125,7 +125,7 @@ abstract class HttpTransport {
   /// Must **not** follow a redirect to a different origin with the
   /// `Authorization` header still attached, and must not retry: retry policy
   /// lives one layer up, where it can tell an idempotent call from one that
-  /// would double-charge (§7).
+  /// would double-charge.
   Future<TraciveHttpResponse> send(TraciveHttpRequest request);
 
   /// Releases any underlying resources. Default: nothing to release.

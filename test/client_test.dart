@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The API client — the SDK specification §2, §4, §5, §7.
+// The API client.
 //
 // NO NETWORK. Every response in this file is a literal `TraciveHttpResponse`
 // handed back by `_FakeTransport`. The Open API does not exist yet (spec
@@ -10,15 +10,14 @@
 //
 // What is asserted here, in rough order of what it would cost to get wrong:
 //
-//   * the request the SDK actually puts on the wire (§4) — `query` not `input`,
+//   * the request the SDK actually puts on the wire — `query` not `input`,
 //     `creditSource: USER`, `locale` omitted for minimal detail, the
 //     `Idempotency-Key` header;
-//   * which `Source` is allowed to spend a credit (§4/§5) and which is not;
-//   * that a check is never auto-retried without an `Idempotency-Key` (§7) —
+//   * which `Source` is allowed to spend a credit and which is not;
+//   * that a check is never auto-retried without an `Idempotency-Key` —
 //     the money bug, and the one that is silent when it happens;
-//   * 401 -> refresh -> replay-once, and 401 `grant_revoked` -> clear and stop
-//     (§6);
-//   * that Proxy mode throws exactly the sentence §2 specifies.
+//   * 401 -> refresh -> replay-once, and 401 `grant_revoked` -> clear and stop;
+//   * that Proxy mode throws exactly the documented sentence.
 
 import 'dart:async';
 import 'dart:convert';
@@ -33,7 +32,7 @@ void main() {
   final query = TraciveQuery.phone('+6281234567891');
 
   // ---------------------------------------------------------------------------
-  // The request that actually goes on the wire (§4).
+  // The request that actually goes on the wire.
   // ---------------------------------------------------------------------------
   group('POST /scammer-checks request', () {
     test('hits the environment base URL with a bearer token', () async {
@@ -59,7 +58,7 @@ void main() {
       await client.checkScammer(query, source: Source.server);
 
       final body = _bodyOf(transport.requests.single);
-      // §3.2/§4: the SDK has already folded the key, and that same folded
+      // The SDK has already folded the key, and that same folded
       // string is the cache key. Sending `input` would have the server fold it
       // again — and any disagreement between the two foldings is a permanent,
       // billed cache miss.
@@ -153,7 +152,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Decoding the answer (§4).
+  // Decoding the answer.
   // ---------------------------------------------------------------------------
   group('CheckResult decoding', () {
     test('decodes the documented fields and stamps origin/fetchedAt', () async {
@@ -179,7 +178,7 @@ void main() {
     });
 
     test('ignores fields this build has never heard of', () async {
-      // Forward compatibility with phase 2 (§4). A new field on the response
+      // Forward compatibility with phase 2. A new field on the response
       // must not be able to break an app that shipped before it existed.
       final transport = _FakeTransport(
         (_) => _ok(
@@ -211,7 +210,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Sources (§4/§5). Each of these decides whether a credit is spent, which is
+  // Sources. Each of these decides whether a credit is spent, which is
   // why they get one test each rather than one test between them.
   // ---------------------------------------------------------------------------
   group('Source', () {
@@ -233,7 +232,7 @@ void main() {
       expect(first.origin, Origin.server);
       expect(second.origin, Origin.cache);
       expect(second.reportTotal, first.reportTotal);
-      // §5: never cached, because they are single-use or vary with
+      // Never cached, because they are single-use or vary with
       // detail/locale.
       expect(second.checkId, isNull);
       expect(second.billing, isNull);
@@ -260,7 +259,7 @@ void main() {
 
     test('cache with no live entry raises CacheMiss, never a silent empty',
         () async {
-      // §5. An empty `CheckResult` here would read as "not a scammer", which is
+      // An empty `CheckResult` here would read as "not a scammer", which is
       // the most dangerous wrong answer this SDK can give.
       final transport = _FakeTransport(
         (_) => fail('Source.cache must never touch the network'),
@@ -347,9 +346,9 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Cache behaviour the client is responsible for (§5).
+  // Cache behaviour the client is responsible for.
   // ---------------------------------------------------------------------------
-  group('cache integration (§5)', () {
+  group('cache integration', () {
     test('a zero cacheTtlSeconds evicts what is already stored', () async {
       // The fleet-wide invalidation lever. Honouring it only for new writes
       // would leave the wrong verdict sitting on the device — which is the
@@ -374,7 +373,7 @@ void main() {
     test('an expired entry is not served, and the server is called', () async {
       final clock = MutableClock(_t0);
       final cache = CheckCache.inMemory(clock: clock.now);
-      // NONE has a one-hour TTL (§5).
+      // NONE has a one-hour TTL.
       await cache.write(
         query,
         _cachedResult(clock.now(), tier: RiskTier.none, reportTotal: 0),
@@ -392,7 +391,7 @@ void main() {
       expect(result.origin, Origin.server);
     });
 
-    test('client.cache.clear() empties it — §5', () async {
+    test('client.cache.clear() empties it', () async {
       final clock = MutableClock(_t0);
       final cache = CheckCache.inMemory(clock: clock.now);
       final transport = _FakeTransport((_) => _ok(_checkBody()));
@@ -431,11 +430,11 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Retry policy (§7). This is the money bug: a blind retry of a POST that may
+  // Retry policy. This is the money bug: a blind retry of a POST that may
   // already have been processed charges the user twice, and nothing anywhere
   // reports that it happened.
   // ---------------------------------------------------------------------------
-  group('retry policy (§7)', () {
+  group('retry policy', () {
     test('a 5xx check without an Idempotency-Key is NOT retried', () async {
       final transport = _FakeTransport((_) => _error(503, 'unavailable'));
       final client = _client(transport: transport, retryPolicy: _fastRetries);
@@ -548,9 +547,9 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Token handling on the API path (§6).
+  // Token handling on the API path.
   // ---------------------------------------------------------------------------
-  group('401 handling (§6)', () {
+  group('401 handling', () {
     test('expired_token refreshes once and replays with the new token',
         () async {
       var checks = 0;
@@ -592,7 +591,7 @@ void main() {
 
     test('grant_revoked clears the tokens and does not retry', () async {
       // Retrying with a dead refresh token is exactly the pattern the server's
-      // reuse detection punishes — it revokes the whole grant (§6).
+      // reuse detection punishes — it revokes the whole grant.
       final transport = _FakeTransport((_) => _error(401, 'grant_revoked'));
       final store = _authorizedStore();
       final client = _client(transport: transport, tokenStore: store);
@@ -617,7 +616,7 @@ void main() {
       expect(transport.to('/oauth/token'), isEmpty);
     });
 
-    test('concurrent 401s trigger exactly one refresh (§6 single-flight)',
+    test('concurrent 401s trigger exactly one refresh (single-flight)',
         () async {
       // Two refreshes means the first rotated refresh token is presented twice,
       // which is what reuse detection looks for — and it revokes the grant.
@@ -667,7 +666,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // /credits and /profile (§4).
+  // /credits and /profile.
   // ---------------------------------------------------------------------------
   group('credits and profile', () {
     test('credits() GETs /credits and decodes it', () async {
@@ -723,7 +722,7 @@ void main() {
 
     test('402 on a check is the documented way to learn you are out of credits',
         () async {
-      // §3.3: this is what you handle instead of polling credits() first.
+      // This is what you handle instead of polling credits() first.
       final transport = _FakeTransport(
         (_) => _error(402, 'insufficient_user_credits'),
       );
@@ -744,7 +743,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Proxy mode — §2, phase 2.
+  // Proxy mode — phase 2.
   // ---------------------------------------------------------------------------
   group('Proxy mode (phase 2)', () {
     TraciveClient proxyClient() => TraciveClient(
@@ -763,7 +762,7 @@ void main() {
       expect(proxyClient().oauth, isNull);
     });
 
-    test('every call throws the sentence §2 specifies', () async {
+    test('every call throws the documented sentence', () async {
       final client = proxyClient();
       final notImplemented = throwsA(
         isA<TraciveNotImplementedException>().having(
@@ -954,7 +953,7 @@ Map<String, Object?> _bodyOf(TraciveHttpRequest request) =>
     jsonDecode(request.body!) as Map<String, Object?>;
 
 /// Stands in for a socket timeout: any exception type at all, because a
-/// transport is free to throw whatever its stack throws (§7).
+/// transport is free to throw whatever its stack throws.
 class _SimulatedTimeout implements Exception {
   const _SimulatedTimeout();
 

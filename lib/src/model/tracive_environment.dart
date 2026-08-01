@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 
-/// Which Tracive deployment the client talks to — the SDK specification §2.
+/// Which Tracive deployment the client talks to.
 ///
 /// **The Open API is not live yet.** These hosts are the documented contract,
 /// not a running service; see the README. Nothing in this SDK can be tested

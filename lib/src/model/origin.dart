@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 
-/// Where a `CheckResult` came from — the SDK specification §4/§5.
+/// Where a `CheckResult` came from.
 ///
 /// Not a request parameter: the client stamps it on the result. A [cache]
 /// result cost zero credits and did no network I/O.

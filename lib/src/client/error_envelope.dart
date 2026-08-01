@@ -1,8 +1,8 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Error-envelope parsing — the SDK specification §7.
+// Error-envelope parsing.
 //
-// The §7 *table* (code -> typed exception) lives in `lib/src/exception.dart`
+// The error-code table (code -> typed exception) lives in `lib/src/exception.dart`
 // as `TraciveException.fromApiError` / `fromErrorBody`. This file is the layer
 // beneath it: turning an HTTP response into the arguments that table needs,
 // without ever throwing on the way.
@@ -47,7 +47,7 @@ Map<String, Object?>? decodeJsonObject(String body) {
 /// The `error.code` in [response]'s envelope, lower-cased, or `null`.
 ///
 /// Used for the branches that must act on a specific code before the generic
-/// mapping runs — the §6 `expired_token` refresh and `grant_revoked` teardown.
+/// mapping runs — the `expired_token` refresh and `grant_revoked` teardown.
 String? errorCodeOf(TraciveHttpResponse response) {
   final body = decodeJsonObject(response.body);
   if (body == null) return null;
@@ -60,7 +60,7 @@ String? errorCodeOf(TraciveHttpResponse response) {
   return null;
 }
 
-/// The `Retry-After` value on [response], for 429s (§7).
+/// The `Retry-After` value on [response], for 429s.
 ///
 /// Only the delta-seconds form is read. The HTTP-date form yields `null`
 /// rather than a wrong answer: parsing it correctly needs `dart:io`'s
@@ -70,7 +70,7 @@ String? errorCodeOf(TraciveHttpResponse response) {
 Duration? retryAfterOf(TraciveHttpResponse response) =>
     TraciveRateLimitedException.parseRetryAfter(response.header('retry-after'));
 
-/// Maps a non-2xx [response] to the typed error from the §7 table.
+/// Maps a non-2xx [response] to the typed error from the error-code table.
 ///
 /// Total: every input produces a `TraciveException`, never a throw.
 TraciveException mapErrorResponse(TraciveHttpResponse response) =>
@@ -80,7 +80,7 @@ TraciveException mapErrorResponse(TraciveHttpResponse response) =>
       retryAfter: retryAfterOf(response),
     );
 
-/// Maps a token-endpoint failure (§6).
+/// Maps a token-endpoint failure.
 ///
 /// OAuth 2.0 token endpoints answer with RFC 6749 §5.2's envelope —
 /// `{"error":"invalid_grant","error_description":"…"}` — which is a *flat*
@@ -90,12 +90,12 @@ TraciveException mapErrorResponse(TraciveHttpResponse response) =>
 ///
 /// `invalid_grant` on a refresh is the shape refresh-token reuse detection
 /// takes on the wire, so it is mapped to [TraciveGrantRevokedException] — the
-/// case that clears local tokens and does **not** retry (§6).
+/// case that clears local tokens and does **not** retry.
 TraciveException mapTokenErrorResponse(TraciveHttpResponse response) {
   final body = decodeJsonObject(response.body);
   final rawError = body?['error'];
 
-  // Nested envelope: hand it to the §7 table unchanged.
+  // Nested envelope: hand it to the error-code table unchanged.
   if (rawError is Map) return mapErrorResponse(response);
 
   final code = rawError is String ? rawError.trim().toLowerCase() : null;
@@ -140,7 +140,7 @@ TraciveException mapTokenErrorResponse(TraciveHttpResponse response) {
   );
 }
 
-/// Wraps a transport-level failure as `TraciveException.Network(cause)` (§7).
+/// Wraps a transport-level failure as `TraciveException.Network(cause)`.
 ///
 /// Passes an already-typed [TraciveException] through untouched, so a
 /// custom transport that speaks the SDK's error types is not double-wrapped.

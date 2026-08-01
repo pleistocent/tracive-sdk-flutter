@@ -5,7 +5,7 @@
 // There is no code generation in this SDK (no build_runner step), so every
 // model parses itself. Two rules run through all of it:
 //
-//  1. Unknown fields are ignored, never fatal (the SDK specification §4, forward
+//  1. Unknown fields are ignored, never fatal (forward
 //     compatibility with phase 2).
 //  2. A field of an unexpected *type* degrades to the fallback instead of
 //     throwing. A malformed number in an optional field must not turn a usable

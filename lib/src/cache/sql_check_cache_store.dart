@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The SQL storage behind the cache — the SDK specification §5.
+// The SQL storage behind the cache.
 //
 // Every statement this file runs is a `static const` below. Nothing is built by
 // string concatenation from a value, and every value travels as a bound `?`
@@ -19,7 +19,7 @@ import 'check_cache_store.dart';
 /// The on-disk layout version.
 ///
 /// **Bump this on any change to the table, to the payload's shape, or to the
-/// meaning of a stored field.** A mismatch drops every row on open (§5), which
+/// meaning of a stored field.** A mismatch drops every row on open, which
 /// is the SDK's only way to invalidate a fleet's worth of caches from inside a
 /// release. It costs one credit per identifier afterwards, so bump it when the
 /// alternative is serving a wrong answer — not for a cosmetic change.
@@ -116,7 +116,7 @@ class SqlCheckCacheStore extends CheckCacheStore {
     final version = await _readSchemaVersion(database);
     final stale = version != checkCacheSchemaVersion;
 
-    // Schema-version invalidation (§5). A fresh file reports 0, so a first run
+    // Schema-version invalidation. A fresh file reports 0, so a first run
     // takes this branch too and simply drops a table that is not there.
     if (stale) await database.execute(dropTableSql);
     await database.execute(createTableSql);

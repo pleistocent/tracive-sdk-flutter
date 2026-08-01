@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The Flutter half of the cache — the SDK specification §5.
+// The Flutter half of the cache.
 //
 // This is the only file in `lib/src/cache/` that imports a plugin. Everything
 // it does is bind two platform packages to the seams declared next door:
@@ -13,14 +13,16 @@
 // file is exercised by integration testing on a device, not by unit tests —
 // which is why it is kept as small and as obvious as it can be.
 //
-// AT-REST ENCRYPTION, HONESTLY STATED. §5 says "AES-GCM with a random 96-bit
+// AT-REST ENCRYPTION, HONESTLY STATED. The contract asks for "AES-GCM with a
+// random 96-bit
 // nonce per record". That is what the Swift SDK does, because it has no
 // SQLCipher and encrypts row by row with CryptoKit. On Flutter the encryption
 // is SQLCipher's: AES-256-CBC per page with a per-page random IV, and an
 // HMAC-SHA512 per page for tamper detection. It is not GCM, and it is per page
-// rather than per record. The property §5 is buying — the cache is unreadable
+// rather than per record. The property being bought — the cache is unreadable
 // without a key held in the platform keystore — holds either way, and using
-// SQLCipher is what §5 itself prescribes for Flutter. `doc/caching.md` records
+// SQLCipher is what the contract itself prescribes for Flutter.
+// `doc/caching.md` records
 // this so nobody has to rediscover it from the code.
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';

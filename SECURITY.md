@@ -78,7 +78,7 @@ security bug even if nothing crashes.
    token or an authorization code is redacted, and this is enforced by the
    `avoid_print` lint plus tests that assert redaction.
 4. **Tokens live in the Android Keystore / iOS Keychain** — never in
-   `SharedPreferences`, `UserDefaults` or a plain file (the SDK specification §6).
+   `SharedPreferences`, `UserDefaults` or a plain file.
 5. **The authorization page never opens in a WebView.** Custom Tabs on Android,
    `UIApplication.open` / Universal Link on iOS. RFC 8252 forbids the WebView,
    and App Links do not fire from one anyway.

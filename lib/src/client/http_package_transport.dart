@@ -1,7 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The default [HttpTransport], on `package:http` — the SDK specification §2 ("default =
-// platform HTTP client").
+// The default [HttpTransport], on `package:http`: the platform HTTP client.
 //
 // `package:http` is pure Dart (no Flutter plugin, no platform channel), which
 // is what lets the whole client layer be exercised by a plain `dart test` run

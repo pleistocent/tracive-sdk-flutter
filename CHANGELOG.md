@@ -56,7 +56,7 @@ until it is frozen at `1.0.0`.
 ## [0.1.0] — 2026-07-31
 
 First release. phase 1: **OAuth mode only, and the backend Open API is not live
-yet.** Everything below is built against the frozen contract in the SDK specification
+yet.** Everything below is built against a frozen contract
 ; no code path in
 this package has ever spoken to a Tracive server, because there is not one to
 speak to. Treat the wire-level behaviour as unverified against a live
@@ -88,7 +88,7 @@ implementation until the API ships.
   fleet-wide invalidation lever, lazy expiry on read, a prune pass on open, and
   schema-version invalidation. Full-detail content, `billing` and `checkId` are
   never written.
-- **Typed errors** for every `error.code` in §7, with an unrecognised code
+- **Typed errors** for every documented `error.code`, with an unrecognised code
   degrading to `TraciveServerException` / `TraciveUnknownException` rather than
   crashing.
 - **`TraciveMode.proxy(...)`** as a *type only*. Every call in Proxy mode throws

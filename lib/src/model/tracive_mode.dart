@@ -2,10 +2,10 @@
 
 import 'client_type.dart';
 
-/// How the client authenticates — the SDK specification §2.
+/// How the client authenticates.
 ///
 /// **There is no API-key parameter here, or anywhere else in this SDK, in any
-/// mode. That is a hard design invariant (§11.1) — do not add one.** An API key
+/// mode. That is a hard design invariant — do not add one.** An API key
 /// shipped inside a mobile binary is an API key that has been published.
 ///
 /// Sealed, so a `switch` over the two modes is exhaustive.
@@ -23,7 +23,7 @@ sealed class TraciveMode {
   }) = TraciveOAuthMode;
 
   /// **phase 2 — not implemented.** The type exists now so that adding the
-  /// behaviour later is not a breaking change (§11.1). Any call made in this
+  /// behaviour later is not a breaking change. Any call made in this
   /// mode throws `TraciveNotImplementedException`.
   const factory TraciveMode.proxy({
     required String baseUrl,
@@ -47,7 +47,7 @@ final class TraciveOAuthMode extends TraciveMode {
   final String clientId;
 
   /// Redirect target registered with Tracive. Must be an App Link / Universal
-  /// Link the host app owns; §6 forbids completing the flow in a WebView.
+  /// Link the host app owns; completing the flow in a WebView is forbidden.
   final String redirectUri;
 
   /// Scopes to request.

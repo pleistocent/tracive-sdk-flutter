@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// PKCE — the SDK specification §6 step 1, RFC 7636.
+// PKCE — step 1 of the flow in `doc/oauth.md`, RFC 7636.
 //
 //   "Generate `code_verifier` (43-128 chars, unreserved set) and
 //    `code_challenge = BASE64URL(SHA256(verifier))`, plus a random `state`.

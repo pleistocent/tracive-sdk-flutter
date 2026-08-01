@@ -13,6 +13,13 @@ import 'dart:convert';
 
 import '../exception.dart';
 
+// NAMING, DECIDED RATHER THAN INHERITED: `invalid_document_id` is a wire
+// string. It is the value the API returns and the value the Kotlin, Flutter and
+// Swift SDKs all map to a typed error, so renaming it is a coordinated breaking
+// change across four codebases, not a documentation edit. It stays. The private
+// symbols in this file keep the same word so that they read as enforcing the
+// rule that string names, rather than as a second vocabulary for it.
+
 /// The API's hard limit on a record key, in UTF-8 bytes.
 const int maxDocumentIdBytes = 1500;
 
@@ -72,7 +79,7 @@ bool _hasLoneSurrogate(String id) {
 /// is not a legal record key.
 ///
 /// Runs on every built key, before any network call: an illegal id can never
-/// match a document, and per §3.2 a miss is billed anyway.
+/// match a record, and a miss is billed anyway.
 ///
 /// PRIVACY: the rejected id is never included in the message — it is the raw
 /// identifier the caller passed in.

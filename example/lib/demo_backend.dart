@@ -12,7 +12,8 @@
 // widget tests, and the same trick works in yours.
 //
 // Nothing here claims to be the real API's behaviour. It answers the shapes in
-// the SDK specification §4 and §7, and it is deliberately crude about everything else.
+// the check and error contracts, and it is deliberately crude about everything
+// else.
 
 import 'dart:convert';
 
@@ -80,7 +81,7 @@ class DemoBackend extends HttpTransport {
   /// same answer and different inputs give different ones.
   ///
   /// The rule is arbitrary on purpose — it is a demo, not a model. What it does
-  /// preserve is the field *shape* of §4, including `cacheTtlSeconds` and the
+  /// preserve is the response field *shape*, including `cacheTtlSeconds` and the
   /// `disclaimer` a host app is required to surface.
   TraciveHttpResponse _check(TraciveHttpRequest request) {
     final body = _decodeObject(request.body) ?? const <String, Object?>{};
@@ -136,13 +137,13 @@ class DemoBackend extends HttpTransport {
           },
         ],
       'billing': <String, Object?>{'creditSource': 'USER', 'unitsCharged': 1},
-      // The server-driven TTL override (§5). Short here so the cache's
+      // The server-driven TTL override. Short here so the cache's
       // behaviour is observable inside a demo session.
       'cacheTtlSeconds': 120,
       'disclaimer':
           'These are user-submitted reports, not adjudicated findings. '
               'Verify independently before acting on them.',
-      // A field this build has never heard of. §4 requires it to be ignored,
+      // A field this build has never heard of. It must be ignored,
       // not to be fatal — this is that requirement, exercised.
       'somethingFutureVersionAdded': <String, Object?>{'x': 1},
     });

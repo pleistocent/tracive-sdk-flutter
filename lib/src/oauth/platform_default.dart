@@ -26,7 +26,7 @@ import 'token_store.dart';
 /// The default [TokenStore] outside Flutter: in-memory.
 ///
 /// There is no Keychain in a bare Dart VM, and inventing a file-backed store
-/// here would violate §6 ("never … plain files") in the one place nobody would
+/// here would break the "never … plain files" rule in the one place nobody would
 /// think to look. Losing tokens at process exit is the honest behaviour.
 ///
 /// A real app never reaches this: under Flutter the conditional import selects

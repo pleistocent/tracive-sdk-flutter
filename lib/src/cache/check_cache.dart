@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The local result cache — the SDK specification §5.
+// The local result cache.
 //
 // ---------------------------------------------------------------------------
 // PACKAGING NOTE — read this before editing lib/tracive_sdk.dart
@@ -22,7 +22,7 @@
 // Keeping it out of this file's import graph is what keeps that graph testable.
 // ---------------------------------------------------------------------------
 //
-// PRIVACY (§5, §11.3). Three rules hold everywhere below:
+// PRIVACY. Three rules hold everywhere below:
 //
 //   1. The raw identifier is never stored. The row key is
 //      `SHA-256(searchQueryIndex)` hex — see [cacheKeyFor].
@@ -68,11 +68,11 @@ String cacheKeyFor(TraciveQuery query) =>
 /// [cacheKeyFor] for a pre-folded `searchQueryIndex`.
 ///
 /// Only pass a string that came out of a `TraciveQuery`. An unfolded key hashes
-/// to a different row, which is a cache miss, and a miss is billed (§3.2).
+/// to a different row, which is a cache miss, and a miss is billed.
 String cacheKeyForIndex(String searchQueryIndex) =>
     sha256.convert(utf8.encode(searchQueryIndex)).toString();
 
-/// The local cache of check results — the SDK specification §5.
+/// The local cache of check results.
 ///
 /// Reached from the client as `client.cache`, so a host app can clear it (for
 /// example on sign-out, or from a "reset app data" screen).
@@ -112,7 +112,7 @@ abstract class CheckCache {
   /// anything, it just means every check from that device now costs a credit.
   Object? get lastStoreError;
 
-  /// Opens the underlying storage and runs the prune pass (§5).
+  /// Opens the underlying storage and runs the prune pass.
   ///
   /// Idempotent and single-flight: concurrent callers share one open. Called
   /// automatically by [read] and [write]; call it yourself at start-up if you
@@ -131,7 +131,7 @@ abstract class CheckCache {
   /// to a miss, and the error is left in [lastStoreError].
   ///
   /// `Source.cache` with no live entry is a `TraciveCacheMissException`, but
-  /// raising it is the client's job (§5) — the cache itself has no opinion
+  /// raising it is the client's job — the cache itself has no opinion
   /// about why it was asked.
   Future<CheckResult?> read(TraciveQuery query);
 
@@ -161,7 +161,7 @@ abstract class CheckCache {
   Future<void> close();
 }
 
-/// The cache proper: [CachePolicy] and the §5 rules on top of a
+/// The cache proper: [CachePolicy] and the caching rules on top of a
 /// [CheckCacheStore].
 ///
 /// Everything storage-specific is in the store, so the same rules are shared by
@@ -223,7 +223,7 @@ class DefaultCheckCache implements CheckCache {
         return null;
       }
       if (!policy.isFresh(result, _now)) {
-        await _store.delete(key); // lazy expiry (§5)
+        await _store.delete(key); // lazy expiry
         return null;
       }
       return result;
@@ -248,7 +248,7 @@ class DefaultCheckCache implements CheckCache {
         return;
       }
 
-      // cacheable() is what enforces "full detail is never cached" (§5). It is
+      // cacheable() is what enforces "full detail is never cached". It is
       // called here, once, rather than being left to each caller.
       final cacheable = result.cacheable();
       await _store.write(

@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Retry policy — the SDK specification §7.
+// Retry policy.
 //
 // The one rule that matters here, quoted:
 //
@@ -70,7 +70,8 @@ class RetryPolicy {
   ///
   /// [safeToRepeat] is the caller's promise that repeating cannot double-charge
   /// — a GET, or a POST carrying an `Idempotency-Key`. When it is `false` this
-  /// method returns `false` for every error, no matter how transient: §7 puts
+  /// method returns `false` for every error, no matter how transient: the
+  /// contract puts
   /// the money risk above the availability win.
   ///
   /// [attemptsSoFar] counts attempts already made, including the failed one.

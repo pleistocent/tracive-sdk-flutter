@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 
-/// Which half of the OAuth exchange the SDK performs — the SDK specification §2/§6.
+/// Which half of the OAuth exchange the SDK performs.
 enum ClientType {
   /// The SDK completes the PKCE exchange itself and stores the tokens.
   ///
@@ -10,7 +10,7 @@ enum ClientType {
 
   /// The SDK stops at the authorization code and hands it back
   /// (`AuthResult.codeReceived`). The partner's **backend** exchanges it with
-  /// its `client_secret`, per the §4.2 sequence diagram. No token ever reaches
+  /// its `client_secret`; see `doc/oauth.md`. No token ever reaches
   /// the device through this SDK.
   confidential('confidential');
 

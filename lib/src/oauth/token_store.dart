@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Token storage — the SDK specification §6.
+// Token storage.
 //
 //   "Access token (JWT, 1 h) + rotating opaque refresh token stored in
 //    Keystore/Keychain — **never** in SharedPreferences/UserDefaults/plain
@@ -23,7 +23,7 @@ import '../model/json.dart';
 /// The tokens issued for one grant.
 ///
 /// Immutable. A refresh **replaces** the whole record rather than mutating the
-/// access token in place: the refresh token rotates too (§6), and writing the
+/// access token in place: the refresh token rotates too, and writing the
 /// pair in one operation is what makes the replacement atomic. A store that
 /// wrote them separately could be interrupted between the two and leave a new
 /// access token beside a spent refresh token — which is indistinguishable, from
@@ -211,7 +211,7 @@ class PendingAuthorization {
 /// The shipped implementation is `SecureStorageTokenStore`
 /// (`flutter_secure_storage` → Android Keystore / iOS Keychain), chosen
 /// automatically. Implement this yourself only if your app already owns a
-/// vault — and if you do, honour §6: **never** SharedPreferences,
+/// vault — and if you do, honour the rule: **never** SharedPreferences,
 /// NSUserDefaults, a plain file, or an unencrypted database.
 ///
 /// Every method may be called concurrently. Implementations do not need to
@@ -227,7 +227,7 @@ abstract class TokenStore {
   /// Replaces the stored tokens. Must be atomic with respect to [read].
   Future<void> write(TraciveTokens tokens);
 
-  /// Erases the tokens. Called on sign-out and on `grant_revoked` (§6).
+  /// Erases the tokens. Called on sign-out and on `grant_revoked`.
   Future<void> clear();
 
   /// The authorization waiting for its redirect, or `null`.

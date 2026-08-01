@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The §7 error table, exhaustively — the SDK specification §7.
+// The error-code table, exhaustively.
 //
 // NO NETWORK. Every response here is a literal `TraciveHttpResponse`. The Open
 // API does not exist yet; nothing in this repo has ever opened a socket, and
@@ -38,7 +38,7 @@ void main() {
   // ---------------------------------------------------------------------------
   // The table itself, row by row.
   // ---------------------------------------------------------------------------
-  group('§7 table', () {
+  group('error-code table', () {
     void expectsMapping(
       String name, {
       required int status,
@@ -333,9 +333,9 @@ void main() {
 
   // ---------------------------------------------------------------------------
   // The token endpoint speaks RFC 6749's flat envelope, not the API's nested
-  // one (§6). Both have to map.
+  // one. Both have to map.
   // ---------------------------------------------------------------------------
-  group('token-endpoint envelopes (§6)', () {
+  group('token-endpoint envelopes', () {
     test('invalid_grant maps to GrantRevoked — the do-not-retry case', () {
       final mapped = mapTokenErrorResponse(
         TraciveHttpResponse(
@@ -360,7 +360,7 @@ void main() {
       expect(mapped, isA<TraciveMissingScopeException>());
     });
 
-    test('a nested envelope from the token endpoint still uses the §7 table',
+    test('a nested envelope from the token endpoint still uses the same table',
         () {
       final mapped = mapTokenErrorResponse(
         _errorResponse(429, 'rate_limited', headers: {'retry-after': '7'}),
@@ -444,7 +444,7 @@ void main() {
     });
 
     test('401 invalid_token does not trigger a refresh', () async {
-      // Only `expired_token` refreshes (§6). `invalid_token` means the token is
+      // Only `expired_token` refreshes. `invalid_token` means the token is
       // not merely old — refreshing on it would burn the refresh token for
       // nothing, and a rotated-then-rejected refresh token is exactly what
       // reuse detection looks for.

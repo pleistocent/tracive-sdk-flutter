@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The storage seam under `CheckCache` — the SDK specification §5.
+// The storage seam under `CheckCache`.
 //
 // The split between `CheckCache` and `CheckCacheStore` is where the cache is
 // cut so each half can be checked on its own:

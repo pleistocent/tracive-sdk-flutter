@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 
-/// Where a check may be answered from — the SDK specification §4/§5.
+/// Where a check may be answered from.
 ///
 /// Client-side only: this never travels on the wire. It decides whether the
 /// local cache may answer, and therefore whether the call costs a credit.
@@ -17,7 +17,7 @@ enum Source {
 
   /// Cache only, never any network I/O. A miss raises
   /// `TraciveCacheMissException` — it never returns a silent empty result that
-  /// would read as "not a scammer" (§5).
+  /// would read as "not a scammer".
   cache;
 
   /// Whether this source is allowed to read the local cache.

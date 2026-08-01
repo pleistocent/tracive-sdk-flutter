@@ -14,7 +14,7 @@
 
 Adding a whole authentication mode to a shipped SDK is a breaking change if the
 mode did not exist. Adding *behaviour* to a mode that already exists is not.
-the SDK specification §11.1 asks for the type up front for exactly that reason, so:
+the contract asks for the type up front for exactly that reason, so:
 
 ```dart
 final client = TraciveClient(
@@ -86,7 +86,7 @@ Request body — **identical to OAuth mode except `creditSource`**:
   device's cache key and the server's stop agreeing.
 - `creditSource` becomes `"PARTNER"`. phase 1 always sends `"USER"`.
 
-Response body: exactly the `CheckResult` shape in the SDK specification §4. The proxy
+Response body: exactly the `CheckResult` shape this SDK decodes. The proxy
 may pass Tracive's response through unchanged; that is the intended
 implementation.
 
@@ -112,7 +112,8 @@ The envelope is the same:
 { "error": { "code": "insufficient_partner_balance", "message": "…", "checkId": "…" } }
 ```
 
-Map upstream failures onto the §7 codes rather than inventing new ones — the SDK
+Map upstream failures onto the documented error codes rather than inventing new
+ones — the SDK
 maps every code in that table to a typed exception. An unrecognised code does
 not crash; it degrades to `TraciveServerException` (5xx) or
 `TraciveUnknownException`, carrying the raw code so the caller can still branch
@@ -132,7 +133,7 @@ parsed — the HTTP-date form yields `null`.)
 If the SDK sends `Idempotency-Key`, the proxy must honour it end to end: the
 same key with the same body returns the first response without charging again,
 and the same key with a *different* body is `409 idempotency_conflict`. Without
-that, the retry policy in §7 is unsafe and this SDK will refuse to auto-retry a
+that, the retry policy is unsafe and this SDK will refuse to auto-retry a
 check — which is the correct behaviour, but it means the partner absorbs every
 transient failure as a failed check.
 

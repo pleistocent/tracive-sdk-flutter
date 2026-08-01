@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Query builders and the string-folding grammar — the SDK specification §3.
+// Query builders and the string-folding grammar.
 //
 // The folding rules below are transcribed from the `rules` block of
 // `test/fixtures/query-grammar-vectors.json`, which is vendored verbatim into
@@ -52,14 +52,13 @@ String _regExpEscape(int codePoint) =>
 /// A checked, folded lookup key.
 ///
 /// Build one with a factory below; each folds its input to the exact string the
-/// backend indexes and exposes it as [searchQueryIndex]. Construction either
+/// API indexes and exposes it as [searchQueryIndex]. Construction either
 /// yields a key that *could* match, or throws [TraciveQueryException] — it
-/// never yields a key that is guaranteed to miss, because a miss is billed
-/// (§3.2).
+/// never yields a key that is guaranteed to miss, because a miss is billed.
 ///
 /// PRIVACY: [searchQueryIndex] contains the raw identifier by construction.
 /// Never log it. [toString] is redacted for exactly this reason, and the cache
-/// stores `SHA-256(searchQueryIndex)` rather than the key itself (§5).
+/// stores `SHA-256(searchQueryIndex)` rather than the key itself.
 class TraciveQuery {
   const TraciveQuery._(this.type, this.searchQueryIndex);
 
@@ -101,8 +100,8 @@ class TraciveQuery {
 
   /// An e-mail address.
   ///
-  /// Fold: Unicode NFC, then lowercase, then trim — in that order, matching
-  /// the server's `normalizeEmailValue`.
+  /// Fold: Unicode NFC, then lowercase, then trim — in that order, which is
+  /// the order the API folds an e-mail address in.
   ///
   /// See [DefaultNormalizer] for the exact NFC guarantees this SDK ships with;
   /// Dart has no core-library NFC.
@@ -199,7 +198,7 @@ class TraciveQuery {
     }
     if (foldedAddress.isEmpty) {
       // Not covered by the fixture (it has no empty-address vector); reusing
-      // `empty_value` keeps the reason inside the frozen set of §3 strings.
+      // `empty_value` keeps the reason inside the frozen set of reasons.
       throw const TraciveQueryException(
         QueryRejectionReason.emptyValue,
         message: 'Crypto address is empty',
@@ -223,7 +222,7 @@ class TraciveQuery {
     final foldedPlatform = jsTrim(jsToUpperCase(_nfc(platform)));
     if (foldedPlatform.isEmpty) {
       // Not covered by the fixture (it has no empty-platform vector); reusing
-      // `empty_value` keeps the reason inside the frozen set of §3 strings.
+      // `empty_value` keeps the reason inside the frozen set of reasons.
       throw const TraciveQueryException(
         QueryRejectionReason.emptyValue,
         message: 'Username platform is empty',

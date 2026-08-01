@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Platform wiring for Flutter — the SDK specification §6.
+// Platform wiring for Flutter.
 //
 // The Flutter half of the conditional import declared in
 // `platform_default.dart`. **Only compiled when `dart:ui` exists**, which is
@@ -151,7 +151,7 @@ class SecureStorageTokenStore extends TokenStore {
 /// [AuthLauncher] on `url_launcher`.
 ///
 /// [openExternally] uses **`LaunchMode.externalApplication`**, and that is not
-/// a preference — it is the requirement in §6 step 4. External-application mode
+/// a preference — it is a requirement. External-application mode
 /// hands the URL to the OS, which is what lets an Android App Link / iOS
 /// Universal Link resolve to the installed Tracive app, and what keeps the
 /// authorization page out of the host app's process. `LaunchMode.inAppWebView`

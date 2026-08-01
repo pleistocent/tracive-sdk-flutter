@@ -1,8 +1,8 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Where the cache's encryption key lives — the SDK specification §5.
+// Where the cache's encryption key lives.
 //
-// §5 requires the data key to sit in the Android Keystore / iOS Keychain,
+// The data key must sit in the Android Keystore / iOS Keychain,
 // Secure Enclave-backed where available. On Flutter that is
 // `flutter_secure_storage`, which is a plugin, so it lives behind this seam and
 // is bound in `tracive_cache.dart`. This file is plain Dart.

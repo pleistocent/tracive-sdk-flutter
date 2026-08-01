@@ -16,27 +16,27 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # SHA-256 for cache keys and the PKCE code challenge (§5, §6).
+  # SHA-256 for cache keys and the PKCE code challenge.
   crypto: ^3.0.3
 
-  # The default HTTP transport. The transport is injectable (§2), so this is
+  # The default HTTP transport. The transport is injectable, so this is
   # only the default implementation, not a hard requirement of the design.
   http: ^1.2.0
 
-  # §5: the cache's data key belongs in the Android Keystore / iOS Keychain,
-  # never in SharedPreferences or UserDefaults. §6 says the same about tokens.
+  # The cache's data key belongs in the Android Keystore / iOS Keychain,
+  # never in SharedPreferences or UserDefaults. The same goes for tokens.
   # Pinned to 9.x deliberately: 10.x reworks AndroidOptions, and the options
   # this SDK stores its key with (`encryptedSharedPreferences`,
   # `first_unlock_this_device`) are the 9.x spelling.
   flutter_secure_storage: ^9.2.2
 
-  # §5 names this package as the Flutter storage for the check cache. The
+  # This is the Flutter storage for the check cache. The
   # constraint is a range rather than a caret because the API this SDK uses —
   # openDatabase(path, password:), rawQuery/rawInsert/rawDelete — is the sqflite
   # surface and has been stable across this package's 2.x and 3.x.
   sqflite_sqlcipher: ">=2.2.0 <4.0.0"
 
-  # §6: the authorize URL opens in a Custom Tab / Universal Link, never a
+  # The authorize URL opens in a Custom Tab / Universal Link, never a
   # WebView.
   url_launcher: ^6.2.5
 
@@ -68,7 +68,8 @@ dev_dependencies:
 
 # Deliberately not declared as a Flutter *plugin*. This package is pure Dart on
 # top of other people's plugins, so it has no `android/` or `ios/` module of its
-# own — which means it cannot yet merge the `<queries>` element §6 step 2 needs
+# own — which means it cannot yet merge the `<queries>` element the app-presence
+# check needs
 # into the host manifest. The host app adds four lines instead; `doc/oauth.md`
 # has them. Shipping an empty plugin module just to own a manifest would make
 # every integrator's build depend on native code that does nothing.

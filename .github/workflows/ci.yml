@@ -1,11 +1,11 @@
-# CI for the Tracive Flutter SDK — the SDK specification §8.
+# CI for the Tracive Flutter SDK.
 #
 # NO NETWORK IN TESTS. Nothing in this repo talks to a server, and nothing can:
 # the Tracive Open API is not live yet, and every test injects a fake transport.
 # So this workflow needs no secrets, no service containers and no environment —
 # if a step here ever starts needing a credential, something has gone wrong.
 #
-# Runs on ubuntu-latest. §8 asks for a macOS runner "where iOS is involved";
+# Runs on ubuntu-latest. A macOS runner is only needed where iOS is involved;
 # the Flutter SDK's unit tests are pure Dart and its example builds for Android,
 # so nothing here compiles Swift. The Swift SDK's own repo is where the macOS
 # runner belongs.
@@ -108,7 +108,7 @@ jobs:
         run: flutter analyze --fatal-infos --fatal-warnings
 
       # Widget tests over the fake backend: they assert that a cache hit does
-      # no network I/O and that the §4 disclaimer is on screen.
+      # no network I/O and that the disclaimer is on screen.
       - name: Test
         working-directory: example
         run: flutter test --reporter expanded

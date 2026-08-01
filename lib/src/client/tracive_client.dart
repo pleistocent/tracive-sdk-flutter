@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The API client — the SDK specification §2, §4, §5, §7.
+// The API client.
 //
 // NO NETWORK IN TESTS. Every byte leaves through the injected [HttpTransport],
 // so `test/client_test.dart` drives the whole thing against a fake. The Open
@@ -39,16 +39,16 @@ import 'http_package_transport.dart';
 import 'http_transport.dart';
 import 'retry_policy.dart';
 
-/// Path of the check endpoint, relative to the environment base URL (§4).
+/// Path of the check endpoint, relative to the environment base URL.
 const String scammerChecksPath = 'scammer-checks';
 
-/// Path of the credits endpoint (§4).
+/// Path of the credits endpoint.
 const String creditsPath = 'credits';
 
-/// Path of the profile endpoint (§4).
+/// Path of the profile endpoint.
 const String profilePath = 'profile';
 
-/// The entry point of the SDK — the SDK specification §2.
+/// The entry point of the SDK.
 ///
 /// ```dart
 /// final client = TraciveClient(
@@ -65,7 +65,7 @@ const String profilePath = 'profile';
 /// ## Two things that are not optional
 ///
 /// * **There is no API-key parameter here, in any mode.** That is a hard design
-///   invariant (§11.1), not an omission. Authentication is OAuth with PKCE, so
+///   invariant, not an omission. Authentication is OAuth with PKCE, so
 ///   nothing long-lived and secret ever ships inside your binary.
 /// * **Surface `CheckResult.disclaimer` in your UI.** These are user-submitted
 ///   reports, not adjudicated findings, and presenting them as the latter is
@@ -73,7 +73,7 @@ const String profilePath = 'profile';
 ///
 /// ## Do not poll `credits()`
 ///
-/// §3.3: do **not** call [credits] before each check to see whether you can
+/// Do **not** call [credits] before each check to see whether you can
 /// afford it. Make the check and handle
 /// [TraciveInsufficientCreditsException] — that is one round trip per
 /// transaction instead of two, and it is correct under concurrency where a
@@ -81,14 +81,14 @@ const String profilePath = 'profile';
 class TraciveClient {
   /// Creates a client.
   ///
-  /// The first four parameters are the configuration in §2. The rest are seams:
-  /// [transport] and [clock] are named as such by the spec; [retryPolicy],
-  /// [cache], [tokenStore], [launcher], [oauth] and [installUrl] are additive
-  /// and every one of them has a working default, so an app passes none of
-  /// them.
+  /// The first four parameters are the configuration. The rest are seams:
+  /// [transport] and [clock] are named as such by the cross-SDK contract;
+  /// [retryPolicy], [cache], [tokenStore], [launcher], [oauth] and
+  /// [installUrl] are additive, and every one of them has a working
+  /// default, so an app passes none of them.
   ///
   /// **The default [cache] is in memory**, which is deliberate: a constructor
-  /// must not silently open a database file and a Keystore entry. For §5's
+  /// must not silently open a database file and a Keystore entry. For the
   /// persistent encrypted cache, build it explicitly and pass it in — that call
   /// is `await openTraciveCache()` and it is the one place in this SDK that
   /// touches a platform plugin:
@@ -118,7 +118,7 @@ class TraciveClient {
     final resolvedClock = clock ?? TraciveClock.system;
     // Proxy mode has no OAuth flow: it authenticates with the partner's own
     // headers against the partner's own endpoint. Every call throws anyway
-    // (§2, phase 2), so there is nothing to build.
+    // (phase 2), so there is nothing to build.
     final resolvedOAuth = mode is TraciveOAuthMode
         ? (oauth ??
             TraciveOAuth(
@@ -166,7 +166,7 @@ class TraciveClient {
   /// The [Source] used when [checkScammer] is called without one.
   final Source defaultSource;
 
-  /// The local result cache — §5, whose `client.cache.clear()` this is.
+  /// The local result cache, whose `client.cache.clear()` this is.
   ///
   /// Never `null`: "no cache" is spelled `CheckCache.disabled()`, so no caller
   /// has to null-check, and the difference between "not caching" and "cache
@@ -181,26 +181,26 @@ class TraciveClient {
   final TraciveClock _clock;
   final RetryPolicy _retryPolicy;
 
-  /// The TTL rules in force (§5) — always [cache]'s own policy.
+  /// The TTL rules in force — always [cache]'s own policy.
   CachePolicy get cachePolicy => cache.policy;
 
-  /// Checks one identifier — the SDK specification §4.
+  /// Checks one identifier.
   ///
   /// [query] is already folded and already validated: `TraciveQuery`'s builders
   /// throw before construction if the input could not produce a matching key,
-  /// because a miss is billed (§3.2). Nothing further is validated here.
+  /// because a miss is billed. Nothing further is validated here.
   ///
   /// [source] defaults to [defaultSource]. [detail] defaults to
   /// [Detail.minimal]; [locale] is **omitted from the request** when
   /// `detail == minimal`, because the server ignores it there.
   ///
-  /// [idempotencyKey] is worth more than it looks. Per §7 this client will
+  /// [idempotencyKey] is worth more than it looks. This client will
   /// **not** auto-retry a check on a 5xx or a timeout unless you pass one — a
   /// blind retry of a POST that may already have been processed risks charging
   /// the user twice. Pass a key (a UUID per logical check, stable across your
   /// own retries) and retrying becomes safe, both here and in your code.
   ///
-  /// Throws a [TraciveException] subtype per the §7 table, or
+  /// Throws a [TraciveException] subtype from the error-code table, or
   /// [TraciveCacheMissException] when `source: Source.cache` finds no live
   /// entry — never a silent empty result that would read as "not a scammer".
   Future<CheckResult> checkScammer(
@@ -220,7 +220,7 @@ class TraciveClient {
         effectiveSource == Source.cacheFirst || effectiveSource == Source.cache;
     if (readsCacheFirst) {
       // A hit is already stamped `Origin.cache`, already checked against the
-      // TTL, and cost zero credits and zero network I/O (§5).
+      // TTL, and cost zero credits and zero network I/O.
       final hit = await cache.read(query);
       if (hit != null) return hit;
     }
@@ -239,7 +239,7 @@ class TraciveClient {
         idempotencyKey: idempotencyKey,
       );
       // The cache decides what to keep: `cacheable()` on the way in, and a
-      // non-positive `cacheTtlSeconds` deletes rather than stores (§5's
+      // non-positive `cacheTtlSeconds` deletes rather than stores (the
       // fleet-wide invalidation lever). None of that is re-implemented here.
       await cache.write(query, result);
       return result;
@@ -252,9 +252,9 @@ class TraciveClient {
     }
   }
 
-  /// `GET /credits` — §4.
+  /// `GET /credits`.
   ///
-  /// **Do not call this before every check.** §3.3: handle the 402
+  /// **Do not call this before every check.** Handle the 402
   /// ([TraciveInsufficientCreditsException]) instead; it saves one call per
   /// transaction, and a pre-check is racy anyway — the balance can change
   /// between the two requests.
@@ -272,7 +272,7 @@ class TraciveClient {
     return CreditsInfo.fromJson(_requireJsonObject(response));
   }
 
-  /// `GET /profile` — §4.
+  /// `GET /profile`.
   ///
   /// PRIVACY: the result is personal data about the authenticated Tracive user.
   /// [ProfileInfo.toString] already omits the name; do not log the object's
@@ -309,7 +309,7 @@ class TraciveClient {
     return oauth!.handleCallback(url);
   }
 
-  /// Revokes the grant best-effort and clears local tokens — §6.
+  /// Revokes the grant best-effort and clears local tokens.
   Future<void> signOut() async {
     _ensureOAuthMode();
     return oauth!.signOut();
@@ -327,7 +327,8 @@ class TraciveClient {
 
   void _ensureOAuthMode() {
     if (mode is! TraciveOAuthMode) {
-      // Spelled exactly as §2 spells it, so the three SDKs say the same thing.
+      // Spelled exactly as the contract spells it, so the three SDKs say the
+      // same thing.
       throw const TraciveNotImplementedException(
         'Proxy mode arrives in phase 2',
       );
@@ -359,14 +360,14 @@ class TraciveClient {
     final hasIdempotencyKey =
         idempotencyKey != null && idempotencyKey.trim().isNotEmpty;
     final body = jsonEncode(<String, Object?>{
-      // phase 1 always sends USER (§4).
+      // phase 1 always sends USER.
       'creditSource': Billing.userCreditSource,
       'detail': detail.wireValue,
-      // Omitted for minimal: the server ignores it there (§4).
+      // Omitted for minimal: the server ignores it there.
       if (detail.supportsLocale && locale != null && locale.isNotEmpty)
         'locale': locale,
       // `query`, not `input`: the key is already folded, and that same folded
-      // string is what the cache key is derived from (§3.2, §4).
+      // string is what the cache key is derived from.
       'query': query.searchQueryIndex,
     });
 
@@ -381,7 +382,7 @@ class TraciveClient {
         },
         body: body,
       ),
-      // §7: without an Idempotency-Key a repeat could double-charge, so the
+      // Without an Idempotency-Key a repeat could double-charge, so the
       // retry policy is not allowed to fire.
       safeToRepeat: hasIdempotencyKey,
     );
@@ -393,7 +394,7 @@ class TraciveClient {
     );
   }
 
-  /// Sends [request] with a bearer token, handling §6's refresh and §7's retry.
+  /// Sends [request] with a bearer token, handling the refresh and the retry.
   ///
   /// Three distinct behaviours, deliberately not merged:
   ///
@@ -403,9 +404,9 @@ class TraciveClient {
   ///   it does not consume the retry budget. `refreshedOnce` bounds it: if the
   ///   replay is rejected again, something is wrong that a third attempt will
   ///   not fix.
-  /// * **401 `grant_revoked` -> clear and stop.** No refresh, no retry (§6).
+  /// * **401 `grant_revoked` -> clear and stop.** No refresh, no retry.
   ///   Retrying with a dead refresh token is what trips reuse detection.
-  /// * **5xx / transport -> retry only if [safeToRepeat].** §7.
+  /// * **5xx / transport -> retry only if [safeToRepeat].**
   Future<TraciveHttpResponse> _sendAuthorized(
     TraciveHttpRequest request, {
     required bool safeToRepeat,

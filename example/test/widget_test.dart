@@ -56,7 +56,7 @@ void main() {
       reason: 'the folded key is what goes on the wire and into the cache',
     );
 
-    // §4 requires any UI built on the SDK to surface the disclaimer.
+    // Any UI built on the SDK is required to surface the disclaimer.
     expect(find.textContaining('user-submitted reports'), findsOneWidget);
 
     expect(find.text('Backend calls this session: 1'), findsOneWidget);
@@ -73,7 +73,7 @@ void main() {
     expect(
       find.text('Backend calls this session: 1'),
       findsOneWidget,
-      reason: 'the cache hit cost zero credits and did no network I/O (§5)',
+      reason: 'the cache hit cost zero credits and did no network I/O',
     );
     expect(find.widgetWithText(Chip, 'CACHE'), findsOneWidget);
   });
@@ -93,7 +93,7 @@ void main() {
     expect(
       find.text('Backend calls this session: 0'),
       findsOneWidget,
-      reason: 'validation runs before the network — a miss is billed (§3.2)',
+      reason: 'validation runs before the network — a miss is billed',
     );
   });
 

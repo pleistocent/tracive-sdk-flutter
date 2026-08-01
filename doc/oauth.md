@@ -1,7 +1,7 @@
 # OAuth
 
 > Contract: the Tracive OAuth specification
-> §4.2. **The backend is not live yet** — no `/oauth/authorize`,
+> **The backend is not live yet** — no `/oauth/authorize`,
 > `/oauth/token` or `/oauth/revoke` endpoint exists. Everything here is
 > implemented against the frozen contract and tested without a network.
 

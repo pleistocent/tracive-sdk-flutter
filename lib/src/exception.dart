@@ -1,12 +1,13 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Error surface for the Tracive SDK — the SDK specification §7 ("Error mapping").
+// Error surface for the Tracive SDK — ("Error mapping").
 //
 // PACKAGING NOTE (for whoever owns pubspec.yaml): this file depends on nothing
 // outside dart:core. It does use Dart 3 class modifiers (`sealed`, `final
 // class`), so the package must declare `environment: sdk: ^3.0.0` (or newer).
 //
-// Naming: the frozen spec writes the error cases in Kotlin sealed-subclass form
+// Naming: the cross-SDK contract writes the error cases in Kotlin
+// sealed-subclass form
 // (`TraciveException.NotImplemented`). Dart has no nested class names and a
 // package must not squat on bare identifiers like `Server` or `Network`, so
 // each case is rendered as `Tracive<Case>Exception`. The mapping is 1:1 and is
@@ -29,9 +30,9 @@
 //   Network(cause)            -> TraciveNetworkException(cause)
 //   Server(status, code?)     -> TraciveServerException(statusCode, code)
 //   NotImplemented(message)   -> TraciveNotImplementedException
-//   CacheMiss                 -> TraciveCacheMissException            (§5)
-//   stateMismatch             -> TraciveStateMismatchException        (§6)
-//   (unrecognised code)       -> TraciveUnknownException(code)        (§7)
+//   CacheMiss                 -> TraciveCacheMissException
+//   stateMismatch             -> TraciveStateMismatchException
+//   (unrecognised code)       -> TraciveUnknownException(code)
 //
 // PRIVACY: no constructor here ever takes a raw identifier (phone / account /
 // e-mail) or a token, and no `toString()` prints one. Messages are either
@@ -63,7 +64,7 @@ sealed class TraciveException implements Exception {
 
   /// Whether retrying the very same call could plausibly succeed.
   ///
-  /// Note §7: a `checkScammer` retry is only safe with an `Idempotency-Key`;
+  /// Note: a `checkScammer` retry is only safe with an `Idempotency-Key`;
   /// this flag says "the failure is transient", not "retrying is free".
   bool get isRetryable => false;
 
@@ -87,7 +88,7 @@ sealed class TraciveException implements Exception {
   }
 
   /// Maps an API error envelope (`{"error":{"code","message","checkId"}}`) to a
-  /// typed exception, per the §7 table.
+  /// typed exception, per the error-code table.
   ///
   /// An unrecognised `code` never throws and never crashes: 5xx becomes
   /// [TraciveServerException] and anything else [TraciveUnknownException], both
@@ -335,7 +336,7 @@ final class TraciveInvalidTokenException extends TraciveException {
   });
 }
 
-/// 401 `expired_token` — triggers the single-flight refresh (§6). Callers
+/// 401 `expired_token` — triggers the single-flight refresh. Callers
 /// normally never see this: the client refreshes and replays the request once.
 final class TraciveExpiredTokenException extends TraciveException {
   /// Creates the exception from a decoded error envelope: [message],
@@ -367,7 +368,7 @@ final class TraciveGrantRevokedException extends TraciveException {
 /// 401 `invalid_api_key`.
 ///
 /// This SDK never sends an API key — there is no API-key parameter anywhere in
-/// the public surface, by design (§2/§11.1). The case exists only so that a
+/// the public surface, by design. The case exists only so that a
 /// server that emits this code (for example behind a partner proxy that adds
 /// its own credentials) maps to something typed instead of "unknown".
 final class TraciveInvalidApiKeyException extends TraciveException {
@@ -400,7 +401,7 @@ enum InsufficientCreditsKind {
 
 /// 402 — a credit balance was exhausted.
 ///
-/// §3.3: handle *this* instead of polling `credits()` before every check; it
+/// Handle *this* instead of polling `credits()` before every check; it
 /// saves one round trip per transaction.
 final class TraciveInsufficientCreditsException extends TraciveException {
   /// Creates the exception for the [which] balance the server reported
@@ -548,7 +549,8 @@ final class TraciveServerException extends TraciveException {
 }
 
 /// An error code this build does not recognise. Carries the raw `code` so the
-/// caller can still branch on it. Never thrown for a code in the §7 table.
+/// caller can still branch on it. Never thrown for a code in the error-code
+/// table.
 final class TraciveUnknownException extends TraciveException {
   /// Creates the exception from a decoded error envelope: [message],
   /// [code], [statusCode] and [checkId] all come off the wire.
@@ -560,20 +562,20 @@ final class TraciveUnknownException extends TraciveException {
   });
 }
 
-/// Raised where the spec says a surface exists but the behaviour lands later.
+/// Raised where a surface exists but the behaviour lands in a later release.
 ///
 /// The only such place in phase 1 is Proxy mode: `TraciveMode.proxy(...)` is
 /// accepted by the constructor so that adding it in phase 2 is not a breaking
 /// change, but every call made in that mode throws this.
 final class TraciveNotImplementedException extends TraciveException {
-  /// Creates the exception with [message] — the exact sentence the spec
+  /// Creates the exception with [message] — the exact sentence the contract
   /// requires for the surface that is not live yet.
   const TraciveNotImplementedException(super.message);
 }
 
 /// `source: Source.cache` found no live entry.
 ///
-/// §5: a cache-only lookup must fail loudly rather than return a silent empty
+/// A cache-only lookup must fail loudly rather than return a silent empty
 /// result that reads as "not a scammer".
 final class TraciveCacheMissException extends TraciveException {
   /// Creates the exception. The default message deliberately names no

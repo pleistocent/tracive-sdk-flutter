@@ -2,7 +2,7 @@
 
 import 'json.dart';
 
-/// Answer of `GET /profile` — the SDK specification §4.
+/// Answer of `GET /profile`.
 ///
 /// PRIVACY: this is personal data about the authenticated Tracive user. Do not
 /// log it; [toString] deliberately omits [name].

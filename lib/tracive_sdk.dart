@@ -5,13 +5,13 @@
 /// reports.
 ///
 /// **Status: phase 1, OAuth mode only. The backend Open API is not live yet.**
-/// Everything here is built against the frozen contract in the SDK specification; no
+/// Everything here is built against a frozen contract; no
 /// test in this repo talks to a network, and none can.
 ///
 /// Two invariants worth knowing before you integrate:
 ///
 /// * **There is no API-key parameter anywhere in this surface, in any mode.**
-///   That is deliberate (§11.1). Authentication is OAuth with PKCE, so no
+///   That is deliberate. Authentication is OAuth with PKCE, so no
 ///   long-lived secret is ever shipped inside your binary.
 /// * **A miss is billed.** Every query builder validates before anything
 ///   leaves the device, and throws [TraciveQueryException] rather than send a

@@ -1,13 +1,13 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 
-/// How much of a report set to return — the SDK specification §4.
+/// How much of a report set to return.
 ///
 /// The wire values are lowercase here (`"detail": "minimal"`), matching the
-/// request body in §4 rather than the `UPPER_SNAKE` convention used for enums
+/// request body rather than the `UPPER_SNAKE` convention used for enums
 /// that travel as response values.
 enum Detail {
   /// Counts, tier and dates only. The default, and the only form that is
-  /// cached (§5).
+  /// cached.
   minimal('minimal'),
 
   /// Adds `topChronologies` and `comments`. Never cached: the payload varies
@@ -19,7 +19,7 @@ enum Detail {
   /// The value sent in the request body.
   final String wireValue;
 
-  /// Whether `locale` is meaningful for this level. §4: omit `locale` when
+  /// Whether `locale` is meaningful for this level. Omit `locale` when
   /// `detail == minimal`, because the server ignores it there.
   bool get supportsLocale => this == Detail.full;
 

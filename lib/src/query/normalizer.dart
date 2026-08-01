@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Unicode NFC for the query grammar — the SDK specification §3 and the `rules` block of
+// Unicode NFC for the query grammar — the `rules` block of
 // `test/fixtures/query-grammar-vectors.json`.
 //
 // ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ class TraciveNormalization {
 ///   of it.
 ///
 /// Every one of those cases produces a *different key from the server's*, and
-/// per §3.2 a miss is still billed — so if your app accepts identifiers where
+/// a miss is still billed — so if your app accepts identifiers where
 /// they are plausible, inject a full implementation (see the packaging note at
 /// the top of this file). For ASCII, Latin, Greek, Cyrillic and Hangul input
 /// this class is exact, and ASCII takes a zero-allocation fast path.

@@ -2,9 +2,9 @@
 
 import 'json.dart';
 
-/// Answer of `GET /credits` — the SDK specification §4.
+/// Answer of `GET /credits`.
 ///
-/// §3.3, and the README must repeat it: **do not call `credits()` before every
+/// The README must repeat this too: **do not call `credits()` before every
 /// check.** Handle the 402 (`TraciveInsufficientCreditsException`) instead —
 /// that saves one round trip per transaction.
 class CreditsInfo {

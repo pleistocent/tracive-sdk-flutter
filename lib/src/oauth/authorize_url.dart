@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// URL construction for the OAuth flow — the SDK specification §6.
+// URL construction for the OAuth flow.
 //
 // Split out from `tracive_oauth.dart` so each URL can be asserted on directly
 // in a test, byte for byte, without running a flow. Two of them carry
@@ -15,16 +15,16 @@ import 'pkce.dart';
 /// Path of the authorization endpoint, relative to the environment base URL.
 const String authorizePath = 'oauth/authorize';
 
-/// Path of the token endpoint (§6 step 6).
+/// Path of the token endpoint.
 const String tokenPath = 'oauth/token';
 
-/// Path of the revocation endpoint (§6, `signOut`).
+/// Path of the revocation endpoint, used by `signOut`.
 const String revokePath = 'oauth/revoke';
 
 /// Builds the authorization request URL (RFC 6749 §4.1.1 + RFC 7636 §4.3).
 ///
 /// This URL is opened with the OS handler, never a WebView, so that the Tracive
-/// app's App Link / Universal Link claims it (§6 step 4).
+/// app's App Link / Universal Link claims it.
 ///
 /// `code_challenge_method` is hard-wired to `S256`. It is not a parameter of
 /// this function because it is not a decision: see [PkcePair].
@@ -54,7 +54,8 @@ Uri buildAuthorizeUrl({
 
 /// Every parameter name that would make an install link an OAuth link.
 ///
-/// Exposed so the test that guards §6 step 3 checks the same list the builder
+/// Exposed so the test that guards the clean install link checks the same list
+/// the builder
 /// strips, rather than a copy of it that can drift.
 const Set<String> oauthParameterNames = <String>{
   'response_type',
@@ -74,7 +75,7 @@ const Set<String> oauthParameterNames = <String>{
   'id_token',
 };
 
-/// Builds the **clean** install link — §6 step 3.
+/// Builds the **clean** install link.
 ///
 /// > "Not installed → open the **clean** chottu install link (no OAuth
 /// > parameters whatsoever; an attribution tag naming the client is allowed)."
@@ -85,13 +86,13 @@ const Set<String> oauthParameterNames = <String>{
 /// clipboard on some platforms) logs the URL it was handed. A `state` or
 /// `code_challenge` that travels that route is a `state` or `code_challenge`
 /// sitting in a third party's analytics warehouse. There is also nothing to
-/// gain: §6 is explicit that there is **no deferred resume** — the user retries
+/// gain: there is **no deferred resume** — the user retries
 /// in the partner app after installing, and a fresh PKCE pair is generated
 /// then.
 ///
 /// [clientId] is added as `utm_source`, which is the "attribution tag naming
-/// the client" the spec permits. A client id is public by definition (it ships
-/// inside the app binary), so this leaks nothing.
+/// the client" the contract permits. A client id is public by definition (it
+/// ships inside the app binary), so this leaks nothing.
 ///
 /// Any OAuth parameter already present on [installUrl] is **stripped**, not
 /// trusted — a misconfigured link constant must not be able to defeat this.
@@ -113,7 +114,7 @@ Uri buildInstallUrl(String installUrl, {String? clientId}) {
 /// No `client_secret`. A public client has none — that is what PKCE replaces —
 /// and a secret shipped in a mobile binary is a published secret. A
 /// confidential client never reaches this function: it stops at
-/// `AuthResult.codeReceived` and its own backend performs the exchange (§6
+/// `AuthResult.codeReceived` and its own backend performs the exchange (
 /// step 6).
 Map<String, String> buildTokenExchangeForm({
   required String code,

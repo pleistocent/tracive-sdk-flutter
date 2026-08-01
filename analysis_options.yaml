@@ -11,7 +11,7 @@ analyzer:
     # No implicit downcast from `dynamic`. Every model in this SDK parses JSON
     # by hand out of `Object?`, and an implicit cast is exactly how a malformed
     # field turns into a crash on someone's checkout screen instead of the
-    # documented fallback (§4, forward compatibility).
+    # documented fallback (forward compatibility).
     strict-casts: true
     # `List` and `Map` without type arguments hide the same problem.
     strict-raw-types: true

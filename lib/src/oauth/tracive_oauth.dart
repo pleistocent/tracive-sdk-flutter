@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The OAuth flow — the SDK specification §6, "phase 1 core".
+// The OAuth flow — "phase 1 core".
 //
 // NO NETWORK IN TESTS: every request goes through the injected [HttpTransport],
 // so `test/oauth_test.dart` drives the whole state machine against a fake. The
@@ -28,7 +28,7 @@ import 'platform_default.dart' if (dart.library.ui) 'platform_flutter.dart'
     as platform;
 import 'token_store.dart';
 
-/// Runs the §4.2 authorization-code + PKCE flow and owns the resulting tokens.
+/// Runs the authorization-code + PKCE flow and owns the resulting tokens.
 ///
 /// Normally reached as `client.oauth`; construct one directly only when you
 /// want the flow without the API client.
@@ -58,10 +58,10 @@ import 'token_store.dart';
 /// ## What it never does
 ///
 /// * It never opens a WebView (§6 step 4, RFC 8252 §8.12).
-/// * It never sends `code_challenge_method=plain` (§6 step 1).
-/// * It never puts an OAuth parameter on the install link (§6 step 3).
-/// * It never sends an API key. There is no API key anywhere in this SDK
-///   (§2/§11.1).
+/// * It never sends `code_challenge_method=plain`.
+/// * It never puts an OAuth parameter on the install link.
+/// * It never sends an API key. There is no API key anywhere in this SDK,
+///   in any mode.
 class TraciveOAuth {
   /// Creates a flow for [mode].
   ///
@@ -94,7 +94,7 @@ class TraciveOAuth {
   /// that makes the presence probe answer truthfully on Android 11+.
   static const String traciveAndroidPackage = 'com.pleistocent.tracive';
 
-  /// The URL probed to decide whether the Tracive app is installed (§6 step 2).
+  /// The URL probed to decide whether the Tracive app is installed.
   ///
   /// A custom-scheme URL, not the authorize URL: `canOpen` on an `https://` URL
   /// is always `true` because a browser is always installed.
@@ -104,8 +104,8 @@ class TraciveOAuth {
   /// The clean install link opened when the Tracive app is missing.
   ///
   /// **Confirm this against the live chottu link before shipping.** It is the
-  /// one constant in this SDK that cannot be derived from the frozen spec — §6
-  /// names "the chottu install link" without giving its URL — and a wrong value
+  /// one constant in this SDK that cannot be derived from the frozen contract,
+  /// which names the install link without giving its URL — and a wrong value
   /// sends every un-onboarded user to a 404. Override it with
   /// `TraciveOAuth(installUrl: …)` until it is confirmed.
   static const String defaultInstallUrl = 'https://tracive.chottu.link/app';
@@ -131,7 +131,7 @@ class TraciveOAuth {
   final TraciveClock _clock;
   final Random? _random;
 
-  /// The single-flight latch (§6). Non-null exactly while a refresh is in
+  /// The single-flight latch. Non-null exactly while a refresh is in
   /// flight; every other caller awaits this future instead of starting a
   /// second refresh.
   Future<TraciveTokens>? _refreshInFlight;
@@ -195,14 +195,14 @@ class TraciveOAuth {
   Future<List<String>> grantedScopes() async =>
       (await _tokenStore.read())?.grantedScopes ?? const <String>[];
 
-  /// Whether the Tracive app is installed — §6 step 2.
+  /// Whether the Tracive app is installed.
   ///
   /// Answers `false` when the manifest declaration is missing, which is
   /// indistinguishable from "not installed". See [AuthLauncher.canOpen] for the
   /// `<queries>` / `LSApplicationQueriesSchemes` entries this needs.
   Future<bool> isTraciveAppInstalled() => _launcher.canOpen(appPresenceProbe);
 
-  /// Starts the flow — §6 steps 1-4.
+  /// Starts the flow — steps 1 to 4 in `doc/oauth.md`.
   ///
   /// Returns:
   ///
@@ -211,14 +211,14 @@ class TraciveOAuth {
   /// * [AuthAppNotInstalled] — the Tracive app is missing. The **clean**
   ///   install link has been opened and **no OAuth flow was started**: no PKCE
   ///   pair was generated, no `state`, nothing persisted, nothing leaked into
-  ///   the install-attribution chain. There is no deferred resume (§6 step 3);
+  ///   the install-attribution chain. There is no deferred resume;
   ///   the user retries here after installing.
   /// * [AuthFailed] — the OS refused to open the authorization page. The
   ///   pending record is rolled back, so a later stray redirect cannot be
   ///   matched against it.
   ///
   /// Order matters: the presence check runs **before** anything is generated or
-  /// stored, which is what §6 step 2 means by "before any redirect".
+  /// stored, which is what "before any redirect" means.
   Future<AuthResult?> authorize() async {
     if (!await isTraciveAppInstalled()) {
       await _launcher.openExternally(
@@ -260,7 +260,7 @@ class TraciveOAuth {
     return null;
   }
 
-  /// Handles the redirect — §6 steps 5-6.
+  /// Handles the redirect — steps 5 and 6 in `doc/oauth.md`.
   ///
   /// Call this from the host app's App Link / Universal Link handler with the
   /// incoming URL.
@@ -328,7 +328,7 @@ class TraciveOAuth {
     }
 
     if (mode.clientType == ClientType.confidential) {
-      // §6 step 6: no exchange. The code and verifier go to the partner's own
+      // No exchange here. The code and verifier go to the partner's own
       // backend, which holds the client secret. Nothing is stored here —
       // this SDK never sees a token on this path.
       await _tokenStore.writePending(null);

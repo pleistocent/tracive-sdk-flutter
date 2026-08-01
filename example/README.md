@@ -27,12 +27,12 @@ running the working tree, never a published version that may differ.
 
 | Do this | And notice |
 |---|---|
-| Press **Check** twice with `Source: cacheFirst` | "Backend calls this session" does **not** move the second time. That is a cache hit: zero credits, no network I/O (§5). |
+| Press **Check** twice with `Source: cacheFirst` | "Backend calls this session" does **not** move the second time. That is a cache hit: zero credits, no network I/O. |
 | Switch to `Source: server`, check again | The counter moves every time. Every one of those is a billed call. |
 | Switch to `Source: cache`, press **Clear cache**, then **Check** | A `Cache miss` *error* — never a silent empty result, which a user would read as "not a scammer". |
-| Turn on **Full detail**, check, then check again | Chronologies and comments appear on the server answer and are gone on the cache hit. Full detail is never cached (§5). |
-| Type `not-a-phone-number` and press **Check** | Rejected before any call is made, with the reason `not_e164`. Validation runs first because **a miss is billed** (§3.2). |
-| Press **Simulate 402** then **Check** | The typed `TraciveInsufficientCreditsException` from §7 — the one you should handle instead of polling `credits()`. |
+| Turn on **Full detail**, check, then check again | Chronologies and comments appear on the server answer and are gone on the cache hit. Full detail is never cached. |
+| Type `not-a-phone-number` and press **Check** | Rejected before any call is made, with the reason `not_e164`. Validation runs first because **a miss is billed**. |
+| Press **Simulate 402** then **Check** | The typed `TraciveInsufficientCreditsException` — the one you should handle instead of polling `credits()`. |
 | Look at the folded key under any result | `+62 812-3456-7891` became `PHONE_+6281234567891`. That folded string is both what goes on the wire and what the cache key is hashed from. |
 
 ## Two things this example is not
@@ -51,7 +51,7 @@ example runs anywhere, including desktop, with no plugin. See
 
 | File | Why |
 |---|---|
-| [`lib/main.dart`](lib/main.dart) | Client construction — note there is no API-key parameter, in any mode — plus the whole check flow and the §4 `disclaimer` being surfaced. |
+| [`lib/main.dart`](lib/main.dart) | Client construction — note there is no API-key parameter, in any mode — plus the whole check flow and the `disclaimer` being surfaced. |
 | [`lib/demo_backend.dart`](lib/demo_backend.dart) | The fake transport. Copy this shape for your own tests. |
 | [`lib/main.dart`](lib/main.dart) (`main()`) | Installing `UnormNormalizer` for full Unicode NFC, which matters if you accept non-Latin identifiers. It ships with the SDK; installing it is one line. |
 | [`test/widget_test.dart`](test/widget_test.dart) | Widget tests asserting a cache hit does no network I/O, and that invalid input never reaches the wire. |

@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The OAuth flow — the SDK specification §6, "phase 1 core".
+// The OAuth flow — "phase 1 core".
 //
 // NO NETWORK. Every token-endpoint answer is a literal `TraciveHttpResponse`
 // and every URL is opened into `_FakeLauncher`, which records rather than
@@ -17,9 +17,9 @@
 //      somebody else, and its `code` must be discarded unexamined.
 //   3. **Single-flight refresh.** Two refreshes present the same rotated
 //      refresh token twice, which is exactly what the server's reuse detection
-//      punishes — by revoking the whole grant (§6).
+//      punishes — by revoking the whole grant.
 //   4. **The clean install link.** No OAuth parameter may travel through an
-//      install-attribution chain (§6 step 3).
+//      install-attribution chain.
 
 import 'dart:async';
 import 'dart:convert';
@@ -41,7 +41,7 @@ final DateTime _t0 = DateTime.utc(2026, 7, 31, 12);
 
 void main() {
   // ---------------------------------------------------------------------------
-  // PKCE — §6 step 1, RFC 7636.
+  // PKCE — step 1 of the flow, RFC 7636.
   // ---------------------------------------------------------------------------
   group('PKCE', () {
     test('RFC 7636 appendix B vector', () {
@@ -125,7 +125,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // URL construction — §6 steps 3-4.
+  // URL construction — steps 3 and 4 of the flow.
   // ---------------------------------------------------------------------------
   group('authorize URL', () {
     test('carries the RFC 6749 + RFC 7636 parameters', () {
@@ -183,7 +183,7 @@ void main() {
     });
   });
 
-  group('install link (§6 step 3)', () {
+  group('the clean install link', () {
     test('carries no OAuth parameter of any kind', () {
       final url = buildInstallUrl(
         'https://tracive.chottu.link/app',
@@ -213,7 +213,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // authorize() — §6 steps 2-4.
+  // authorize() — steps 2 to 4 of the flow.
   // ---------------------------------------------------------------------------
   group('authorize()', () {
     test('app missing: opens the install link and starts nothing', () async {
@@ -226,7 +226,7 @@ void main() {
       expect(result, isA<AuthAppNotInstalled>());
       expect(launcher.opened, hasLength(1));
       expect(launcher.opened.single.host, 'tracive.chottu.link');
-      // §6 step 3: no PKCE pair, no state, nothing persisted. There is no
+      // No PKCE pair, no state, nothing persisted. There is no
       // deferred resume — the user retries here after installing.
       expect(await store.readPending(), isNull);
       for (final name in oauthParameterNames) {
@@ -239,7 +239,7 @@ void main() {
     });
 
     test('the presence check runs before anything is generated', () async {
-      // "before any redirect" (§6 step 2). If the order were reversed, a
+      // "before any redirect". If the order were reversed, a
       // verifier and state would exist for a flow that never started.
       final launcher = _FakeLauncher(installed: false);
       final oauth = _oauth(launcher: launcher);
@@ -296,7 +296,7 @@ void main() {
     });
 
     test('the shipped launcher uses externalApplication, never a WebView', () {
-      // §6 step 4: App Links do not fire from an in-app WebView, and RFC 8252
+      // App Links do not fire from an in-app WebView, and RFC 8252
       // §8.12 forbids an embedded user-agent anyway — the embedding app can
       // read what the user types into it.
       //
@@ -325,7 +325,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // handleCallback() — §6 steps 5-6.
+  // handleCallback() — steps 5 and 6 of the flow.
   // ---------------------------------------------------------------------------
   group('handleCallback()', () {
     test('a state mismatch is discarded without reading the code', () async {
@@ -518,7 +518,7 @@ void main() {
 
     test('confidential client: hands the code back and exchanges nothing',
         () async {
-      // §4.2: the partner's backend holds the client secret and performs the
+      // The partner's backend holds the client secret and performs the
       // exchange. No token ever reaches the device through this SDK.
       final store = InMemoryTokenStore();
       final transport = _FakeTransport(
@@ -566,7 +566,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Tokens — §6.
+  // Tokens.
   // ---------------------------------------------------------------------------
   group('access tokens', () {
     test('nothing stored is a typed error, not an empty bearer', () async {
@@ -636,7 +636,7 @@ void main() {
     });
   });
 
-  group('refresh (§6)', () {
+  group('refresh', () {
     test('rotates the refresh token and stores the pair in one write',
         () async {
       // Writing them separately could strand a new access token beside a spent
@@ -985,7 +985,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Sign-out — §6.
+  // Sign-out.
   // ---------------------------------------------------------------------------
   group('signOut()', () {
     test('revokes the refresh token, then clears locally', () async {
@@ -1290,7 +1290,7 @@ class _FakeTransport extends HttpTransport {
 
 /// Records what the SDK asked the operating system to do, and answers.
 ///
-/// It has no `openInWebView`, because [AuthLauncher] has no such method — §6
+/// It has no `openInWebView`, because [AuthLauncher] has no such method —
 /// step 4 and RFC 8252 §8.12 rule it out, and the interface is shaped so a
 /// caller could not ask for one even by mistake.
 class _FakeLauncher extends AuthLauncher {

@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The database seam under `SqlCheckCacheStore` — the SDK specification §5.
+// The database seam under `SqlCheckCacheStore`.
 //
 // Why not depend on `sqflite_sqlcipher`'s `Database` directly? Because then no
 // test could construct one. `sqflite` is a plugin: it answers over a platform

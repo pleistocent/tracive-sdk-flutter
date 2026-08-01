@@ -8,7 +8,7 @@ import 'json.dart';
 import 'origin.dart';
 import 'risk_tier.dart';
 
-/// The answer to a scammer check — the SDK specification §4.
+/// The answer to a scammer check.
 ///
 /// Two fields are stamped by the SDK rather than sent by the server: [origin]
 /// (cache or network) and [fetchedAt] (when the underlying data was fetched
@@ -43,7 +43,7 @@ class CheckResult {
   /// Decodes a `POST /scammer-checks` response body.
   ///
   /// Unknown fields are ignored and a field of an unexpected type degrades to
-  /// its default rather than throwing (§4, forward compatibility).
+  /// its default rather than throwing (forward compatibility).
   ///
   /// [origin] and [fetchedAt] override anything in [json]; they fall back to
   /// the JSON (so a cached record round-trips) and finally to
@@ -114,7 +114,7 @@ class CheckResult {
 
   /// How many other flagged entities are linked to this one.
   ///
-  /// A count, never a list (§3.2): returning the linked identifiers would leak
+  /// A count, never a list: returning the linked identifiers would leak
   /// third parties' data.
   final int relatedScammerCount;
 
@@ -130,7 +130,7 @@ class CheckResult {
 
   /// Server-driven TTL override, in seconds.
   ///
-  /// §5: this **overrides** the tier default and is the fleet-wide
+  /// This **overrides** the tier default and is the fleet-wide
   /// invalidation lever — honour it.
   final int? cacheTtlSeconds;
 
@@ -154,7 +154,7 @@ class CheckResult {
   /// Whether this result was served without touching the network.
   bool get isFromCache => origin == Origin.cache;
 
-  /// The subset of this result that is safe to cache — §5.
+  /// The subset of this result that is safe to cache.
   ///
   /// Drops everything that varies with `detail`/`locale` or is single-use:
   /// [topChronologies], [comments], [billing] and [checkId]. The remaining

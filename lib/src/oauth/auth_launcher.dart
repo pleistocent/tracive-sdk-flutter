@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Opening URLs outside the app — the SDK specification §6 steps 2-4.
+// Opening URLs outside the app — steps 2-4 of the flow in `doc/oauth.md`.
 //
 //   "open the authorize URL via **Custom Tabs (Android) / `UIApplication.open`
 //    Universal Link (iOS)**. **Never a WebView** — App Links do not fire from
@@ -27,7 +27,7 @@ abstract class AuthLauncher {
 
   /// Whether the OS has a handler for [url].
   ///
-  /// Used only as the **app-presence probe** (§6 step 2), against a custom
+  /// Used only as the **app-presence probe**, against a custom
   /// scheme (`tracive://…`). Asking this about an `https://` URL is
   /// meaningless: a browser is always installed, so the answer is always
   /// `true`, which is exactly why the probe cannot use the authorize URL.

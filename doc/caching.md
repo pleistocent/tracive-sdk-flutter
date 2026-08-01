@@ -1,6 +1,6 @@
 # Caching
 
-> Contract: the SDK specification §5. This document explains the parts of it that are
+> This document explains the parts of the caching contract that are
 > decisions rather than rules, and records what is *not* covered by the unit
 > suite.
 
@@ -58,14 +58,14 @@ persistent one is opt-in.
 
 ### At-rest encryption, stated honestly
 
-§5 says "AES-GCM with a random 96-bit nonce per record". That is literally what
+The contract asks for "AES-GCM with a random 96-bit nonce per record". That is literally what
 the **Swift** SDK does, because it has no SQLCipher and encrypts row by row with
 CryptoKit. On Flutter the encryption is SQLCipher's: **AES-256-CBC per page with
 a per-page random IV, plus an HMAC-SHA512 per page** for tamper detection. It is
 not GCM, and it is per page rather than per record.
 
-The property §5 is buying — *the cache is unreadable without a key held in the
-platform keystore* — holds either way, and `sqflite_sqlcipher` is what §5 itself
+The property being bought — *the cache is unreadable without a key held in the
+platform keystore* — holds either way, and `sqflite_sqlcipher` is what the contract
 prescribes for Flutter. This paragraph exists so nobody has to rediscover the
 discrepancy from the source.
 

@@ -2,11 +2,11 @@
 
 import 'json.dart';
 
-/// One narrative of what a reported scammer did — the SDK specification §4.
+/// One narrative of what a reported scammer did.
 ///
 /// Returned only for `detail = full`, and never cached: the text is
 /// locale-dependent, so caching it would make the cache key `(query, detail,
-/// locale)` rather than `query` (§5).
+/// locale)` rather than `query`.
 class Chronology {
   /// Creates a chronology entry.
   const Chronology({
@@ -30,8 +30,9 @@ class Chronology {
 
   /// When it happened, as sent by the server.
   ///
-  /// Kept as a `String?` on purpose: the spec types it as a string, and it can
-  /// be a partial date (`"2026-03"`) that no `DateTime` can hold faithfully.
+  /// Kept as a `String?` on purpose: the contract types it as a string, and
+  /// it can be a partial date (`"2026-03"`) that no `DateTime` can hold
+  /// faithfully.
   final String? incidentDate;
 
   /// Wire form.

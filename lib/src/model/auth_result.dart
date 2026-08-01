@@ -3,7 +3,7 @@
 import '../exception.dart';
 import 'collection_equality.dart';
 
-/// Outcome of an authorization attempt — the SDK specification §6.
+/// Outcome of an authorization attempt.
 ///
 /// Sealed, so `switch` over it is exhaustive and a new case in a later version
 /// is a compile error rather than a silently unhandled path:
@@ -64,7 +64,7 @@ final class AuthAuthorized extends AuthResult {
 }
 
 /// Confidential clients only: the authorization code, for the partner's
-/// backend to exchange with its `client_secret` (§4.2). No token is issued to
+/// backend to exchange with its `client_secret`. No token is issued to
 /// the device on this path.
 final class AuthCodeReceived extends AuthResult {
   /// Creates a code-received outcome.
@@ -108,7 +108,7 @@ final class AuthDenied extends AuthResult {
 
 /// The Tracive app is not installed.
 ///
-/// §6: the SDK checked *before* redirecting anywhere and opened the **clean**
+/// The SDK checked *before* redirecting anywhere and opened the **clean**
 /// install link — no OAuth parameters on it. There is no deferred resume; the
 /// user retries in the partner app after installing.
 final class AuthAppNotInstalled extends AuthResult {

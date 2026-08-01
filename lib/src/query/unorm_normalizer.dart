@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Full Unicode NFC for the query grammar — the SDK specification §3.
+// Full Unicode NFC for the query grammar.
 //
 // The SDK's default [DefaultNormalizer] is dependency-free and implements the
 // composition half of NFC. It is exact for ASCII, Latin, Greek, Cyrillic and
@@ -10,7 +10,7 @@
 // character followed by a lower-class combining mark.
 //
 // Every one of those divergences produces a **different key from the server's**,
-// and per §3.2 a miss is still billed. This adapter closes the gap.
+// and a miss is still billed. This adapter closes the gap.
 //
 // WHY IT LIVES IN THE SDK RATHER THAN IN EVERY HOST APP
 // -----------------------------------------------------

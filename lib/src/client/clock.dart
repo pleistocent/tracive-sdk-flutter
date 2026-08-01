@@ -1,9 +1,8 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// The time seam — the SDK specification §2 (`clock: Clock? = null`, "test seam for TTL
-// tests").
+// The time seam: `clock: Clock? = null`, a test seam for TTL tests.
 //
-// Naming: the spec writes the type as `Clock`. This SDK spells it
+// Naming: the cross-SDK contract writes the type as `Clock`. This SDK spells it
 // `TraciveClock` for the same reason the error surface spells `Server` as
 // `TraciveServerException` — a package must not squat on a bare, extremely
 // common identifier, and `Clock` collides with `package:clock` and with the
@@ -11,7 +10,7 @@
 // still spelled `clock:`, so call sites read identically to Kotlin and Swift.
 
 /// Supplies "now" to the parts of the SDK that measure age: cache freshness
-/// (§5) and access-token expiry (§6).
+/// and access-token expiry.
 ///
 /// Every implementation must return a **UTC** instant. Everything downstream
 /// compares against `fetchedAt` and `expiresAt`, which are UTC by construction;

@@ -250,30 +250,3 @@ TraciveClient(
 Write your tests the same way. A test that reaches for `api.tracive.id` cannot
 pass today (there is no server) and will be flaky the day there is one.
 
----
-
-## Packaging status of the public barrel
-
-`package:tracive_sdk/tracive_sdk.dart` currently exports the **model, query and
-error** layers. The client, cache and OAuth entry points exist and are complete
-under `lib/src/`, but their `export` lines are still commented out at the bottom
-of `lib/tracive_sdk.dart` — a leftover from the files having been written by
-different authors in parallel. Uncommenting them is the last packaging step
-before publishing:
-
-```dart
-export 'src/cache/check_cache.dart';
-export 'src/cache/tracive_cache.dart';
-export 'src/client/tracive_client.dart';
-export 'src/client/clock.dart';
-export 'src/client/http_transport.dart';
-export 'src/client/retry_policy.dart';
-export 'src/oauth/auth_launcher.dart';
-export 'src/oauth/token_store.dart';
-export 'src/oauth/tracive_oauth.dart';
-```
-
-Until that lands, `example/` imports those libraries by their `src/` paths —
-which is why `example/analysis_options.yaml` turns off `implementation_imports`
-and says so. The code samples in this guide are written against the barrel,
-because that is the shape they will have.

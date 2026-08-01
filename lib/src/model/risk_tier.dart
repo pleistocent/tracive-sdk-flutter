@@ -1,8 +1,8 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 
-/// How dangerous the checked identifier looks — the SDK specification §4.
+/// How dangerous the checked identifier looks.
 ///
-/// Wire values are `UPPER_SNAKE`; Dart identifiers are lowerCamelCase (§1).
+/// Wire values are `UPPER_SNAKE`; Dart identifiers are lowerCamelCase.
 /// The set is frozen at four members across all three SDKs.
 enum RiskTier {
   /// Strong, corroborated evidence of fraud.

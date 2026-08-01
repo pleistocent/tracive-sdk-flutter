@@ -1,15 +1,15 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 
-/// The five input types the backend actually indexes.
+/// The five input types the Tracive API actually indexes.
 ///
-/// The names mirror the `type` field of `test/fixtures/query-grammar-vectors
-/// .json` and `MediaCategory` on the server. Both bank flavours (country+code
+/// The names mirror the `type` field of
+/// `test/fixtures/query-grammar-vectors.json`. Both bank flavours (country+code
 /// and IBAN) are [bank]; they differ only in the shape of the key.
 ///
-/// There is no `domain` member. The plan document lists a DOMAIN input type,
-/// but the Tracive API does not index one, so a
-/// `DOMAIN_…` key could not match anything, and a miss is still billed. The
-/// fixture's `notImplemented` block records this.
+/// There is no `domain` member. A `DOMAIN_…` key could not match anything,
+/// because the API indexes no such type — and a miss is still billed. The
+/// fixture's `notImplemented` block records this, and the grammar test asserts
+/// that this enum keeps agreeing with it.
 enum QueryType {
   /// `PHONE_<e164>`
   phone('PHONE'),

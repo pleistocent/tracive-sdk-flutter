@@ -2,10 +2,10 @@
 
 import 'json.dart';
 
-/// What a check cost — the SDK specification §4.
+/// What a check cost.
 ///
 /// Present only on a server-answered result: a cache hit costs nothing, so
-/// `CheckResult.billing` is `null` there. Never cached (§5) — a replayed
+/// `CheckResult.billing` is `null` there. Never cached — a replayed
 /// billing record would misreport spend.
 class Billing {
   /// Creates a billing record.
@@ -25,7 +25,7 @@ class Billing {
   /// The only credit source phase 1 sends or expects.
   static const String userCreditSource = 'USER';
 
-  /// Which balance paid. phase 1 always sends `USER` (§4); kept as a `String`
+  /// Which balance paid. phase 1 always sends `USER`; kept as a `String`
   /// so a phase 2 source does not have to be a breaking change.
   final String creditSource;
 

@@ -1,18 +1,18 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// A runnable example for package:tracive_sdk — the SDK specification §4, §5.
+// A runnable example for package:tracive_sdk.
 //
 // WHAT THIS DEMONSTRATES, and why each part is here:
 //
 //   * `TraciveClient` built in OAuth mode with **no API key**, because the
-//     surface has no parameter for one (§2, §11.1).
+//     surface has no parameter for one.
 //   * `TraciveQuery` folding: the key sent to the server is shown next to the
 //     raw input, so the grammar is visible rather than described.
-//   * The cache (§5): the fake backend's call counter is on screen, so a cache
+//   * The cache: the fake backend's call counter is on screen, so a cache
 //     hit is visibly *not* a call. Change `Source` and watch it stop moving.
-//   * The `disclaimer` (§4) is rendered on every result. The spec says surface
+//   * The `disclaimer` is rendered on every result. The contract says surface
 //     it in any UI built on the SDK, so this UI surfaces it.
-//   * Typed errors (§7), triggered on demand rather than described.
+//   * Typed errors, triggered on demand rather than described.
 //
 // NO NETWORK. Every call is answered in-process by `DemoBackend`, injected as
 // the client's `transport`. There is no `api.tracive.id` to reach: the Open API
@@ -90,7 +90,7 @@ class _CheckScreenState extends State<CheckScreen> {
     _client = TraciveClient(
       // Note what is absent: there is no apiKey parameter, in any mode. The
       // SDK authenticates with OAuth + PKCE so no long-lived secret ships
-      // inside the binary (§11.1).
+      // inside the binary.
       mode: const TraciveMode.oauth(
         clientId: 'demo-client',
         redirectUri: 'tracive-demo://callback',
@@ -132,7 +132,7 @@ class _CheckScreenState extends State<CheckScreen> {
 
     try {
       // Validation happens here, before anything leaves the device: a key that
-      // could not match is never sent, because a miss is billed (§3.2).
+      // could not match is never sent, because a miss is billed.
       final query = TraciveQuery.phone(_input.text);
       final result = await _client.checkScammer(
         query,
@@ -339,7 +339,7 @@ class _CallCounter extends StatelessWidget {
       );
 }
 
-/// Renders a [CheckResult], including the fields §4 requires a UI to show.
+/// Renders a [CheckResult], including the fields a UI is required to show.
 class _ResultCard extends StatelessWidget {
   const _ResultCard({required this.result, required this.foldedKey});
 
@@ -404,7 +404,7 @@ class _ResultCard extends StatelessWidget {
               _Row(label: 'Check id', value: result.checkId!),
 
             // detail=full content. Present only when asked for, and never
-            // written to the cache (§5) — ask for it again after a cache hit
+            // written to the cache — ask for it again after a cache hit
             // and you will see it is gone.
             if (result.topChronologies != null) ...<Widget>[
               const Divider(height: 24),
@@ -432,7 +432,7 @@ class _ResultCard extends StatelessWidget {
                 ),
             ],
 
-            // §4: "surface this in any UI built on the SDK". Not optional.
+            // Surface this in any UI built on the SDK. Not optional.
             if (result.disclaimer != null) ...<Widget>[
               const Divider(height: 24),
               Row(
@@ -484,7 +484,7 @@ class _TierChip extends StatelessWidget {
   }
 }
 
-/// Renders a thrown [TraciveException] as the typed thing it is (§7).
+/// Renders a thrown [TraciveException] as the typed thing it is.
 class _ErrorCard extends StatelessWidget {
   const _ErrorCard({required this.error});
 
@@ -501,7 +501,7 @@ class _ErrorCard extends StatelessWidget {
         ),
       TraciveInsufficientCreditsException() => (
           'Out of credits',
-          'Handle the 402 — do not call credits() before every check (§3.3).',
+          'Handle the 402 — do not call credits() before every check.',
         ),
       TraciveRateLimitedException(:final retryAfter) => (
           'Rate limited',

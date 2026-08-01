@@ -1,6 +1,6 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 //
-// Cache tests — the SDK specification §5.
+// Cache tests.
 //
 // NO NETWORK, NO DEVICE. Every `CheckResult` here is built in-process, the
 // clock is injected, and the only two storage backends exercised are the real
@@ -55,7 +55,7 @@ void main() {
   });
 
   group('TTL by tier', () {
-    // §5: HIGH 30 d, ELEVATED 7 d, CAUTION 24 h, NONE 1 h.
+    // HIGH 30 d, ELEVATED 7 d, CAUTION 24 h, NONE 1 h.
     const expectations = <RiskTier, Duration>{
       RiskTier.high: Duration(days: 30),
       RiskTier.elevated: Duration(days: 7),
@@ -123,7 +123,7 @@ void main() {
 
       clock.advance(const Duration(hours: 2));
       expect(await cache.read(phone), isNull);
-      expect(await store.count(), 0, reason: 'lazy expiry (§5)');
+      expect(await store.count(), 0, reason: 'lazy expiry');
     });
 
     test('a policy change applies to rows already stored', () async {
@@ -530,8 +530,7 @@ void main() {
 
       await store.open();
       expect(database.statements, contains(SqlCheckCacheStore.dropTableSql));
-      expect(database.rows, isEmpty,
-          reason: 'schema-version invalidation (§5)');
+      expect(database.rows, isEmpty, reason: 'schema-version invalidation');
       expect(database.userVersion, checkCacheSchemaVersion);
     });
 

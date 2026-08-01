@@ -2,9 +2,9 @@
 
 import 'json.dart';
 
-/// A comment left on a report — the SDK specification §4.
+/// A comment left on a report.
 ///
-/// Returned only for `detail = full`, and never cached (§5).
+/// Returned only for `detail = full`, and never cached.
 class Comment {
   /// Creates a comment.
   const Comment({
@@ -22,7 +22,7 @@ class Comment {
 
   /// When the comment was written, as sent by the server.
   ///
-  /// A `String` per the spec — it may be a display-formatted or partial date.
+  /// A `String` by contract — it may be a display-formatted or partial date.
   final String date;
 
   /// The comment body.

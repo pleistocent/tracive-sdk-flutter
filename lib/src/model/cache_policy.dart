@@ -3,16 +3,16 @@
 import 'check_result.dart';
 import 'risk_tier.dart';
 
-/// How long a cached result stays usable — the SDK specification §5.
+/// How long a cached result stays usable.
 ///
 /// The defaults follow how fast each tier's underlying data actually moves: a
 /// `HIGH` verdict rarely reverses, so it is held for 30 days, while `NONE` is
 /// the answer most likely to change tomorrow and is held for an hour.
 ///
-/// Named `defaultPolicy` rather than `default` (which the spec writes as
+/// Named `defaultPolicy` rather than `default` (which the contract writes as
 /// `CachePolicy.default`) because `default` is a reserved word in Dart.
 class CachePolicy {
-  /// Creates a policy. Every argument defaults to the §5 value.
+  /// Creates a policy. Every argument defaults to the contract value.
   const CachePolicy({
     this.enabled = true,
     this.highTtl = const Duration(days: 30),
@@ -23,7 +23,7 @@ class CachePolicy {
     this.maxEntries = 5000,
   });
 
-  /// The §5 defaults.
+  /// The contract defaults.
   static const CachePolicy defaultPolicy = CachePolicy();
 
   /// Never read or write the cache. Every check then costs a credit — use it
@@ -49,7 +49,7 @@ class CachePolicy {
   ///
   /// Leave this on. It is the fleet-wide invalidation lever: it is how the
   /// backend shortens the life of already-stored answers when a verdict
-  /// changes (§5). Turning it off means a wrong `HIGH` can sit on a device for
+  /// changes. Turning it off means a wrong `HIGH` can sit on a device for
   /// 30 days.
   final bool honourServerTtl;
 
