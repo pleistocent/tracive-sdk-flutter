@@ -971,7 +971,8 @@ void main() {
       expect((await store.read())?.refreshToken, 'refresh-token-2');
     });
 
-    test('a damaged record still counts as authorized, because it is', () async {
+    test('a damaged record still counts as authorized, because it is',
+        () async {
       // `isAuthorized` gates the host app's routing. If it answered false for a
       // record `ensureAccessToken` can repair, the app would send the user back
       // through consent to replace a grant that was never lost — and the repair
