@@ -202,6 +202,12 @@ class TraciveClient {
   final TraciveClock _clock;
   final RetryPolicy _retryPolicy;
 
+  /// Checks currently on the wire, keyed by row key, detail level and locale.
+  ///
+  /// The latch itself, and the reasoning for it, is on [_fetchCheckLatched].
+  final Map<String, Future<CheckResult>> _inFlightChecks =
+      <String, Future<CheckResult>>{};
+
   /// The TTL rules in force — always [cache]'s own policy.
   CachePolicy get cachePolicy => cache.policy;
 
@@ -227,6 +233,14 @@ class TraciveClient {
   /// retry budget — only your own key does — and it is no substitute for a key
   /// derived from your transaction if you want retries or deduplication across
   /// processes.
+  ///
+  /// **Identical checks that overlap are one request and one charge.** A call
+  /// for the same identifier, detail level and locale made while another is
+  /// still on the wire joins that request rather than starting a second one, so
+  /// a double-tapped button — or a list screen rendering one identifier in two
+  /// cells — is billed once. Both callers get the same answer, stamped
+  /// [Origin.server], because that is where it came from. Checks that do not
+  /// overlap are the cache's business, not this one's.
   ///
   /// Throws a [TraciveException] subtype from the error-code table, or
   /// [TraciveCacheMissException] when `source: Source.cache` finds no live
@@ -285,7 +299,7 @@ class TraciveClient {
     }
 
     try {
-      final result = await _fetchCheck(
+      final result = await _fetchCheckLatched(
         query: query,
         detail: detail,
         locale: locale,
@@ -457,6 +471,69 @@ class TraciveClient {
       error is TraciveNetworkException ||
       error is TraciveServerException ||
       error is TraciveRateLimitedException;
+
+  /// [_fetchCheck], **single-flight**, because the unit here is currency.
+  ///
+  /// Two overlapping checks for the same identifier both read the cache, both
+  /// missed, both POSTed and both were billed. The cache write is the only
+  /// point where the two are serialised, and it happens *after* both requests
+  /// have already gone out — so it cannot help. A double-tapped button, or a
+  /// list screen rendering the same identifier in two cells, doubled the bill
+  /// and nothing anywhere reported it. `TraciveOAuth.refreshTokens` has had the
+  /// correct shape all along; this is the same latch in the one place where
+  /// getting it wrong costs money rather than a round trip.
+  ///
+  /// The key is the row key **plus the detail level and the locale**, never the
+  /// row key alone: a minimal result must never be handed back to a caller who
+  /// asked for full. It carries the locale even for [Detail.minimal], where the
+  /// request omits it — splitting a key too finely only costs a share that
+  /// could have been made, while merging two keys that are not the same
+  /// question hands somebody the wrong answer. Every Tracive SDK spells this
+  /// key the same way.
+  ///
+  /// The caller's `idempotencyKey` is deliberately *not* in the key. Two
+  /// callers asking the same question are one billable operation whatever they
+  /// each named it, and one of the two keys is the one that reaches the server.
+  ///
+  /// Nothing is awaited between reading the map and writing it — this method is
+  /// not `async` for exactly that reason. An `await` in that gap is the whole
+  /// bug back again, because both callers would observe an empty map and both
+  /// would start a flight.
+  ///
+  /// **If per-request cancellation is ever added to [checkScammer], a call
+  /// carrying it must neither join nor start a shared flight.** One caller's
+  /// cancel would otherwise abandon another caller's check — or, if the signal
+  /// were dropped on the way in, cancelling would stop cancelling anything and
+  /// spend the credit it exists to save. There is no such parameter today (a
+  /// Dart `Future` is not cancellable and this SDK exposes no token for it), so
+  /// there is nothing to carve out yet; the React Native SDK, which does have
+  /// one, carves it out there.
+  Future<CheckResult> _fetchCheckLatched({
+    required TraciveQuery query,
+    required Detail detail,
+    required String? locale,
+    required String? idempotencyKey,
+  }) {
+    final latchKey =
+        '${cacheKeyFor(query)}|${detail.wireValue}|${locale ?? ''}';
+    final existing = _inFlightChecks[latchKey];
+    if (existing != null) return existing;
+
+    final flight = _fetchCheck(
+      query: query,
+      detail: detail,
+      locale: locale,
+      idempotencyKey: idempotencyKey,
+    ).whenComplete(() {
+      // A statement body, not an expression one. `Map.remove` answers the value
+      // it removed — this very future — and a `whenComplete` callback that
+      // returns a future is awaited before the result is delivered, so the
+      // arrow form makes the flight wait on itself and every check hangs.
+      _inFlightChecks.remove(latchKey);
+    });
+    _inFlightChecks[latchKey] = flight;
+    return flight;
+  }
 
   Future<CheckResult> _fetchCheck({
     required TraciveQuery query,

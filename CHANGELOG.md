@@ -10,6 +10,27 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **Overlapping identical checks are now one request and one charge.** Two
+  checks of the same identifier that were in flight at the same time both read
+  the cache, both missed, both POSTed and both were billed — the cache write is
+  the only point where the two are serialised, and it happens after both
+  requests have already left. A double-tapped button, or a list screen that
+  renders the same identifier in two cells, doubled the bill, and nothing
+  anywhere reported that it had happened.
+
+  `TraciveOAuth.refreshTokens` has had the correct shape all along. This is the
+  same latch in the one place where getting it wrong costs money rather than a
+  round trip. The React Native SDK had it; Kotlin, Swift and this SDK did not.
+
+  **What you will observe:** a second `checkScammer` for the same identifier,
+  detail level and locale, started while the first is still on the wire, joins
+  that request and both callers get the same answer, stamped `Origin.server`.
+  The latch is released the moment the request settles — successfully or not —
+  so it never serves a stale answer and never pins a failure in place. Checks
+  that do not overlap are unaffected: that is the cache's job, and its rules
+  have not changed. The detail level and the locale are part of the key, so a
+  minimal result is never handed to a caller who asked for full.
+
 - **A 401 now triggers the refresh whenever it is not terminal**, rather than
   only when the body carries exactly `expired_token`. A bare
   `401 Unauthorized` — no body, or a `WWW-Authenticate` header and nothing else

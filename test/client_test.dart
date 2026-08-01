@@ -629,6 +629,144 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // Single-flight for checks. The other money bug, and the one the cache cannot
+  // help with: two overlapping checks for the same identifier both read the
+  // cache, both miss, both POST and both are billed, because the write that
+  // would have saved the second happens after both requests have already gone
+  // out. A double-tapped button is the everyday shape of it.
+  // ---------------------------------------------------------------------------
+  group('overlapping identical checks', () {
+    test('are one request and one charge', () async {
+      // The gate is what makes this a concurrency test rather than a scheduling
+      // one: neither check can answer until both are on the wire.
+      final gate = Completer<TraciveHttpResponse>();
+      final transport = _FakeTransport((_) => gate.future);
+      final client = _client(transport: transport);
+
+      final first = client.checkScammer(query, source: Source.server);
+      final second = client.checkScammer(query, source: Source.server);
+      await Future<void>.delayed(Duration.zero);
+      gate.complete(_ok(_checkBody()));
+      final results =
+          await Future.wait<CheckResult>(<Future<CheckResult>>[first, second]);
+
+      expect(
+        transport.to('/scammer-checks'),
+        hasLength(1),
+        reason: 'the second tap must join the first request, not buy another',
+      );
+      expect(results.map((result) => result.riskTier),
+          everyElement(RiskTier.high));
+      expect(
+        results.map((result) => result.origin),
+        everyElement(Origin.server),
+        reason: 'a joined caller was answered by the server, not by the cache',
+      );
+    });
+
+    test('differing only in detail are not shared', () async {
+      // A minimal row must never be handed to a caller who asked for full, so
+      // the detail level is part of the latch key rather than the row key
+      // alone.
+      final gate = Completer<TraciveHttpResponse>();
+      final transport = _FakeTransport((_) => gate.future);
+      final client = _client(transport: transport);
+
+      final minimal = client.checkScammer(query, source: Source.server);
+      final full = client.checkScammer(
+        query,
+        source: Source.server,
+        detail: Detail.full,
+        locale: 'id',
+      );
+      await Future<void>.delayed(Duration.zero);
+      gate.complete(_ok(_checkBody()));
+      await Future.wait<CheckResult>(<Future<CheckResult>>[minimal, full]);
+
+      final sent = transport.to('/scammer-checks');
+      expect(sent, hasLength(2));
+      expect(
+        sent.map((request) => _bodyOf(request)['detail']),
+        containsAll(<String>['minimal', 'full']),
+      );
+    });
+
+    test('differing only in locale are not shared', () async {
+      final gate = Completer<TraciveHttpResponse>();
+      final transport = _FakeTransport((_) => gate.future);
+      final client = _client(transport: transport);
+
+      final indonesian = client.checkScammer(
+        query,
+        source: Source.server,
+        detail: Detail.full,
+        locale: 'id',
+      );
+      final english = client.checkScammer(
+        query,
+        source: Source.server,
+        detail: Detail.full,
+        locale: 'en',
+      );
+      await Future<void>.delayed(Duration.zero);
+      gate.complete(_ok(_checkBody()));
+      await Future.wait<CheckResult>(
+        <Future<CheckResult>>[indonesian, english],
+      );
+
+      expect(
+        transport.to('/scammer-checks').map((r) => _bodyOf(r)['locale']),
+        containsAll(<String>['id', 'en']),
+      );
+    });
+
+    test('are latched only while they overlap', () async {
+      // The guard against the opposite mistake. A latch entry that outlived its
+      // request would serve one answer for the rest of the session — which is a
+      // cache with no TTL, written by the wrong file.
+      final transport = _FakeTransport((_) => _ok(_checkBody()));
+      final client = _client(
+        transport: transport,
+        cache: const CheckCache.disabled(),
+      );
+
+      await client.checkScammer(query, source: Source.server);
+      await client.checkScammer(query, source: Source.server);
+
+      expect(transport.to('/scammer-checks'), hasLength(2));
+    });
+
+    test('fail both callers together, and unlatch', () async {
+      final transport = _FakeTransport((_) => _error(503, 'unavailable'));
+      final client = _client(
+        transport: transport,
+        cache: const CheckCache.disabled(),
+      );
+
+      final first = client.checkScammer(query, source: Source.server);
+      final second = client.checkScammer(query, source: Source.server);
+      // Both expectations are attached before either future is awaited: a
+      // shared failure that reached only one listener would otherwise surface
+      // as an unhandled asynchronous error rather than as this assertion.
+      final firstFails =
+          expectLater(first, throwsA(isA<TraciveServerException>()));
+      final secondFails =
+          expectLater(second, throwsA(isA<TraciveServerException>()));
+      await firstFails;
+      await secondFails;
+
+      expect(transport.to('/scammer-checks'), hasLength(1));
+
+      await expectLater(
+        client.checkScammer(query, source: Source.server),
+        throwsA(isA<TraciveServerException>()),
+        reason: 'a failed flight must not latch the failure in place',
+      );
+      expect(transport.to('/scammer-checks'), hasLength(2));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Retry policy. This is the money bug: a blind retry of a POST that may
   // already have been processed charges the user twice, and nothing anywhere
   // reports that it happened.
@@ -984,6 +1122,11 @@ void main() {
       // The verdict is keyed on the token the request actually carried, not on
       // a call counter: under `Future.wait` the interleaving is not fixed, and
       // a counter would make this test's meaning depend on scheduling luck.
+      //
+      // Four *different* identifiers, deliberately. Four checks of the same one
+      // are a single request now (see "overlapping identical checks"), so they
+      // could only ever produce a single 401 — and this test would pass while
+      // exercising nothing it is named after.
       final transport = _FakeTransport((request) async {
         if (request.url.path.endsWith('/oauth/token')) {
           // Yield, so a second refresh would have every chance to slip in.
@@ -997,13 +1140,18 @@ void main() {
       final client = _client(transport: transport);
 
       final results = await Future.wait<CheckResult>(<Future<CheckResult>>[
-        client.checkScammer(query, source: Source.server),
-        client.checkScammer(query, source: Source.server),
-        client.checkScammer(query, source: Source.server),
-        client.checkScammer(query, source: Source.server),
+        client.checkScammer(TraciveQuery.phone('+6281234567891'),
+            source: Source.server),
+        client.checkScammer(TraciveQuery.phone('+6281234567892'),
+            source: Source.server),
+        client.checkScammer(TraciveQuery.phone('+6281234567893'),
+            source: Source.server),
+        client.checkScammer(TraciveQuery.phone('+6281234567894'),
+            source: Source.server),
       ]);
 
       expect(results, hasLength(4));
+      expect(transport.to('/scammer-checks'), hasLength(8));
       expect(transport.to('/oauth/token'), hasLength(1));
     });
 
