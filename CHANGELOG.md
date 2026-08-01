@@ -10,6 +10,30 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **`TraciveOAuth.authorize()` and `handleCallback()` no longer throw at their
+  caller.** Both delegate to collaborators that can fail outside this SDK's
+  control — the secure store, the app-presence probe, the browser launch — and
+  those failures escaped as exceptions. Only `TraciveException`s raised by the
+  token exchange were being turned into `AuthResult.failed`.
+
+  `handleCallback` is where that matters. Its caller is the host app's App Link
+  / Universal Link handler: a platform callback, usually two lines, essentially
+  never wrapped in a `try`. An exception escaping into it is an unhandled
+  exception in someone else's app, on a code path they did not write, for a
+  reason — a locked Keychain, a Keystore entry that will not decrypt after a
+  backup restore, a platform channel that is not registered — with nothing to do
+  with the deep link they were routing.
+
+  Both now return `AuthFailed`, as the Kotlin, Swift and React Native SDKs do.
+
+  **What you will observe:** one `switch` over `AuthResult` covers every
+  outcome and there is nothing to catch alongside it. A non-Tracive failure
+  arrives as `AuthFailed` carrying `TraciveInvalidRequestException` with a
+  message that names the situation. The underlying platform error is
+  deliberately not quoted in it: that text comes from whichever store the host
+  installed, and it would travel to a crash reporter from a frame whose
+  neighbouring values are a PKCE verifier and a refresh token.
+
 - **`Source.serverFirst` no longer answers a 402 from the cache.** The fallback
   set included `TraciveInsufficientCreditsException`, so a partner whose credit
   balance had run out received a cached verdict instead of the error: no

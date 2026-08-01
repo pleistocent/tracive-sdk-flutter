@@ -1612,6 +1612,112 @@ void main() {
       expect(oauth.toString(), isNot(contains('refresh-token-1')));
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Neither half of the flow may throw at its caller.
+  //
+  // `handleCallback` is called from the host app's App Link / Universal Link
+  // handler: a platform callback, usually two lines, essentially never wrapped
+  // in a `try`. An exception escaping into it is an unhandled exception in
+  // someone else's app, on a code path they did not write, for a reason (the
+  // Keychain was locked) that has nothing to do with the deep link they were
+  // routing. `authorize` follows the same rule so that both halves report a
+  // failure the same way and one `switch` covers everything.
+  //
+  // The store is where this actually bites, because it is the one collaborator
+  // that is not the SDK's own code and not a network call: `flutter_secure_
+  // storage` raises a `PlatformException` when the Keychain is locked, when a
+  // Keystore entry cannot be decrypted after a backup restore, or when the
+  // platform channel is simply not there.
+  // ---------------------------------------------------------------------------
+  group('failures arrive as AuthFailed, never as a throw', () {
+    test('handleCallback: a store that refuses to read', () async {
+      final oauth = _oauth(tokenStore: _RefusingStore(onReadPending: true));
+
+      final result = await oauth.handleCallback(
+        Uri.parse('https://partner.example/oauth/callback?state=s&code=c'),
+      );
+
+      expect(result, isA<AuthFailed>());
+      expect(
+        (result as AuthFailed).error,
+        isA<TraciveInvalidRequestException>(),
+      );
+    });
+
+    test('handleCallback: a store that refuses to erase the spent record',
+        () async {
+      // Reached after the redirect has already been judged — the `state`
+      // matched and the server said `access_denied` — so the throw comes from
+      // the clean-up rather than from the decision.
+      final store = _RefusingStore(onWritePending: true)
+        ..seedPending(
+          PendingAuthorization(
+            state: 'the-state',
+            codeVerifier: 'the-verifier',
+            redirectUri: 'https://partner.example/oauth/callback',
+            createdAt: _t0,
+          ),
+        );
+      final oauth = _oauth(tokenStore: store);
+
+      final result = await oauth.handleCallback(
+        Uri.parse(
+          'https://partner.example/oauth/callback'
+          '?state=the-state&error=access_denied',
+        ),
+      );
+
+      expect(result, isA<AuthFailed>());
+    });
+
+    test(
+        'handleCallback: the error names the situation without quoting the '
+        'platform', () async {
+      // The message travels to crash reporters from a frame whose neighbouring
+      // values are a PKCE verifier and a refresh token, so it carries nothing
+      // this SDK did not write.
+      final oauth = _oauth(
+        tokenStore: _RefusingStore(onReadPending: true),
+      );
+
+      final result = await oauth.handleCallback(
+        Uri.parse('https://partner.example/oauth/callback?state=s&code=c'),
+      );
+
+      final message = ((result as AuthFailed).error).message;
+      expect(message, contains('secure store'));
+      expect(message, isNot(contains(_RefusingStore.platformText)));
+    });
+
+    test('authorize: a store that refuses to persist the pending record',
+        () async {
+      final launcher = _FakeLauncher(installed: true);
+      final oauth = _oauth(
+        launcher: launcher,
+        tokenStore: _RefusingStore(onWritePending: true),
+      );
+
+      final result = await oauth.authorize();
+
+      expect(result, isA<AuthFailed>());
+      expect(
+        launcher.opened,
+        isEmpty,
+        reason: 'the verifier could not be persisted, so no browser was opened',
+      );
+    });
+
+    test('authorize: a launcher that throws instead of answering', () async {
+      // A platform channel that is not registered — the shape a plugin takes
+      // on a platform it was never built for.
+      final oauth = _oauth(launcher: _ThrowingLauncher());
+
+      final result = await oauth.authorize();
+
+      expect(result, isA<AuthFailed>());
+    });
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -1828,4 +1934,60 @@ class _StaleSnapshotStore extends TokenStore {
   @override
   Future<void> writePending(PendingAuthorization? pending) async =>
       _pending = pending;
+}
+
+/// A [TokenStore] that raises the way a real one does when the platform refuses
+/// — a locked Keychain, an undecryptable Keystore entry after a backup restore,
+/// a platform channel that was never registered. Not a [TraciveException]: that
+/// is the point, since the SDK's own error types are the easy half.
+class _RefusingStore extends TokenStore {
+  _RefusingStore({this.onReadPending = false, this.onWritePending = false});
+
+  /// Stands in for the plugin's own text, which must not reach the caller.
+  static const String platformText = 'PlatformException(Keychain, -25308)';
+
+  final bool onReadPending;
+  final bool onWritePending;
+
+  TraciveTokens? _tokens;
+  PendingAuthorization? _pending;
+
+  /// Puts a record in place without going through [writePending], so a test can
+  /// reach the paths that run after the redirect has been judged.
+  void seedPending(PendingAuthorization pending) => _pending = pending;
+
+  @override
+  Future<TraciveTokens?> read() async => _tokens;
+
+  @override
+  Future<void> write(TraciveTokens tokens) async => _tokens = tokens;
+
+  @override
+  Future<void> clear() async {
+    _tokens = null;
+    _pending = null;
+  }
+
+  @override
+  Future<PendingAuthorization?> readPending() async {
+    if (onReadPending) throw StateError(platformText);
+    return _pending;
+  }
+
+  @override
+  Future<void> writePending(PendingAuthorization? pending) async {
+    if (onWritePending) throw StateError(platformText);
+    _pending = pending;
+  }
+}
+
+/// A launcher whose platform channel is not there.
+class _ThrowingLauncher extends AuthLauncher {
+  @override
+  Future<bool> canOpen(Uri url) async =>
+      throw StateError('MissingPluginException(url_launcher)');
+
+  @override
+  Future<bool> openExternally(Uri url) async =>
+      throw StateError('MissingPluginException(url_launcher)');
 }

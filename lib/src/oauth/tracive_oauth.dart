@@ -299,7 +299,26 @@ class TraciveOAuth {
   ///
   /// Order matters: the presence check runs **before** anything is generated or
   /// stored, which is what "before any redirect" means.
+  ///
+  /// **It does not throw.** Everything it touches outside this process — the
+  /// app-presence probe, the secure store, the browser launch — can fail, and
+  /// each of those failures arrives as [AuthFailed] rather than as an exception.
+  /// See [handleCallback], which is where that rule earns its keep; this method
+  /// follows it so that both halves of the flow report failure the same way.
   Future<AuthResult?> authorize() async {
+    try {
+      return await _authorize();
+    } on TraciveException catch (error) {
+      return AuthResult.failed(error);
+    } catch (_) {
+      // Best effort: a store that refused the write above may equally refuse
+      // this one, and there is nothing further to do about it either way.
+      await _forgetPendingQuietly();
+      return const AuthResult.failed(_localStorageFailure);
+    }
+  }
+
+  Future<AuthResult?> _authorize() async {
     if (!await isTraciveAppInstalled()) {
       await _launcher.openExternally(
         buildInstallUrl(installUrl, clientId: mode.clientId),
@@ -355,7 +374,36 @@ class TraciveOAuth {
   /// A single-use guard is implicit: the pending record is erased on every
   /// terminal outcome, so replaying the same redirect a second time cannot
   /// re-exchange the code.
+  ///
+  /// ## It does not throw
+  ///
+  /// Every failure comes back as [AuthFailed], including the ones that are not
+  /// about OAuth at all: a secure store that refuses to read or write, a token
+  /// endpoint that answers with something undecodable, a platform channel that
+  /// is not there.
+  ///
+  /// That is a property of *where this method is called from*, not a general
+  /// preference for return values over exceptions. Its caller is the host app's
+  /// App Link / Universal Link handler — a platform callback, usually a couple
+  /// of lines long, almost never wrapped in a `try`. An exception escaping into
+  /// it is an unhandled exception in somebody else's app, raised on a code path
+  /// they did not write and cannot see, for a reason (the Keychain was locked)
+  /// that has nothing to do with the deep link they were routing. The three
+  /// sibling SDKs all return their failure here for the same reason.
+  ///
+  /// One `switch` over the result therefore covers every outcome, and there is
+  /// nothing to catch alongside it.
   Future<AuthResult> handleCallback(Uri url) async {
+    try {
+      return await _handleCallback(url);
+    } on TraciveException catch (error) {
+      return AuthResult.failed(error);
+    } catch (_) {
+      return const AuthResult.failed(_localStorageFailure);
+    }
+  }
+
+  Future<AuthResult> _handleCallback(Uri url) async {
     final pending = await _tokenStore.readPending();
     if (pending == null) {
       return const AuthResult.failed(
@@ -695,6 +743,41 @@ class TraciveOAuth {
     _spentRefreshTokens.add(token);
     if (_spentRefreshTokens.length > _spentRefreshTokenHistory) {
       _spentRefreshTokens.removeAt(0);
+    }
+  }
+
+  /// The failure [authorize] and [handleCallback] report when something outside
+  /// this SDK's own logic refused — almost always the device's secure store.
+  ///
+  /// The underlying error is deliberately **not** carried into the message. It
+  /// is produced by whichever store the host installed, and this SDK does not
+  /// put text it did not write into a value that travels to a crash reporter
+  /// from a code path whose neighbouring variables are a PKCE verifier and a
+  /// refresh token. The sibling SDKs report the same situation the same way.
+  ///
+  /// [TraciveInvalidRequestException] rather than a new type: from the caller's
+  /// side this is the same class of outcome as "no authorization is in
+  /// progress" — nothing was completed, and the move is to start the flow
+  /// again.
+  static const TraciveInvalidRequestException _localStorageFailure =
+      TraciveInvalidRequestException(
+    'The authorization could not be completed because this device refused to '
+    'read or write the secure store the SDK keeps the pending authorization '
+    'in. Nothing was authorized. Check that secure storage is available on '
+    'this device — a locked Keychain and a missing Keystore entry both look '
+    'like this — and start the flow again.',
+  );
+
+  /// Erases the pending record, swallowing a store that refuses.
+  ///
+  /// Used only on paths that are already reporting a failure, where a second
+  /// error from the same broken store would replace an accurate answer with a
+  /// less accurate one.
+  Future<void> _forgetPendingQuietly() async {
+    try {
+      await _tokenStore.writePending(null);
+    } catch (_) {
+      // Nothing to do, and nothing that can be done.
     }
   }
 
