@@ -47,30 +47,47 @@ tell whether the Tracive app is installed and every user looks un-onboarded:
 ## Use
 
 ```dart
+import 'package:flutter/material.dart';
 import 'package:tracive_sdk/tracive_sdk.dart';
 
-final client = TraciveClient(
-  mode: TraciveMode.oauth(
-    clientId: 'your-client-id',
-    redirectUri: 'https://your.app/oauth/callback',   // an App Link you own
-  ),
-  installUrl: 'https://…',                            // Tracive gives you this
-  cache: await openTraciveCache(),                    // encrypted, on device
-);
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-// 1. The user consents in the Tracive app (Custom Tab / Universal Link).
-await client.authorize();
-// ... your deep-link handler:
-await client.handleCallback(incomingUrl);
+  final client = TraciveClient(
+    mode: TraciveMode.oauth(
+      clientId: 'your-client-id',
+      redirectUri: 'https://your.app/oauth/callback', // an App Link you own
+    ),
+    installUrl: 'https://…',                          // Tracive gives you this
+    cache: await openTraciveCache(),                  // encrypted, on device
+  );
 
-// 2. Check something.
-final result = await client.checkScammer(
-  TraciveQuery.phone('+62 812-3456-7891'),
-);
+  // 1. The user consents in the Tracive app (Custom Tab / Universal Link).
+  await client.authorize();
+  // ... and in your deep-link handler:
+  //     await client.handleCallback(incomingUrl);
 
-if (result.riskTier.isRisky) {
-  print('${result.riskTier.wireValue}: ${result.reportTotal} reports');
-  print(result.disclaimer);   // surface this in your UI
+  // 2. Check something.
+  final result = await client.checkScammer(
+    TraciveQuery.phone('+62 812-3456-7891'),
+  );
+
+  if (result.riskTier.isRisky) {
+    // Show these; do not log them. `disclaimer` is not decoration — these are
+    // user-submitted reports, not adjudicated findings, and this SDK never
+    // logs anything itself.
+    showWarning(
+      title: '${result.riskTier.wireValue}: ${result.reportTotal} reports',
+      body: result.disclaimer,
+    );
+  }
+}
+
+/// Your own UI. This SDK has none, and logs nothing — a risk verdict and a
+/// disclaimer belong on screen, not in a log line that ends up in a crash
+/// report.
+void showWarning({required String title, required String? body}) {
+  // ...
 }
 ```
 
