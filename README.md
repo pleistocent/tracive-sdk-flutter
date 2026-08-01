@@ -106,6 +106,38 @@ A runnable app is in [`example/`](example).
 
 ---
 
+## How it works
+
+`TraciveQuery` folds a raw identifier into the exact key the backend indexes and
+throws before anything leaves the device if that key could not match.
+`TraciveClient` then answers from the encrypted local cache when it may, and
+otherwise sends the check with a short-lived PKCE token that `TraciveOAuth`
+keeps in the Keystore/Keychain.
+
+```mermaid
+flowchart LR
+    App["Your app"]
+    Query["TraciveQuery<br/>fold + validate"]
+    Client["TraciveClient"]
+    Cache["CheckCache<br/>encrypted, on device"]
+    OAuth["TraciveOAuth<br/>PKCE + Keystore/Keychain"]
+    Api["Tracive API"]
+    Proxy["Partner's own endpoint"]
+
+    App --> Query
+    Query --> Client
+    Client --> Cache
+    Client --> OAuth
+    Client -->|"OAuth mode, phase 1"| Api
+    Client -.->|"Proxy mode, phase 2, throws today"| Proxy
+```
+
+Four more diagrams — the PKCE handshake, the single-flight token refresh, the
+full lookup path with its caching rules, and the per-type folding grammar — are
+in [`doc/architecture.md`](doc/architecture.md).
+
+---
+
 ## Five things that will bite you if you skip them
 
 ### A miss is billed
@@ -172,6 +204,7 @@ vulnerability.
 
 | | |
 |---|---|
+| [`doc/architecture.md`](doc/architecture.md) | The diagrams: where the SDK sits, PKCE, tokens, the lookup path, the folding grammar |
 | [`doc/integration.md`](doc/integration.md) | Getting started, sources, errors, Unicode normalisation |
 | [`doc/oauth.md`](doc/oauth.md) | The flow, platform setup, tokens, public vs confidential clients |
 | [`doc/caching.md`](doc/caching.md) | TTLs, the invalidation lever, what is never cached, what is not unit-tested |
