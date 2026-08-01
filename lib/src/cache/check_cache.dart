@@ -153,13 +153,25 @@ abstract class CheckCache {
   Future<void> write(TraciveQuery query, CheckResult result);
 
   /// Drops any entry for [query]. Returns whether a row was removed.
+  ///
+  /// **Unlike [read] and [write], this throws** if the storage cannot be
+  /// opened or the cache is closed. That asymmetry is deliberate: a cache miss
+  /// is a normal outcome a caller can carry on from, whereas "delete this
+  /// entry" that quietly did nothing would leave the caller believing a stale
+  /// verdict is gone when it is not. Same for [clear] and [prune].
   Future<bool> remove(TraciveQuery query);
 
   /// Empties the cache. The next check for every identifier costs a credit.
+  ///
+  /// Throws if the storage cannot be opened or the cache is closed — see
+  /// [remove] for why this does not degrade silently the way [read] does.
   Future<void> clear();
 
   /// Deletes expired rows and enforces [CachePolicy.maxEntries]. Returns how
   /// many rows went. Runs automatically as part of [open].
+  ///
+  /// Throws if the storage cannot be opened or the cache is closed — see
+  /// [remove].
   Future<int> prune();
 
   /// Closes the underlying storage.
