@@ -58,6 +58,22 @@ until it is frozen at `1.0.0`.
 
 ### Changed
 
+- **`installUrl` is optional again, and defaults to
+  `TraciveOAuth.defaultInstallUrl` (`https://tracive.chottu.link/install`).**
+  This is the link the SDK opens when the Tracive app is not installed, and it
+  is now the same one in every Tracive SDK. It was briefly a required argument
+  because the URL was not yet confirmed and a wrong default would have been
+  invisible in development while being a 404 for every partner's first user
+  without the app; the URL is confirmed now, so the argument goes back to being
+  an override. Passing one still works and still wins.
+- **The install link now carries `ref=<clientId>` and
+  `utm_source=tracive-sdk-flutter`**, replacing `utm_source=<clientId>` and
+  `utm_medium=tracive_sdk_flutter`, to match the other Tracive SDKs. Both
+  parameters are optional and non-sensitive: `ref` is the OAuth client id — the
+  partner's identifier, which already ships in the app binary, never the end
+  user's — and it is omitted when there is none. The link still carries **no**
+  OAuth parameter of any kind, and still strips any that the configured URL
+  arrives with.
 - **`TraciveClient`, `openTraciveCache`, `CheckCache`, `TraciveOAuth`,
   `TokenStore`, `HttpTransport` and the rest of the client/cache/OAuth surface
   are now exported from `package:tracive_sdk/tracive_sdk.dart`.** They existed
@@ -130,8 +146,10 @@ implementation until the API ships.
   `sqflite_sqlcipher` and `flutter_secure_storage` — is covered by on-device
   integration testing, not by the unit suite. `doc/caching.md` says what to run.
 - The install link used when the Tracive app is missing is a **required**
-  constructor argument (`installUrl`) with no default. This package cannot
-  derive it, so it asks for it rather than guessing.
+  constructor argument (`installUrl`) with no default: at this release its URL
+  was not yet confirmed, and a wrong default would have been invisible until it
+  was a 404 for a user without the Tracive app. Resolved in Unreleased, where
+  the confirmed link becomes the default.
 
 [Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.1.0

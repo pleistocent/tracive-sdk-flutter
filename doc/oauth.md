@@ -40,7 +40,6 @@ final client = TraciveClient(
     redirectUri: 'https://your.app/oauth/callback',
     scopes: const ['scammer.check'],
   ),
-  installUrl: 'https://…',   // where a user without the Tracive app is sent
 );
 
 switch (await client.authorize()) {
@@ -235,22 +234,36 @@ overwrites the first's tokens.
 
 ## The install link
 
-When the Tracive app is missing, the SDK opens a **clean** install link: no
-OAuth parameters whatsoever, only an attribution tag naming your client
-(`utm_source=<clientId>`, `utm_medium=tracive_sdk_flutter`). Any OAuth-looking
-query parameter on the configured URL is stripped before it is opened.
+When the Tracive app is missing, the SDK opens a **clean** install link:
+
+```
+https://tracive.chottu.link/install?ref=<clientId>&utm_source=tracive-sdk-flutter
+```
+
+Both query parameters are optional and non-sensitive. `ref` is your OAuth
+client id — the *partner's* identifier, never the end user's, and it ships in
+your app binary already; it is omitted when there is none. `utm_source` names
+this SDK.
+
+Nothing else travels on that link. No OAuth parameter is added — not `state`,
+`code_challenge`, `code_verifier`, `partner_user_id`, `redirect_uri` or
+`scope` — and any that is already present on the configured URL is stripped
+before it is opened. This is a privacy requirement rather than tidiness: the
+link transits a third-party link service, so whatever rides on it lands in that
+service's logs.
 
 There is **no deferred resume**. The user installs Tracive, comes back to your
 app, and taps again. Resuming an OAuth flow across an install would mean parking
 a verifier and a `state` in an attribution service, which is a credential in a
-third party's logs.
+third party's logs — and there is nothing to gain, because the retry generates a
+fresh PKCE pair anyway.
 
-> `installUrl` is a **required** argument, and there is no default. It is the
-> one value in this SDK that cannot be derived from anything else in it, so a
-> default would be a guess nothing here could check — and a wrong install link
-> is invisible until it is a 404 for a user who does not have the Tracive app,
-> which is every user's first run. Tracive gives you the URL with your
-> `clientId`.
+> `installUrl` is optional and defaults to the link above, which is the same one
+> in every Tracive SDK. Pass it only if Tracive has issued you a different link.
+> It was briefly a required argument, at a point when the URL was not yet
+> confirmed and a wrong default would have been invisible in development and a
+> 404 for every partner's first user without the app. The URL is confirmed now,
+> so the argument is back to being an override.
 
 ---
 
@@ -262,7 +275,7 @@ Every part of the flow above is unit-tested with no network and no device:
 ```dart
 final client = TraciveClient(
   mode: TraciveMode.oauth(clientId: 'test', redirectUri: 'https://x.test/cb'),
-  installUrl: 'https://install.test/app',
+  installUrl: 'https://install.test/app',   // optional; overrides the default
   transport: FakeTransport(),         // your fake
   launcher: FakeLauncher(installed: true),
   tokenStore: InMemoryTokenStore(),

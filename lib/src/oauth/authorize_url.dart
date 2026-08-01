@@ -75,24 +75,34 @@ const Set<String> oauthParameterNames = <String>{
   'id_token',
 };
 
+/// Query parameter carrying the attribution tag that names the OAuth client.
+const String installAttributionParameter = 'ref';
+
+/// Value of `utm_source` on the install link: which SDK sent the user there.
+///
+/// It names the *SDK*, not the partner and not the user.
+const String installUtmSource = 'tracive-sdk-flutter';
+
 /// Builds the **clean** install link.
 ///
-/// Clean means no OAuth parameter of any kind travels on it. An attribution tag
-/// naming the client is allowed, and is the only thing added.
+/// Clean means no OAuth parameter of any kind travels on it. Two optional,
+/// non-sensitive query parameters are all that is added: `ref`, the OAuth
+/// client id, and `utm_source`, naming this SDK.
 ///
 /// Why "clean" is load-bearing: the user is about to leave for an app store and
 /// come back through an install-attribution service, and every hop in that
 /// chain (the link shortener, the store referrer, the attribution SDK, the
 /// clipboard on some platforms) logs the URL it was handed. A `state` or
 /// `code_challenge` that travels that route is a `state` or `code_challenge`
-/// sitting in a third party's analytics warehouse. There is also nothing to
-/// gain: there is **no deferred resume** — the user retries
+/// sitting in a third party's analytics warehouse, and a `partner_user_id` that
+/// travels it hands that third party the partner's own user identifier. There
+/// is also nothing to gain: there is **no deferred resume** — the user retries
 /// in the partner app after installing, and a fresh PKCE pair is generated
 /// then.
 ///
-/// [clientId] is added as `utm_source`, which is the "attribution tag naming
-/// the client" the contract permits. A client id is public by definition (it
-/// ships inside the app binary), so this leaks nothing.
+/// [clientId] is the PARTNER's identifier, never the end user's, and it is
+/// public by definition (it ships inside the app binary), so `ref` leaks
+/// nothing. It is omitted entirely when null or empty.
 ///
 /// Any OAuth parameter already present on [installUrl] is **stripped**, not
 /// trusted — a misconfigured link constant must not be able to defeat this.
@@ -103,8 +113,8 @@ Uri buildInstallUrl(String installUrl, {String? clientId}) {
       if (!oauthParameterNames.contains(entry.key.toLowerCase()))
         entry.key: entry.value,
     if (clientId != null && clientId.trim().isNotEmpty)
-      'utm_source': clientId.trim(),
-    'utm_medium': 'tracive_sdk_flutter',
+      installAttributionParameter: clientId.trim(),
+    'utm_source': installUtmSource,
   };
   return base.replace(queryParameters: parameters);
 }

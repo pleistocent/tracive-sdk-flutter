@@ -39,9 +39,8 @@ import 'package:tracive_sdk/src/oauth/pkce.dart';
 /// A fixed instant, so nothing here depends on when it is run.
 final DateTime _t0 = DateTime.utc(2026, 7, 31, 12);
 
-/// The install link these tests configure. There is no default in the SDK —
-/// see `TraciveOAuth.installUrl` — so every construction has to name one, which
-/// is the point.
+/// An override of the install link, used to prove that overriding still works.
+/// Left unset, the SDK opens [TraciveOAuth.defaultInstallUrl].
 const String _installUrl = 'https://install.example/app';
 
 void main() {
@@ -189,8 +188,55 @@ void main() {
   });
 
   group('the clean install link', () {
+    test('is the cross-SDK default when nothing is configured', () {
+      expect(
+        TraciveOAuth.defaultInstallUrl,
+        'https://tracive.chottu.link/install',
+      );
+      expect(_oauth().installUrl, TraciveOAuth.defaultInstallUrl);
+      expect(
+        TraciveClient(
+          mode: _oauthMode,
+          transport: _FakeTransport((_) => fail('unexpected request')),
+          tokenStore: InMemoryTokenStore(),
+          launcher: _FakeLauncher(installed: true),
+        ).oauth!.installUrl,
+        TraciveOAuth.defaultInstallUrl,
+      );
+    });
+
+    test('carries ref and utm_source, and nothing else', () {
+      final url = buildInstallUrl(
+        TraciveOAuth.defaultInstallUrl,
+        clientId: 'partner-client-id',
+      );
+      expect(url.origin, 'https://tracive.chottu.link');
+      expect(url.path, '/install');
+      // `ref` is the PARTNER's identifier, not the end user's, and it ships in
+      // the app binary already.
+      expect(url.queryParameters['ref'], 'partner-client-id');
+      expect(url.queryParameters['utm_source'], 'tracive-sdk-flutter');
+      expect(url.queryParameters.keys.toSet(), <String>{'ref', 'utm_source'});
+    });
+
+    test('omits ref when there is no client id to name', () {
+      for (final clientId in <String?>[null, '', '   ']) {
+        final url = buildInstallUrl(
+          TraciveOAuth.defaultInstallUrl,
+          clientId: clientId,
+        );
+        expect(url.queryParameters.containsKey('ref'), isFalse);
+        expect(url.queryParameters['utm_source'], 'tracive-sdk-flutter');
+      }
+    });
+
     test('carries no OAuth parameter of any kind', () {
-      final url = buildInstallUrl(_installUrl, clientId: 'partner-client-id');
+      // The hard invariant: this link transits a third-party link service, so
+      // not one of these may ride along.
+      final url = buildInstallUrl(
+        TraciveOAuth.defaultInstallUrl,
+        clientId: 'partner-client-id',
+      );
       for (final name in oauthParameterNames) {
         expect(
           url.queryParameters.containsKey(name),
@@ -198,19 +244,49 @@ void main() {
           reason: '"$name" would travel through the attribution chain',
         );
       }
-      expect(url.queryParameters['utm_source'], 'partner-client-id');
+      for (final name in <String>[
+        'state',
+        'code_challenge',
+        'code_verifier',
+        'partner_user_id',
+        'redirect_uri',
+        'scope',
+      ]) {
+        expect(
+          oauthParameterNames.contains(name),
+          isTrue,
+          reason: '"$name" must be on the stripped list',
+        );
+      }
     });
 
     test('strips OAuth parameters that were already on the constant', () {
-      // A misconfigured link constant must not be able to defeat this.
-      final url = buildInstallUrl(
-        '$_installUrl?state=leaked&code_challenge=leaked&ref=x',
-        clientId: 'c',
+      // A misconfigured link constant must not be able to defeat this, so try
+      // it with every one of them on the configured URL at once.
+      final planted = Uri.parse(_installUrl).replace(
+        queryParameters: <String, String>{
+          for (final name in oauthParameterNames) name: 'leaked',
+          'ref': 'x',
+        },
       );
-      expect(url.queryParameters.containsKey('state'), isFalse);
-      expect(url.queryParameters.containsKey('code_challenge'), isFalse);
-      expect(url.queryParameters['ref'], 'x');
+      final url = buildInstallUrl(planted.toString(), clientId: 'c');
+      for (final name in oauthParameterNames) {
+        expect(
+          url.queryParameters.containsKey(name),
+          isFalse,
+          reason: '"$name" survived from the configured URL',
+        );
+      }
+      // The client id wins over whatever `ref` the configured link carried.
+      expect(url.queryParameters['ref'], 'c');
       expect(url.toString(), isNot(contains('leaked')));
+    });
+
+    test('an override is used instead of the default', () {
+      final url = buildInstallUrl(_installUrl, clientId: 'c');
+      expect(url.origin, 'https://install.example');
+      expect(url.path, '/app');
+      expect(url.queryParameters['ref'], 'c');
     });
   });
 
@@ -227,17 +303,30 @@ void main() {
 
       expect(result, isA<AuthAppNotInstalled>());
       expect(launcher.opened, hasLength(1));
-      expect(launcher.opened.single.host, Uri.parse(_installUrl).host);
+      final opened = launcher.opened.single;
+      expect(opened.host, Uri.parse(TraciveOAuth.defaultInstallUrl).host);
+      expect(opened.path, '/install');
+      expect(opened.queryParameters['ref'], 'partner-client-id');
+      expect(opened.queryParameters['utm_source'], 'tracive-sdk-flutter');
       // No PKCE pair, no state, nothing persisted. There is no
       // deferred resume — the user retries here after installing.
       expect(await store.readPending(), isNull);
       for (final name in oauthParameterNames) {
         expect(
-          launcher.opened.single.queryParameters.containsKey(name),
+          opened.queryParameters.containsKey(name),
           isFalse,
           reason: '"$name" would travel through the attribution chain',
         );
       }
+    });
+
+    test('an overridden install link is the one opened', () async {
+      final launcher = _FakeLauncher(installed: false);
+      final oauth = _oauth(launcher: launcher, installUrl: _installUrl);
+
+      await oauth.authorize();
+
+      expect(launcher.opened.single.host, Uri.parse(_installUrl).host);
     });
 
     test('the presence check runs before anything is generated', () async {
@@ -1208,6 +1297,7 @@ TraciveOAuth _oauth({
   HttpTransport? transport,
   MutableClock? clock,
   ClientType clientType = ClientType.public,
+  String? installUrl,
 }) =>
     TraciveOAuth(
       mode: TraciveOAuthMode(
@@ -1215,7 +1305,9 @@ TraciveOAuth _oauth({
         redirectUri: 'https://partner.example/oauth/callback',
         clientType: clientType,
       ),
-      installUrl: _installUrl,
+      // The shipped default unless a test overrides it: that is what an app
+      // gets, so that is what these tests exercise.
+      installUrl: installUrl ?? TraciveOAuth.defaultInstallUrl,
       transport: transport ?? _FakeTransport((_) => fail('unexpected request')),
       tokenStore: tokenStore ?? InMemoryTokenStore(),
       launcher: launcher ?? _FakeLauncher(installed: true),

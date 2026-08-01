@@ -57,7 +57,6 @@ Future<void> main() async {
       clientId: 'your-client-id',
       redirectUri: 'https://your.app/oauth/callback', // an App Link you own
     ),
-    installUrl: 'https://…',                          // Tracive gives you this
     cache: await openTraciveCache(),                  // encrypted, on device
   );
 

@@ -476,20 +476,27 @@ void main() {
       expect(client.cachePolicy.enabled, isFalse);
     });
 
-    test('OAuth mode refuses to be built without an install link', () {
-      // There used to be a default here, and the SDK's own documentation called
-      // it a placeholder that had to be confirmed before shipping. A wrong one
-      // is invisible in development: it only shows as a 404 for a user without
-      // the Tracive app, which is every user's first run, for every partner.
-      // This package cannot check the URL, so it asks for it.
-      expect(
-        () => TraciveClient(
-          mode: _oauthMode,
-          transport: _FakeTransport((_) => _ok('{}')),
-          tokenStore: _authorizedStore(),
-        ),
-        throwsArgumentError,
+    test('OAuth mode falls back to the shared install link', () {
+      // The link was briefly a required argument, while its URL was still
+      // unconfirmed and a wrong default would have been a 404 on every
+      // partner's first run. It is confirmed now, and it is the same one in
+      // every Tracive SDK, so an app configures nothing.
+      final client = TraciveClient(
+        mode: _oauthMode,
+        transport: _FakeTransport((_) => _ok('{}')),
+        tokenStore: _authorizedStore(),
       );
+      expect(client.oauth!.installUrl, 'https://tracive.chottu.link/install');
+    });
+
+    test('an explicit install link overrides the default', () {
+      final client = TraciveClient(
+        mode: _oauthMode,
+        transport: _FakeTransport((_) => _ok('{}')),
+        tokenStore: _authorizedStore(),
+        installUrl: 'https://install.example/app',
+      );
+      expect(client.oauth!.installUrl, 'https://install.example/app');
     });
 
     test('Proxy mode needs no install link — it has no OAuth flow', () {
@@ -965,7 +972,7 @@ TraciveClient _client({
       retryPolicy: retryPolicy,
       cache: cache,
       tokenStore: tokenStore ?? _authorizedStore(),
-      // Required, with no default in the SDK: see `TraciveOAuth.installUrl`.
+      // Overridden so nothing here depends on the shipped default.
       installUrl: 'https://install.example/app',
     );
 
