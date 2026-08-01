@@ -48,22 +48,32 @@ import 'normalizer.dart';
 ///   two-part vowels, Tibetan, Kana voicing marks, Hebrew presentation forms,
 ///   Arabic hamza carriers: zero divergences.
 ///
-/// ## The one known divergence: U+D7A4
+/// ## The one upstream bug, and the guard around it: U+D7A4
 ///
-/// `unorm_dart` treats U+D7A4 as a Hangul syllable and decomposes it to
+/// `unorm_dart` 0.3.2 treats U+D7A4 as a Hangul syllable and decomposes it to
 /// U+1113 U+1161. It is not one — the Hangul Syllables block ends at U+D7A3,
-/// and U+D7A4 is unassigned — so true NFC leaves it alone. The bound in that
-/// package's algorithmic Hangul decomposition is off by one.
+/// and U+D7A4 is unassigned — so true NFC leaves it alone. `_SBase + _SCount`
+/// is exactly U+D7A4, and the bound testing it is `<` where every other clause
+/// beside it is half-open.
 ///
-/// It is left uncorrected here, deliberately. A key containing it would fold to
-/// something the server does not hold, so the check would miss and the miss
-/// would be billed — but the code point is unassigned, so no input method,
-/// keyboard or paste source produces it, and correcting a third-party bug from
-/// this side means owning a special case that has to be re-verified on every
-/// `unorm_dart` release. Weigh it against what defaulting to this normalizer
-/// fixes: 565 divergences on **assigned** characters, several of which real
-/// users really do type. The composition direction is unaffected — U+1113
-/// U+1161 is *not* composed into U+D7A4, so ordinary Hangul text is exact.
+/// Reported upstream: https://github.com/yshrsmz/unorm-dart/issues/84
+///
+/// [nfc] passes that one code point through untouched rather than letting the
+/// package see it. The usual objection to patching around a third-party bug is
+/// that the patch has to be re-verified on every release — true of a workaround
+/// that guesses at behaviour, and not true of this one. It is a single equality
+/// test against a code point that is unassigned in Unicode and will stay that
+/// way; no release of `unorm_dart` can make it wrong. If the fix lands upstream
+/// the guard becomes redundant, not harmful, and **that is when to delete it**
+/// — check the issue above when bumping the dependency.
+///
+/// The guard exists because "byte-identical to the other three SDKs" is worth
+/// having absolutely rather than approximately. The folded key *is* the record
+/// key; an exception to that rule is a thing every future reader has to learn,
+/// and one comparison is cheaper than the sentence explaining it.
+///
+/// The composition direction was never affected — U+1113 U+1161 is not composed
+/// into U+D7A4 — so ordinary Hangul text was always exact.
 ///
 /// ## Cost
 ///
@@ -77,6 +87,24 @@ class UnormNormalizer implements Normalizer {
   /// Creates the normalizer. `const`, stateless, safe to share.
   const UnormNormalizer();
 
+  /// The one code point `unorm_dart` gets wrong. Unassigned, and immediately
+  /// above the last Hangul syllable (U+D7A3) — see the class doc and
+  /// https://github.com/yshrsmz/unorm-dart/issues/84
+  static const int _unassignedAboveHangul = 0xD7A4;
+
   @override
-  String nfc(String input) => unorm.nfc(input);
+  String nfc(String input) {
+    if (!input.codeUnits.contains(_unassignedAboveHangul)) {
+      return unorm.nfc(input);
+    }
+    // Split on the offending code point, fold each piece, and rejoin with it.
+    // Folding around it rather than after it matters: normalization is not
+    // distributive over an arbitrary cut, but it is over one made at a code
+    // point that is unassigned — nothing composes with it or reorders across
+    // it, because it has no canonical decomposition and no combining class.
+    return input
+        .split(String.fromCharCode(_unassignedAboveHangul))
+        .map(unorm.nfc)
+        .join(String.fromCharCode(_unassignedAboveHangul));
+  }
 }

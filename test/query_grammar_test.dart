@@ -930,6 +930,39 @@ void main() {
       );
     });
 
+    test('U+D7A4 survives the fold, because upstream would decompose it', () {
+      // https://github.com/yshrsmz/unorm-dart/issues/84 — `unorm_dart` 0.3.2
+      // reads U+D7A4 as a Hangul syllable and emits U+1113 U+1161. It is
+      // unassigned: the block ends at U+D7A3. The server's JavaScript fold and
+      // Python's `unicodedata` at UCD 16.0.0 both leave it alone, and a key
+      // that differs from the server's is a miss the caller still pays for.
+      //
+      // Only EMAIL and USERNAME are in scope for NFC, so those are the two that
+      // could ever have carried it.
+      const norm = UnormNormalizer();
+      final cp = String.fromCharCode(0xD7A4);
+
+      expect(norm.nfc(cp), cp, reason: 'alone');
+      expect(norm.nfc('budi$cp'), 'budi$cp', reason: 'trailing');
+      expect(norm.nfc('$cp-budi'), '$cp-budi', reason: 'leading');
+      expect(norm.nfc('a${cp}b$cp'), 'a${cp}b$cp', reason: 'twice');
+
+      // Folding still happens on both sides of it. 'e' + U+0301 must compose to
+      // U+00E9 even when the guard has split the string around U+D7A4.
+      expect(norm.nfc('é$cpÅ'), 'é$cpÅ');
+
+      // And through the builders that actually apply NFC.
+      expect(
+        TraciveQuery.username(platform: 'INSTAGRAM', handle: 'budi$cp')
+            .searchQueryIndex,
+        'USERNAME_INSTAGRAM_budi$cp',
+      );
+      expect(
+        TraciveQuery.email('budi$cp@example.com').searchQueryIndex,
+        'EMAIL_budi$cp@example.com',
+      );
+    });
+
     test('reading the normalizer does not close the latch', () {
       // A host may reasonably read it to log its configuration. Doing so must
       // not stop it being installed afterwards.
