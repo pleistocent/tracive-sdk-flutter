@@ -116,9 +116,10 @@ try {
   final query = TraciveQuery.phone(userInput);
   ...
 } on TraciveQueryException catch (e) {
-  // e.reason is a stable, cross-SDK string: 'not_e164', 'country_not_alpha3',
-  // 'empty_account_id', 'empty_bank_code', 'empty_value', 'empty_handle',
-  // 'empty_chain', 'invalid_document_id'.
+  // e.reason is a stable, cross-SDK string: 'not_e164', 'not_an_email',
+  // 'country_not_alpha3', 'empty_account_id', 'empty_bank_code',
+  // 'empty_value', 'empty_handle', 'empty_chain', 'empty_address',
+  // 'empty_platform', 'invalid_document_id'.
   showFieldError(messageFor(e.reason));
 }
 ```
@@ -126,6 +127,18 @@ try {
 A local-format number (`081234567891`) is **rejected, not up-converted**: the
 server cannot infer the dial code either, so the SDK would silently be asking
 about a different entity — and you would still be charged for the miss.
+
+An e-mail address with no `@` (`not_an_email`) is rejected for the same reason.
+The server applies no shape validation to an e-mail, so `EMAIL_budi` is a
+perfectly legal record key: it is looked up, missed, and billed. The check is
+`@`-presence only and is **not** an address grammar — `budi@localhost` and
+`budi@[192.168.0.1]` are accepted, because the server would match them and a
+stricter client would lock you out of a lookup that works.
+
+Every empty field names itself, so you can put the message next to the right
+input: `empty_chain` and `empty_address` for `crypto()`, `empty_platform` and
+`empty_handle` for `username()`, `empty_bank_code` and `empty_account_id` for
+`bankAccount()`. `empty_value` is the empty-e-mail case and nothing else.
 
 ## 7. Handle the errors that matter
 

@@ -24,14 +24,28 @@ import '../exception.dart';
 const int maxDocumentIdBytes = 1500;
 
 /// Ids matching this pattern are reserved by the API.
-final RegExp _reservedPattern = RegExp(r'^__.*__$', dotAll: true);
+///
+/// `dotAll` is deliberately **off**, and the flags are what this rule is: the
+/// server's pattern is `^__.*__$` with no `s` flag, so `.` does not match a
+/// newline and the server *accepts* `__a\nb__`. Turning `dotAll` on — or
+/// paraphrasing the rule as `startsWith('__') && endsWith('__')`, which is the
+/// same mistake in prose — makes this guard stricter than the server and
+/// refuses a key that would have matched. Verified against the server's own
+/// normalizer, and pinned by the fixture's `documentIdGuard` case.
+///
+/// `^` and `$` are end-of-*input* anchors here, not end-of-line: Dart follows
+/// ECMAScript, so neither floats to a line boundary and `$` does not tolerate
+/// a trailing newline. `__ab__\n` and `\n__ab__` are therefore accepted, which
+/// is what a JavaScript engine does with the same pattern.
+final RegExp _reservedPattern = RegExp(r'^__.*__$');
 
 /// Whether [id] is a legal record key.
 ///
 /// Mirrors the `documentIdGuard` block of the vendored fixture. Rejects: the
-/// empty string, anything containing `/`, anything matching `__.*__`, `.`,
-/// `..`, anything containing a lone (unpaired) UTF-16 surrogate, and anything
-/// longer than [maxDocumentIdBytes] UTF-8 bytes.
+/// empty string, anything containing `/`, anything matching `^__.*__$` (with
+/// no `s` flag, so the match does not span a newline), `.`, `..`, anything
+/// containing a lone (unpaired) UTF-16 surrogate, and anything longer than
+/// [maxDocumentIdBytes] UTF-8 bytes.
 ///
 /// The byte limit is measured in *bytes*, so a key of non-ASCII characters hits
 /// it sooner than its `length` suggests — and it is checked on the **folded**

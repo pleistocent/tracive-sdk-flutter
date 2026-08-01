@@ -690,14 +690,32 @@ abstract final class QueryRejectionReason {
   /// The bank code folded to the empty string.
   static const String emptyBankCode = 'empty_bank_code';
 
-  /// A required value folded to the empty string.
+  /// The e-mail address folded to the empty string.
+  ///
+  /// The generic spelling is historical: it is the fixture's reason for the
+  /// `email-empty` vector and is a wire string, so it stays. Every other empty
+  /// field names itself — [emptyAccountId], [emptyBankCode], [emptyChain],
+  /// [emptyAddress], [emptyPlatform], [emptyHandle].
   static const String emptyValue = 'empty_value';
+
+  /// The e-mail address contains no `@`.
+  ///
+  /// Deliberately an `@`-presence check and not an address grammar: the server
+  /// applies no shape validation at all, so anything stricter would reject a
+  /// key the server would have matched.
+  static const String notAnEmail = 'not_an_email';
 
   /// The username handle folded to the empty string.
   static const String emptyHandle = 'empty_handle';
 
   /// The crypto chain folded to the empty string.
   static const String emptyChain = 'empty_chain';
+
+  /// The crypto address folded to the empty string.
+  static const String emptyAddress = 'empty_address';
+
+  /// The username platform folded to the empty string.
+  static const String emptyPlatform = 'empty_platform';
 
   /// The built key is not a legal record key.
   static const String invalidDocumentId = 'invalid_document_id';
@@ -709,8 +727,11 @@ abstract final class QueryRejectionReason {
     emptyAccountId,
     emptyBankCode,
     emptyValue,
+    notAnEmail,
     emptyHandle,
     emptyChain,
+    emptyAddress,
+    emptyPlatform,
     invalidDocumentId,
   ];
 }

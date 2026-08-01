@@ -184,7 +184,7 @@ void main() {
         (_) => _ok(
           _checkBody(
             extra: <String, Object?>{
-              'tahap2Verdict': <String, Object?>{'score': 0.91},
+              'futureVersionVerdict': <String, Object?>{'score': 0.91},
               'unknownList': <Object?>[1, 2, 3],
             },
           ),

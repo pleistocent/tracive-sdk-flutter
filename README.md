@@ -109,7 +109,9 @@ A runnable app is in [`example/`](example).
 
 Every query builder validates **before** anything leaves the device and throws
 `TraciveQueryException` rather than send a key that could not possibly match.
-A local-format phone number is rejected, not up-converted, and there is
+A local-format phone number is rejected, not up-converted; an e-mail address
+with no `@` is rejected rather than sent (the server does not check an e-mail's
+shape, so it would look the key up, miss, and charge you); and there is
 deliberately **no `domain()` builder** — the backend dropped that input type, so
 such a key could only ever miss.
 

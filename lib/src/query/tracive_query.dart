@@ -32,7 +32,7 @@ final RegExp _evmAddressPattern = RegExp(r'^0x[0-9a-fA-F]{40}$');
 /// Everything that is not an ASCII digit.
 final RegExp _nonDigitPattern = RegExp(r'[^0-9]');
 
-/// Whitespace plus the ASCII hyphen — the `/[\s-]/` the Node backend strips
+/// Whitespace plus the ASCII hyphen — the `/[\s-]/` the server strips
 /// from an account number.
 ///
 /// Built from [jsWhitespace] rather than written as `[\s-]` so that this class
@@ -103,14 +103,37 @@ class TraciveQuery {
   /// Fold: Unicode NFC, then lowercase, then trim — in that order, which is
   /// the order the API folds an e-mail address in.
   ///
+  /// Throws `not_an_email` if the folded value contains no `@`. The server
+  /// applies **no** shape validation to an e-mail — `EMAIL_budi` is a legal
+  /// record key, so it is looked up, missed, and billed — which makes this
+  /// check the only thing standing between a typo and a charge, exactly as
+  /// [TraciveQuery.phone]'s E.164 check is.
+  ///
+  /// The check is deliberately an `@`-presence test and **not** an address
+  /// grammar. Over-validating is the worse failure: `budi@localhost` and
+  /// `budi@[192.168.0.1]` are keys the server would match, and a stricter
+  /// client would lock the caller out of a lookup that works.
+  ///
   /// See [DefaultNormalizer] for the exact NFC guarantees this SDK ships with;
   /// Dart has no core-library NFC.
   factory TraciveQuery.email(String value) {
     final folded = jsTrim(jsToLowerCase(_nfc(value)));
+    // Order matters: '' contains no '@' either, so the empty check has to run
+    // first or an empty address would report `not_an_email` and contradict the
+    // fixture's `email-empty` vector.
     if (folded.isEmpty) {
       throw const TraciveQueryException(
         QueryRejectionReason.emptyValue,
         message: 'E-mail address is empty',
+      );
+    }
+    if (!folded.contains('@')) {
+      // The message carries no example address, for the same reason the phone
+      // message carries no example number: anything address-shaped in a log
+      // line is treated as personal data by whoever reads the log.
+      throw const TraciveQueryException(
+        QueryRejectionReason.notAnEmail,
+        message: 'E-mail address must contain "@"',
       );
     }
     return _build(QueryType.email, 'EMAIL_$folded');
@@ -197,10 +220,11 @@ class TraciveQuery {
       foldedAddress = jsToLowerCase(foldedAddress);
     }
     if (foldedAddress.isEmpty) {
-      // Not covered by the fixture (it has no empty-address vector); reusing
-      // `empty_value` keeps the reason inside the frozen set of reasons.
+      // `empty_address` rather than the generic `empty_value` it used to be: a
+      // caller has to know which of the two fields to put the error next to,
+      // and `CRYPTO_ETH_` can only miss - which is billed.
       throw const TraciveQueryException(
-        QueryRejectionReason.emptyValue,
+        QueryRejectionReason.emptyAddress,
         message: 'Crypto address is empty',
       );
     }
@@ -221,10 +245,11 @@ class TraciveQuery {
   }) {
     final foldedPlatform = jsTrim(jsToUpperCase(_nfc(platform)));
     if (foldedPlatform.isEmpty) {
-      // Not covered by the fixture (it has no empty-platform vector); reusing
-      // `empty_value` keeps the reason inside the frozen set of reasons.
+      // `empty_platform` rather than the generic `empty_value` it used to be,
+      // for the same reason `crypto()` names its address: `USERNAME__budi`
+      // cannot match any stored key, and the miss is billed.
       throw const TraciveQueryException(
-        QueryRejectionReason.emptyValue,
+        QueryRejectionReason.emptyPlatform,
         message: 'Username platform is empty',
       );
     }

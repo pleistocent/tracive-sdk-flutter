@@ -50,13 +50,15 @@ void main() {
       // mapping, the JS trim set, ASCII-only \D). Version 3 corrected
       // `nfcScope`, which used to read as though NFC applied to the social and
       // chain platform codes but not to a bank code, and added the vector that
-      // pins the bank code's NFC step down.
-      expect(fixture['version'], 4);
+      // pins the bank code's NFC step down. Version 5 added three rejections -
+      // `not_an_email`, `empty_address`, `empty_platform` - and the guard case
+      // proving the reserved-key pattern does not span a newline.
+      expect(fixture['version'], 5);
     });
 
     test('carries the vectors it is supposed to', () {
       expect(vectors, hasLength(34));
-      expect(rejected, hasLength(11));
+      expect(rejected, hasLength(14));
     });
 
     test('carries the sections version 2 added', () {
@@ -174,8 +176,11 @@ void main() {
 
     test('the fixture actually carries cases to run', () {
       // Guards against this whole group passing vacuously if the section is
-      // ever renamed: an empty list would satisfy every assertion below.
-      expect(cases, isNotEmpty);
+      // ever renamed: an empty list would satisfy every assertion below. The
+      // exact count is pinned for the same reason the vector counts are - a
+      // case silently dropped from the fixture would take its assertion with
+      // it and nothing would notice.
+      expect(cases, hasLength(9));
     });
 
     for (final entry in cases) {
@@ -511,6 +516,29 @@ void main() {
       expect(isValidDocumentId('__lead'), isTrue);
       expect(isValidDocumentId('PHONE_+6281234567891'), isTrue);
     });
+
+    test('the reserved-key rule does not span a newline', () {
+      // The server's pattern is `^__.*__$` with no `s` flag, and `.` does not
+      // match a newline without it - so the server ACCEPTS `__a\nb__`. Any
+      // client stating the rule as "starts with __ and ends with __" (or as
+      // the same regular expression with dotAll on) is stricter than the
+      // server and refuses a key that would have worked.
+      expect(isValidDocumentId('__a\nb__'), isTrue);
+      expect(
+        isValidDocumentId('__ab__'),
+        isFalse,
+        reason: 'the same key without the newline really is reserved',
+      );
+    });
+
+    test('the reserved anchors are end-of-input, not end-of-line', () {
+      // The other half of matching ECMAScript: `^` and `$` do not float to
+      // line boundaries, and `$` does not tolerate one trailing newline the
+      // way some engines' does. A JavaScript engine returns false for both of
+      // these, so the guard must accept both.
+      expect(isValidDocumentId('__ab__\n'), isTrue);
+      expect(isValidDocumentId('\n__ab__'), isTrue);
+    });
   });
 
   group('folding details the fixture pins down but does not spell out', () {
@@ -522,6 +550,130 @@ void main() {
             (e) => e.reason,
             'reason',
             QueryRejectionReason.notE164,
+          ),
+        ),
+      );
+    });
+
+    test('an e-mail without "@" is rejected, exactly as a local number is', () {
+      // The server applies NO shape validation to an e-mail: `EMAIL_budi` is a
+      // legal record key, so it is looked up, missed, and billed. Rejecting it
+      // here is the only thing that prevents the charge - the same protection
+      // `phone()` gives via its E.164 check.
+      //
+      // The reason is asserted as a literal rather than through
+      // `QueryRejectionReason.notAnEmail`, because it is a wire string shared
+      // with the other SDKs: spelling it out means a rename fails this test
+      // instead of silently redefining the contract.
+      expect(
+        () => TraciveQuery.email('budi'),
+        throwsA(
+          isA<TraciveQueryException>().having(
+            (e) => e.reason,
+            'reason',
+            'not_an_email',
+          ),
+        ),
+      );
+      expect(QueryRejectionReason.values, contains('not_an_email'));
+    });
+
+    test('the e-mail check is "@"-presence only, not an address grammar', () {
+      // Deliberately minimal. Over-validating is the worse failure: the server
+      // would happily match any of these keys, so rejecting one client-side
+      // would lock a caller out of a lookup that works.
+      const acceptedByTheServer = <String>[
+        'budi@localhost', // no dot in the domain
+        'budi@@gmail.com', // two '@'
+        '@gmail.com', // no local part
+        'budi@', // no domain
+        '@', // nothing but the '@'
+        'budi name@gmail.com', // a space in the local part
+        'budi@[192.168.0.1]', // an address literal
+      ];
+      for (final value in acceptedByTheServer) {
+        expect(
+          TraciveQuery.email(value).searchQueryIndex,
+          'EMAIL_$value',
+          reason: 'the SDK must not out-validate the server for "$value"',
+        );
+      }
+    });
+
+    test('an empty crypto address and an empty platform have own reasons', () {
+      // Both used to report the generic `empty_value`, which made two
+      // different mistakes indistinguishable: a caller could not tell which
+      // field to put the error message next to. Literals again, because these
+      // are wire strings shared with the other SDKs.
+      expect(
+        () => TraciveQuery.crypto(chain: 'ETH', address: '   '),
+        throwsA(
+          isA<TraciveQueryException>().having(
+            (e) => e.reason,
+            'reason',
+            'empty_address',
+          ),
+        ),
+      );
+      expect(
+        () => TraciveQuery.username(platform: '  ', handle: 'scammerx'),
+        throwsA(
+          isA<TraciveQueryException>().having(
+            (e) => e.reason,
+            'reason',
+            'empty_platform',
+          ),
+        ),
+      );
+      expect(QueryRejectionReason.values, contains('empty_address'));
+      expect(QueryRejectionReason.values, contains('empty_platform'));
+    });
+
+    test('the empty-field reasons name four distinct fields', () {
+      // The point of the rename: an empty chain, an empty address, an empty
+      // platform and an empty handle are four different repairs, so they must
+      // not collapse onto one token.
+      final reasons = <String>{};
+      for (final build in <void Function()>[
+        () => TraciveQuery.crypto(chain: '', address: '0xabc'),
+        () => TraciveQuery.crypto(chain: 'ETH', address: ''),
+        () => TraciveQuery.username(platform: '', handle: 'x'),
+        () => TraciveQuery.username(platform: 'IG', handle: ''),
+      ]) {
+        try {
+          build();
+          fail('expected a rejection');
+        } on TraciveQueryException catch (error) {
+          reasons.add(error.reason);
+        }
+      }
+      expect(
+        reasons,
+        <String>{
+          'empty_chain',
+          'empty_address',
+          'empty_platform',
+          'empty_handle'
+        },
+      );
+      expect(
+        reasons,
+        isNot(contains('empty_value')),
+        reason: 'empty_value is now the e-mail case only',
+      );
+    });
+
+    test('an empty e-mail is still empty_value, not not_an_email', () {
+      // '' contains no '@' either, so the order of the two checks decides which
+      // reason a caller sees. The fixture's `email-empty` vector says
+      // `empty_value`, so the empty check has to stay first.
+      expect(
+        () => TraciveQuery.email('   '),
+        throwsA(
+          isA<TraciveQueryException>().having(
+            (e) => e.reason,
+            'reason',
+            'empty_value',
           ),
         ),
       );

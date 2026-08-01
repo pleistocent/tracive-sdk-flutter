@@ -39,6 +39,14 @@ until it is frozen at `1.0.0`.
   `js_string.dart` rather than left to be discovered: the tables are a snapshot
   of one Unicode release, and 94 code points across two very recently
   bicameral scripts (Garay, Beria Erfe) would disagree with an older engine.
+- **The reserved-key rule no longer spans a newline.** The server's pattern is
+  `^__.*__$` with no `s` flag, so `.` does not match a newline and a key such
+  as `__a\nb__` is one the server *accepts*. This SDK compiled the same pattern
+  with `dotAll` on, which made the guard stricter than the server and threw
+  `invalid_document_id` for a key that would have matched — turning a lookup
+  that works into one the caller cannot make at all. The flag is off, and the
+  fixture now carries the case. (`^` and `$` stay end-of-*input* anchors, as
+  they are in JavaScript: `__ab__\n` and `\n__ab__` are accepted.)
 - **The document-id guard rejects a lone UTF-16 surrogate.** `utf8.encode`
   silently substitutes U+FFFD for an unpaired surrogate, so such a key used to
   pass the 1500-byte check and then be rejected by the API — after the credit
@@ -55,9 +63,28 @@ until it is frozen at `1.0.0`.
 - Test coverage driving the fixture's new `documentIdGuard` and
   `crossLanguageSemantics` sections directly, rather than restating them in
   prose.
+- **`TraciveQuery.email()` rejects an address with no `@`, with the new reason
+  `not_an_email`.** It used to reject only an empty value, so
+  `TraciveQuery.email('budi')` built `EMAIL_budi` and sent it. The server
+  applies no shape validation to an e-mail — that is a legal record key — so
+  the lookup happened, missed, and was **billed**. Client-side rejection is the
+  only thing that prevents the charge, exactly as `phone()`'s E.164 check
+  already does for a local-format number. The check is deliberately minimal, an
+  `@`-presence test rather than an address grammar: `budi@localhost` and
+  `budi@[192.168.0.1]` are keys the server would match, and rejecting them
+  would be the worse failure. An empty value still reports `empty_value`.
 
 ### Changed
 
+- **An empty crypto address now reports `empty_address` and an empty username
+  platform `empty_platform`**, instead of both reporting the generic
+  `empty_value`. They were already rejected — the fold could only ever have
+  produced `CRYPTO_ETH_` or `USERNAME__budi`, which can only miss, and a miss is
+  billed — but one token for two different mistakes gave a caller nothing to
+  branch on and no way to know which field to put the error message next to.
+  Every empty field now names itself. `empty_value` remains the empty-e-mail
+  case. **If you switch on `TraciveQueryException.reason`, update those two
+  branches.**
 - **`installUrl` is optional again, and defaults to
   `TraciveOAuth.defaultInstallUrl` (`https://tracive.chottu.link/install`).**
   This is the link the SDK opens when the Tracive app is not installed, and it
@@ -81,7 +108,8 @@ until it is frozen at `1.0.0`.
   `README.md` did not compile and the example app had to import
   `package:tracive_sdk/src/...` paths. Nothing was renamed; only the barrel
   changed.
-- The vendored fixture is version 3 (34 vectors, up from 25).
+- The vendored fixture is version 5 (34 vectors, up from 25; 14 rejected
+  vectors and 9 document-id guard cases).
 
 ## [0.1.0] — 2026-07-31
 

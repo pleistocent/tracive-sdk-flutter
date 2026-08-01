@@ -53,7 +53,7 @@ jobs:
       # whole point of pinning it.
       - name: Verify the query-grammar fixture is unmodified
         run: |
-          echo "776f10e4b1519468f0ec69d587f2d7df6f01ec9de520c884c177ef7fb189d7a1  test/fixtures/query-grammar-vectors.json" \
+          echo "f94bf48164c82bcc59fda30669d9d8c25dbc36ecc7ad93fcd7fb56ba2cdf2901  test/fixtures/query-grammar-vectors.json" \
             | sha256sum --check --strict
 
       # Deliberately not `--set-exit-if-changed` on a subset: a published
