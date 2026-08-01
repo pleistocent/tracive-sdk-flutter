@@ -41,6 +41,50 @@ until it is frozen at `1.0.0`.
   empty string made every such caller look raced and handed the damaged record
   straight back. Kotlin already tested blankness.
 
+- **A refresh token is never handed to the server twice — and a server that did
+  not rotate is no longer mistaken for one that did.** The single-flight latch
+  is already clear by the time a slow store read hands a second caller the token
+  the first caller has just spent, so `TraciveOAuth` also remembers the refresh
+  tokens it has actually presented and turns such a caller away on the token's
+  identity rather than on timing. Presenting a rotated refresh token twice is
+  what the server's reuse detection looks for, and its answer is revocation of
+  the whole grant: a full re-consent for the end user, caused by nothing worse
+  than a slow keychain read. A flight also never sends the snapshot it was
+  started from — it re-reads the store and sends whatever is live there — which
+  is what keeps that memory an optimisation rather than a boundary someone has
+  to pick the right depth for.
+
+  **When a token comes back off that list is the part worth reading**, because
+  the obvious rule is wrong. An error response releases it: a token endpoint
+  that answers with an error has issued no tokens (RFC 6749 §5.2), so one 500
+  must not end the grant. A request that got **no answer at all** does not
+  release it — a socket timeout is indistinguishable from a success whose reply
+  was lost, so the marker stays and the caller is told to authorize again, which
+  is the strictly better trade rather than the merely cautious one.
+
+  And a success releases it **only if the server handed back the same refresh
+  token it was given**. RFC 6749 §6 does not oblige a token endpoint to rotate:
+  it may answer with the same refresh token, or omit `refresh_token` entirely to
+  mean "keep the one you have", which this SDK honours by carrying the stored
+  value forward. In both cases the token then in the store is the exact string
+  in the spent history, so reading a 2xx as proof of consumption refused the
+  *next* refresh locally, with no request sent, reporting that the stored
+  refresh token had already been used — and, since the history is cleared only
+  on sign-out, it stayed refused for the life of the process. The guard against
+  a server-side revocation would have become a client-side one, against a server
+  that did nothing wrong. The comparison against the token that went out is the
+  safety of that release and not a tidy-up: a token the server really did rotate
+  away from stays marked, because the store may still be holding it — a `write`
+  that refuses leaves exactly that — and handing it to the next refresh is the
+  reuse the history exists to prevent. Kotlin and React Native release on the
+  same condition.
+
+  **What you will observe:** against a server that rotates, which is what the
+  Tracive API does, nothing at all — every refresh rotates, every marker stays,
+  and a stale snapshot is still turned away without reaching the wire. Against
+  one that re-issues or omits the refresh token, refreshes after the first now
+  work instead of throwing `TraciveInvalidTokenException`.
+
 - **Overlapping identical checks are now one request and one charge.** Two
   checks of the same identifier that were in flight at the same time both read
   the cache, both missed, both POSTed and both were billed — the cache write is

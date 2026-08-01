@@ -139,10 +139,10 @@ refreshed when the server says so — any non-terminal `401` — and at no other
 moment.
 The one refresh that does not wait for a rejection is the repair of a stored
 grant whose access token is blank: there is no token to send, so there is no
-rejection to wait for. A refresh token is single-use, so presenting one twice is
-what the server's reuse detection looks for, and it answers by revoking the
-whole grant. Four guards keep that from happening, and the diagram is mostly
-those four guards.
+rejection to wait for. A *rotating* refresh token is single-use, so presenting
+one twice is what the server's reuse detection looks for, and it answers by
+revoking the whole grant. Four guards keep that from happening, and the diagram
+is mostly those four guards.
 
 ```mermaid
 flowchart TD
@@ -169,6 +169,8 @@ flowchart TD
     NoAnswer["marker stays spent<br/>TraciveInvalidTokenException"]
     HttpError["un-mark spent, map the error"]
     Revoked["clear the stored tokens<br/>TraciveGrantRevokedException"]
+    Rotated{"did the reply carry a<br/>different refresh token?"}
+    Unmark["un-mark spent:<br/>the server kept this one"]
     Write["tokenStore.write, one atomic pair"]
 
     Start --> Read
@@ -198,7 +200,10 @@ flowchart TD
     Post -->|"no response at all"| NoAnswer
     Post -->|"HTTP error response"| HttpError
     HttpError -->|"invalid_grant or grant_revoked"| Revoked
-    Post -->|"2xx"| Write
+    Post -->|"2xx"| Rotated
+    Rotated -->|"yes"| Write
+    Rotated -->|"no"| Unmark
+    Unmark --> Write
     Write --> Replay
     Replay --> Start
 ```
@@ -250,7 +255,7 @@ The four guards, and why none of them is redundant:
    guard 3's bounded memory an optimisation rather than a security boundary — a
    snapshot too old to be recognised costs one redundant refresh, never a reuse.
 
-Two asymmetries in the failure handling are worth stating, because they look
+Three asymmetries in the outcome handling are worth stating, because they look
 inconsistent until you see what each is protecting:
 
 - **An HTTP error response un-marks the token as spent; no response at all does
@@ -258,6 +263,17 @@ inconsistent until you see what each is protecting:
   (RFC 6749 §5.2), so the refresh token was not consumed and one 500 must not
   end the grant. A socket timeout is indistinguishable from a success whose
   reply was lost, so the marker stays and the user re-authorizes.
+- **A 2xx un-marks the token too, if it is the token that came back.** Rotation
+  is not something a token endpoint owes its client: RFC 6749 §6 permits
+  re-issuing the same refresh token, and permits omitting `refresh_token`
+  altogether to mean "keep the one you have", which this SDK honours by carrying
+  the stored value forward. Either way the token now in the store is the string
+  the flight marked spent, and leaving the marker on would refuse the *next*
+  refresh locally for the life of the process — a client-side revocation caused
+  by the guard against a server-side one. The comparison against the token that
+  went out is what keeps a genuinely rotated-away token marked, which matters
+  because the store may still be holding it: a `write` that refuses leaves
+  exactly that.
 - **Sign-out wins over anything already on the wire.** `signOut()` discards the
   local credentials *first* and calls `oauth/revoke` best-effort afterwards.
   Every path that is about to write tokens captured `_credentialEpoch` before

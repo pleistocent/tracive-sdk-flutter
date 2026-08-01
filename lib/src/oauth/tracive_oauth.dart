@@ -218,15 +218,29 @@ class TraciveOAuth {
   /// second refresh.
   Future<TraciveTokens>? _refreshInFlight;
 
-  /// The refresh tokens this flow has actually handed to the server, oldest
-  /// first.
+  /// The refresh tokens this flow has handed to the server and must not hand
+  /// over again, oldest first.
   ///
-  /// A refresh token is single-use, and presenting one twice is precisely what
-  /// reuse detection looks for — the server answers by revoking the whole
-  /// grant. The latch alone cannot prevent that, because it is already clear by
-  /// the time a late-resolving store read hands a second caller the token the
-  /// first caller has just spent. This records what has been spent so such a
-  /// caller can be turned away on the token's identity rather than on timing.
+  /// A *rotating* refresh token is single-use, and presenting one twice is
+  /// precisely what reuse detection looks for — the server answers by revoking
+  /// the whole grant. The latch alone cannot prevent that, because it is
+  /// already clear by the time a late-resolving store read hands a second
+  /// caller the token the first caller has just spent. This records what has
+  /// been spent so such a caller can be turned away on the token's identity
+  /// rather than on timing.
+  ///
+  /// A token joins the list before it is sent and comes off again as soon as
+  /// something shows it was not consumed after all: an error response, which
+  /// issues no tokens at all (RFC 6749 §5.2), or a success that handed back
+  /// that same token rather than a new one. That second release is not a
+  /// nicety. Rotation is not something a token endpoint owes its client —
+  /// RFC 6749 §6 permits re-issuing the same refresh token, and permits
+  /// omitting `refresh_token` to mean "keep the one you have" — so reading a
+  /// 2xx as proof that the token was spent, which this class once did, turned a
+  /// conforming server into a grant this SDK refused to renew from the second
+  /// refresh onwards. The one outcome that leaves a token marked without
+  /// proving anything is a request that got no answer at all, and that is
+  /// deliberate; see [_performRefresh] for why.
   ///
   /// It is a short history rather than a single slot because a store read can
   /// outlive more than one rotation. With one slot, a snapshot taken before the
@@ -993,10 +1007,12 @@ class TraciveOAuth {
 
     _markSpent(refreshToken);
 
-    // Whether the marker may be released again depends entirely on what kind of
-    // failure this is, and there are only two kinds worth telling apart.
+    // Whether the marker may be released again depends on what the server did
+    // with the token, and there are three answers worth telling apart. The two
+    // below are about failure and are decided here; the third — a success that
+    // did not rotate — is decided further down, where the reply has been read.
     //
-    // A complete HTTP response, whatever its status, settles the question: an
+    // An HTTP error response, whatever its status, settles the question: an
     // OAuth token endpoint that answers with an error has issued no tokens
     // (RFC 6749 §5.2), so the refresh token was not consumed and the marker
     // must come off — otherwise one 500 would end the grant for good.
@@ -1043,10 +1059,33 @@ class TraciveOAuth {
       throw error;
     }
 
-    // Past this point the server has issued a new pair, so the old refresh
-    // token is spent no matter what happens next — including a body this SDK
-    // cannot decode.
+    // Past this point the server has answered with tokens, so a body this SDK
+    // cannot decode leaves the marker standing: something was issued and this
+    // flow cannot tell what.
     final tokens = _decodeTokenResponse(response, previous: current);
+
+    // The third case. A 2xx is not on its own evidence that the refresh token
+    // was consumed: RFC 6749 §6 lets a conforming token endpoint answer with
+    // the same refresh token, or omit `refresh_token` entirely to mean "keep
+    // the one you have" — which `TraciveTokens.fromTokenResponse` honours by
+    // carrying the previous value forward. In both cases the token now going
+    // into the store is the exact string this flight marked spent, and leaving
+    // the marker on would refuse the *next* refresh here, in this process, for
+    // as long as the process lives. The guard against a server-side revocation
+    // would have become a client-side one, against a server that did nothing
+    // wrong, and the user would be sent back through consent by it.
+    //
+    // Releasing it is guarded on the returned token being the one that went
+    // out, and that condition is the whole safety of this release rather than a
+    // tidy-up. A token the server really did rotate away from must stay marked:
+    // the store may still be holding it — a write that refuses leaves exactly
+    // that — and a late store read handing it to the next refresh is precisely
+    // the reuse this history exists to prevent. The Kotlin and React Native
+    // SDKs release on the same condition.
+    if (tokens.refreshToken == refreshToken) {
+      _spentRefreshTokens.remove(refreshToken);
+    }
+
     if (epoch != _credentialEpoch) {
       // Signed out (or the grant was revoked) while this was on the wire. The
       // server has issued a fresh pair, but nobody asked for it any more —

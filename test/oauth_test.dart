@@ -1367,12 +1367,7 @@ void main() {
         ]);
       final presented = <String>[];
       final transport = _FakeTransport((request) async {
-        presented.add(
-          RegExp(r'refresh_token=([^&]+)')
-                  .firstMatch(request.body ?? '')
-                  ?.group(1) ??
-              '?',
-        );
+        presented.add(_presentedRefreshToken(request));
         await Future<void>.delayed(const Duration(milliseconds: 10));
         return _ok(_tokenBody());
       });
@@ -1523,6 +1518,102 @@ void main() {
         throwsA(isA<TraciveInvalidTokenException>()),
       );
       expect(calls, 1);
+    });
+
+    test('a refresh token the server re-issued unchanged stays usable',
+        () async {
+      // RFC 6749 §6 does not oblige a token endpoint to rotate: answering with
+      // the same refresh token is conforming. A 2xx is therefore not evidence
+      // that the token was consumed, and treating it as evidence left the very
+      // string the server had just re-issued sitting in the spent history — so
+      // the NEXT refresh was refused here, in this process, for the life of the
+      // process, and the user was sent back through consent by the guard that
+      // exists to keep them from being signed out.
+      final store = _authorizedStore();
+      var calls = 0;
+      final transport = _FakeTransport((_) {
+        calls++;
+        return _ok(
+          jsonEncode(<String, Object?>{
+            'access_token': 'access-token-${calls + 1}',
+            // The same value every time, on purpose.
+            'refresh_token': 'refresh-token-1',
+            'token_type': 'Bearer',
+            'expires_in': 3600,
+            'scope': 'scammer.check',
+          }),
+        );
+      });
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      expect((await oauth.refreshTokens()).accessToken, 'access-token-2');
+      expect((await oauth.refreshTokens()).accessToken, 'access-token-3');
+
+      expect(
+        transport.requests.map(_presentedRefreshToken),
+        <String>['refresh-token-1', 'refresh-token-1'],
+        reason: 'the second refresh must reach the server, not be refused here',
+      );
+      expect((await store.read())!.refreshToken, 'refresh-token-1');
+    });
+
+    test('a refresh token carried forward stays usable', () async {
+      // The other shape of the same server behaviour, and the commoner one:
+      // RFC 6749 §6 lets the response omit `refresh_token` to mean "keep the
+      // one you have", which `TraciveTokens.fromTokenResponse` honours by
+      // carrying the previous value forward. The token then in the store is
+      // again the exact string this flow marked spent.
+      final store = _authorizedStore();
+      var calls = 0;
+      final transport = _FakeTransport((_) {
+        calls++;
+        return _ok(
+          jsonEncode(<String, Object?>{
+            'access_token': 'access-token-${calls + 1}',
+            'expires_in': 3600,
+          }),
+        );
+      });
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      expect((await oauth.refreshTokens()).refreshToken, 'refresh-token-1');
+      expect((await oauth.refreshTokens()).accessToken, 'access-token-3');
+
+      expect(
+        transport.requests.map(_presentedRefreshToken),
+        <String>['refresh-token-1', 'refresh-token-1'],
+        reason: 'the second refresh must reach the server, not be refused here',
+      );
+    });
+
+    test('a rotation the store refused to keep is not presented again',
+        () async {
+      // The release above is guarded on the returned refresh token being the
+      // one that went out, and the guard is the whole safety of it. Drop the
+      // condition and a genuine rotation releases the token it rotated away
+      // from — which bites whenever the new pair does not reach the store,
+      // because the store then still hands the old, spent token to the next
+      // refresh. Presenting it is the reuse this history exists to prevent, and
+      // the server answers reuse by revoking the entire grant.
+      //
+      // A store that reads fine and cannot write is what a Keystore entry that
+      // will not re-encrypt after a backup restore looks like.
+      final store = _RefusingStore(onWrite: true, tokens: _tokensNumbered(1));
+      final transport = _RotatingTokenTransport();
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      await expectLater(oauth.refreshTokens(), throwsA(isA<StateError>()));
+      await expectLater(
+        oauth.refreshTokens(),
+        throwsA(isA<TraciveInvalidTokenException>()),
+        reason: 'the stored token is spent; the answer is to authorize again',
+      );
+
+      expect(
+        transport.presented,
+        <String>['refresh-token-1'],
+        reason: 'the token the server rotated away from must not go out twice',
+      );
     });
 
     test('a failed refresh does not wedge the latch', () async {
@@ -2254,6 +2345,14 @@ String _tokenBody() => jsonEncode(<String, Object?>{
       'scope': 'scammer.check',
     });
 
+/// The refresh token a recorded token request actually carried.
+///
+/// Lets a test say "this token went to the server" as a fact about the wire
+/// rather than as a fact about the SDK's internal state.
+String _presentedRefreshToken(TraciveHttpRequest request) =>
+    RegExp(r'refresh_token=([^&]+)').firstMatch(request.body ?? '')?.group(1) ??
+    '?';
+
 TraciveHttpResponse _ok(String body) => TraciveHttpResponse(
       statusCode: 200,
       headers: const <String, String>{'content-type': 'application/json'},
@@ -2326,12 +2425,7 @@ class _RotatingTokenTransport extends HttpTransport {
   @override
   Future<TraciveHttpResponse> send(TraciveHttpRequest request) async {
     requests.add(request);
-    presented.add(
-      RegExp(r'refresh_token=([^&]+)')
-              .firstMatch(request.body ?? '')
-              ?.group(1) ??
-          '?',
-    );
+    presented.add(_presentedRefreshToken(request));
     _generation++;
     return _ok(
       jsonEncode(<String, Object?>{
@@ -2399,13 +2493,22 @@ class _StaleSnapshotStore extends TokenStore {
 /// a platform channel that was never registered. Not a [TraciveException]: that
 /// is the point, since the SDK's own error types are the easy half.
 class _RefusingStore extends TokenStore {
-  _RefusingStore({this.onReadPending = false, this.onWritePending = false});
+  _RefusingStore({
+    this.onReadPending = false,
+    this.onWritePending = false,
+    this.onWrite = false,
+    TraciveTokens? tokens,
+  }) : _tokens = tokens;
 
   /// Stands in for the plugin's own text, which must not reach the caller.
   static const String platformText = 'PlatformException(Keychain, -25308)';
 
   final bool onReadPending;
   final bool onWritePending;
+
+  /// Whether [write] refuses. A store that reads back what it already holds and
+  /// cannot persist anything new is the shape a refreshed pair gets lost in.
+  final bool onWrite;
 
   TraciveTokens? _tokens;
   PendingAuthorization? _pending;
@@ -2418,7 +2521,10 @@ class _RefusingStore extends TokenStore {
   Future<TraciveTokens?> read() async => _tokens;
 
   @override
-  Future<void> write(TraciveTokens tokens) async => _tokens = tokens;
+  Future<void> write(TraciveTokens tokens) async {
+    if (onWrite) throw StateError(platformText);
+    _tokens = tokens;
+  }
 
   @override
   Future<void> clear() async {
