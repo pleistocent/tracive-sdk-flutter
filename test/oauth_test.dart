@@ -162,6 +162,10 @@ void main() {
       expect(url.queryParameters['state'], 'state-abc');
       expect(url.queryParameters['code_challenge'], 'challenge-abc');
       expect(url.queryParameters['code_challenge_method'], 'S256');
+      // As written, not trimmed. The value is stored on the grant and echoed
+      // back to the partner in `grant.revoked`; trimming it here would hand
+      // them back something other than what they sent. This SDK trimmed it
+      // until 2 August 2026 — the same defect its idempotency key had.
       expect(url.queryParameters['partner_user_id'], 'partner-user-9');
     });
 
@@ -173,6 +177,7 @@ void main() {
         scopes: const <String>[],
         state: 's',
         codeChallenge: 'ch',
+        partnerUserId: 'partner-user-1',
       );
       expect(url.query, isNot(contains('plain')));
       expect(url.queryParameters.containsKey('code_verifier'), isFalse);
@@ -221,6 +226,7 @@ void main() {
       expect(
         () => oauth = TraciveOAuth(
           mode: const TraciveOAuthMode(
+            partnerUserId: 'partner-user-1',
             clientId: 'partner-client-id',
             redirectUri: 'https://partner.example/oauth/callback',
           ),
@@ -2305,6 +2311,7 @@ void main() {
 // -----------------------------------------------------------------------------
 
 const TraciveMode _oauthMode = TraciveMode.oauth(
+  partnerUserId: 'partner-user-1',
   clientId: 'partner-client-id',
   redirectUri: 'https://partner.example/oauth/callback',
 );
@@ -2321,6 +2328,7 @@ TraciveOAuth _oauth({
     TraciveOAuth(
       environment: environment,
       mode: TraciveOAuthMode(
+        partnerUserId: 'partner-user-1',
         clientId: 'partner-client-id',
         redirectUri: 'https://partner.example/oauth/callback',
         clientType: clientType,

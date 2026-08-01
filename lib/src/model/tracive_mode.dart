@@ -18,8 +18,8 @@ sealed class TraciveMode {
   const factory TraciveMode.oauth({
     required String clientId,
     required String redirectUri,
+    required String partnerUserId,
     List<String> scopes,
-    String? partnerUserId,
     ClientType clientType,
   }) = TraciveOAuthMode;
 
@@ -42,10 +42,20 @@ final class TraciveOAuthMode extends TraciveMode {
   const TraciveOAuthMode({
     required this.clientId,
     required this.redirectUri,
+    required this.partnerUserId,
     this.scopes = const <String>[TraciveScopes.scammerCheck],
-    this.partnerUserId,
     this.clientType = ClientType.public,
-  });
+  }) // Empty only: this constructor is `const`, and a const assert cannot call
+  // `trim()`. A whitespace-only id therefore gets past here and is refused
+  // by the Tracive app instead — which is the failure this assert exists to
+  // move earlier, so send a real id rather than a padded one.
+  : assert(
+          partnerUserId != '',
+          'TraciveOAuthMode needs a partnerUserId. The authorization request '
+          'must carry one: the Tracive app refuses a consent without it, '
+          'client-side and with no redirect, so the failure would reach you as '
+          'silence rather than as an error.',
+        );
 
   /// The partner's registered OAuth client id. Public by nature — it is not a
   /// secret and is not treated as one.
@@ -64,9 +74,16 @@ final class TraciveOAuthMode extends TraciveMode {
   /// an integration that cannot authorize.
   final List<String> scopes;
 
-  /// The partner's own id for this end user, when they want the grant tied to
-  /// it. Not required, and never used as a credential.
-  final String? partnerUserId;
+  /// The partner's own opaque id for this end user.
+  ///
+  /// **Required, and non-blank.** The Tracive app refuses a consent without one,
+  /// client-side and before any network call, and by design returns no redirect
+  /// — so the partner app is handed nothing to handle and no log records the
+  /// attempt. It is also what the grant is keyed on: echoed back in
+  /// `grant.revoked` and `grant.superseded` so a partner can map the event to
+  /// their own customer, and what enforces one partner account to one Tracive
+  /// account. Never a raw phone number or email, and never used as a credential.
+  final String partnerUserId;
 
   /// Whether this SDK completes the token exchange ([ClientType.public]) or
   /// hands the authorization code back ([ClientType.confidential]).

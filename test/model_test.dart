@@ -767,6 +767,7 @@ void main() {
       // by default would put permissions on the consent screen that the caller
       // never uses.
       const mode = TraciveMode.oauth(
+        partnerUserId: 'partner-user-1',
         clientId: 'partner-app',
         redirectUri: 'https://partner.example/callback',
       );
@@ -777,6 +778,7 @@ void main() {
   group('TraciveMode', () {
     test('OAuth mode defaults to a public client and needs no secret', () {
       const mode = TraciveMode.oauth(
+        partnerUserId: 'partner-user-1',
         clientId: 'partner-app',
         redirectUri: 'https://partner.example/callback',
       );
@@ -784,7 +786,7 @@ void main() {
       final oauth = mode as TraciveOAuthMode;
       expect(oauth.clientType, ClientType.public);
       expect(oauth.scopes, isNotEmpty);
-      expect(oauth.partnerUserId, isNull);
+      expect(oauth.partnerUserId, 'partner-user-1');
     });
 
     test('is exhaustively switchable', () {
@@ -795,6 +797,7 @@ void main() {
       expect(
         describe(
           const TraciveMode.oauth(
+            partnerUserId: 'partner-user-1',
             clientId: 'a',
             redirectUri: 'https://b.example/c',
           ),
@@ -809,10 +812,12 @@ void main() {
 
     test('compares by value', () {
       const a = TraciveMode.oauth(
+        partnerUserId: 'partner-user-1',
         clientId: 'a',
         redirectUri: 'https://b.example/c',
       );
       const b = TraciveMode.oauth(
+        partnerUserId: 'partner-user-1',
         clientId: 'a',
         redirectUri: 'https://b.example/c',
       );

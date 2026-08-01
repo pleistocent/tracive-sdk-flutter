@@ -1630,6 +1630,7 @@ void main() {
 // -----------------------------------------------------------------------------
 
 const TraciveMode _oauthMode = TraciveMode.oauth(
+  partnerUserId: 'partner-user-1',
   clientId: 'partner-client-id',
   redirectUri: 'https://partner.example/oauth/callback',
 );

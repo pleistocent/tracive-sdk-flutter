@@ -38,7 +38,7 @@ Uri buildAuthorizeUrl({
   required List<String> scopes,
   required String state,
   required String codeChallenge,
-  String? partnerUserId,
+  required String partnerUserId,
 }) {
   return environment.authorizeEndpoint.replace(
     queryParameters: <String, String>{
@@ -49,8 +49,11 @@ Uri buildAuthorizeUrl({
       'state': state,
       'code_challenge': codeChallenge,
       'code_challenge_method': PkcePair.codeChallengeMethod,
-      if (partnerUserId != null && partnerUserId.trim().isNotEmpty)
-        'partner_user_id': partnerUserId.trim(),
+      // Sent as written. It is stored on the grant and echoed back to the
+      // partner in `grant.revoked`, so trimming it here would hand them back
+      // something other than what they sent. Presence is enforced at
+      // construction, not here.
+      'partner_user_id': partnerUserId,
     },
   );
 }
