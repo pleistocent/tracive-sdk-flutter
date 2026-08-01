@@ -486,12 +486,33 @@ void main() {
       await oauth.authorize();
 
       expect(launcher.probed, hasLength(1));
-      expect(launcher.probed.single.scheme, 'tracive');
       expect(
         launcher.probed.single.scheme,
         isNot('https'),
         reason: 'canOpen on https is always true — a browser is always there',
       );
+      // The whole URL, not just the scheme. Asserting the scheme alone is what
+      // let `tracive://authorize` survive here: Android resolves a probe by
+      // intent-filter matching, the app registers no custom-scheme host named
+      // `authorize`, and the probe therefore answered "not installed" on every
+      // Android device including the ones holding the app. The scheme was
+      // right the whole time; the host was the bug, and nothing looked at it.
+      expect(launcher.probed.single.toString(), 'tracive://');
+    });
+
+    test('probes the sandbox scheme when the environment is sandbox', () async {
+      final launcher = _FakeLauncher(installed: true);
+      final oauth = _oauth(
+        launcher: launcher,
+        environment: TraciveEnvironment.sandbox,
+      );
+
+      await oauth.authorize();
+
+      // Sandbox and production are separate worlds: neither build claims the
+      // other's scheme, so probing `tracive://` on a device carrying only the
+      // sandbox app reports "not installed" for an app that is right there.
+      expect(launcher.probed.single.toString(), 'tracivedev://');
     });
 
     test(
@@ -2295,8 +2316,10 @@ TraciveOAuth _oauth({
   MutableClock? clock,
   ClientType clientType = ClientType.public,
   String? installUrl,
+  TraciveEnvironment environment = TraciveEnvironment.production,
 }) =>
     TraciveOAuth(
+      environment: environment,
       mode: TraciveOAuthMode(
         clientId: 'partner-client-id',
         redirectUri: 'https://partner.example/oauth/callback',

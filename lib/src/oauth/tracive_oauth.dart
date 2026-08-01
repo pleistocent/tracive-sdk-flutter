@@ -118,8 +118,17 @@ class TraciveOAuth {
   /// carries no code field of its own.
   static const String blankInstallUrlReason = 'blank_install_url';
 
-  /// URL scheme the Tracive app registers. Used **only** as the presence probe.
+  /// URL scheme the production Tracive app registers. Used **only** as the
+  /// presence probe.
   static const String traciveAppScheme = 'tracive';
+
+  /// URL scheme the sandbox build registers.
+  ///
+  /// Sandbox and production are separate worlds by design: neither claims the
+  /// other's scheme, so a probe for one cannot see the other. The scheme is
+  /// what this SDK probes for; the sandbox build's application id is not
+  /// something it needs, and naming one here would disclose that it exists.
+  static const String traciveSandboxAppScheme = 'tracivedev';
 
   /// The install page a device without the Tracive app is sent to.
   ///
@@ -135,8 +144,26 @@ class TraciveOAuth {
   ///
   /// A custom-scheme URL, not the authorize URL: `canOpen` on an `https://` URL
   /// is always `true` because a browser is always installed.
-  static final Uri appPresenceProbe =
-      Uri.parse('$traciveAppScheme://authorize');
+  ///
+  /// **The scheme alone, with no host.** This used to probe
+  /// `tracive://authorize`, and Android resolves such a probe by intent-filter
+  /// matching — a filter naming a host requires that host to match. The app
+  /// registers custom-scheme hosts `home`, `auth`, `search`, `report` and
+  /// `dev-tools`, and no host named `authorize`, so the probe answered "not
+  /// installed" on every Android device *including the ones holding the app*,
+  /// and the user was sent to the install page while already holding it. iOS
+  /// was unaffected: `canOpenURL` there inspects only the scheme.
+  static Uri appPresenceProbeFor(TraciveEnvironment environment) =>
+      Uri.parse('${_presenceSchemeFor(environment)}://');
+
+  /// The scheme to probe for, per environment.
+  ///
+  /// A custom base URL is a partner proxy or a local server; the app on the
+  /// device is still the production one unless the integrator says otherwise.
+  static String _presenceSchemeFor(TraciveEnvironment environment) =>
+      environment == TraciveEnvironment.sandbox
+          ? traciveSandboxAppScheme
+          : traciveAppScheme;
 
   /// The OAuth configuration this flow runs.
   final TraciveOAuthMode mode;
@@ -314,7 +341,8 @@ class TraciveOAuth {
   /// Answers `false` when the manifest declaration is missing, which is
   /// indistinguishable from "not installed". See [AuthLauncher.canOpen] for the
   /// `<queries>` / `LSApplicationQueriesSchemes` entries this needs.
-  Future<bool> isTraciveAppInstalled() => _launcher.canOpen(appPresenceProbe);
+  Future<bool> isTraciveAppInstalled() =>
+      _launcher.canOpen(appPresenceProbeFor(environment));
 
   /// Starts the flow — steps 1 to 3 in `doc/oauth.md`.
   ///
