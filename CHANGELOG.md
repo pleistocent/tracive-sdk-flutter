@@ -8,65 +8,6 @@ until it is frozen at `1.0.0`.
 
 ## [Unreleased]
 
-### Changed
-
-- **The retry defaults are now the set all four Tracive SDKs share**, and each
-  number has its reasoning written beside it. `initialBackoff` moves from 300 ms
-  to **500 ms**, `maxBackoff` from 5 s to **8 s**, and a **`jitter` of 0.2** is
-  added — this SDK had none at all. `maxAttempts` (3) and `backoffMultiplier`
-  (2.0) already agreed.
-
-  The values had drifted because nothing asserted them and nothing explained
-  them: three of the four SDKs shipped three different initial backoffs and two
-  jitter ratios, with no reason recorded anywhere for any of them. Behavioural
-  tests cannot catch that, so each value is now pinned by name.
-
-  `jitter` shaves up to 20% off each computed delay and is **one-sided — it only
-  ever shortens a wait**, so `maxBackoff` stays a true ceiling. Pass `jitter: 0`
-  for a fully deterministic schedule, or a seeded `Random` to `backoffFor` when
-  a test needs one.
-
-  None of these numbers is measured; the Tracive API is not deployed. They are
-  defensible starting points with their reasoning attached, and the first real
-  production data should be allowed to move them — in all four SDKs together.
-
-- **BREAKING: `handleCallback` returns `AuthResult?`, and `null` means "this
-  link was not addressed here".** Before acting on a URL it is now checked
-  against the client's own `redirectUri` and must carry at least one of `state`,
-  `code` or `error`. A URL failing either check returns `null` with nothing
-  touched — not even a read of the store. The Kotlin SDK has had this; this SDK
-  acted on whatever URL it was handed.
-
-  It matters because hosts are told to route their whole deep-link surface
-  through this method, and any app on the device can register a scheme and fire
-  a URL at yours. Without the check, an unrelated link — your own marketing
-  link, a share intent, a stray redirect — was judged as an OAuth redirect, and
-  the honest verdict on a link carrying no `state` is
-  `TraciveStateMismatchException`: an error raised at the user about a consent
-  that is perfectly fine.
-
-  **What you need to change:** add a `case null:` to your `switch`, and treat it
-  as "carry on with my own routing". The comparison is deliberately loose —
-  scheme, authority and path, case-insensitive, trailing slashes ignored — so a
-  browser that normalises the URL on the way back cannot cost a user the consent
-  they just gave. `state` still decides whether a code may be redeemed; nothing
-  past the gate moved.
-
-### Added
-
-- **`TraciveOAuth.cancelPendingAuthorization()` and
-  `TraciveOAuth.pendingAuthorizationId`.** A browser that closes without a
-  redirect produces no signal the SDK can see, so a flow the user walked away
-  from left its record on the device — a live PKCE verifier beside a `state`
-  still acceptable — until it aged out ten minutes later. The host app is the
-  only party that knows the browser closed; now it can say so. The Kotlin and
-  Swift SDKs already had this.
-
-  Pass `authorizationId` when you can: a browser-closed signal arrives from a
-  lifecycle callback, not from the code that started the flow, and it can
-  arrive late enough to cancel an attempt that has already superseded it. See
-  [`doc/oauth.md`](doc/oauth.md).
-
 ### Fixed
 
 - **A 401 now triggers the refresh whenever it is not terminal**, rather than
@@ -293,6 +234,19 @@ until it is frozen at `1.0.0`.
 
 ### Added
 
+- **`TraciveOAuth.cancelPendingAuthorization()` and
+  `TraciveOAuth.pendingAuthorizationId`.** A browser that closes without a
+  redirect produces no signal the SDK can see, so a flow the user walked away
+  from left its record on the device — a live PKCE verifier beside a `state`
+  still acceptable — until it aged out ten minutes later. The host app is the
+  only party that knows the browser closed; now it can say so. The Kotlin and
+  Swift SDKs already had this.
+
+  Pass `authorizationId` when you can: a browser-closed signal arrives from a
+  lifecycle callback, not from the code that started the flow, and it can
+  arrive late enough to cancel an attempt that has already superseded it. See
+  [`doc/oauth.md`](doc/oauth.md).
+
 - **`TraciveScopes` holds the OAuth scope names as constants** —
   `TraciveScopes.scammerCheck` (`scammer.check`), `creditsRead`
   (`credits.read`) and `profileRead` (`profile.read`) — matching the other
@@ -325,6 +279,48 @@ until it is frozen at `1.0.0`.
   would be the worse failure. An empty value still reports `empty_value`.
 
 ### Changed
+
+- **The retry defaults are now the set all four Tracive SDKs share**, and each
+  number has its reasoning written beside it. `initialBackoff` moves from 300 ms
+  to **500 ms**, `maxBackoff` from 5 s to **8 s**, and a **`jitter` of 0.2** is
+  added — this SDK had none at all. `maxAttempts` (3) and `backoffMultiplier`
+  (2.0) already agreed.
+
+  The values had drifted because nothing asserted them and nothing explained
+  them: three of the four SDKs shipped three different initial backoffs and two
+  jitter ratios, with no reason recorded anywhere for any of them. Behavioural
+  tests cannot catch that, so each value is now pinned by name.
+
+  `jitter` shaves up to 20% off each computed delay and is **one-sided — it only
+  ever shortens a wait**, so `maxBackoff` stays a true ceiling. Pass `jitter: 0`
+  for a fully deterministic schedule, or a seeded `Random` to `backoffFor` when
+  a test needs one.
+
+  None of these numbers is measured; the Tracive API is not deployed. They are
+  defensible starting points with their reasoning attached, and the first real
+  production data should be allowed to move them — in all four SDKs together.
+
+- **BREAKING: `handleCallback` returns `AuthResult?`, and `null` means "this
+  link was not addressed here".** Before acting on a URL it is now checked
+  against the client's own `redirectUri` and must carry at least one of `state`,
+  `code` or `error`. A URL failing either check returns `null` with nothing
+  touched — not even a read of the store. The Kotlin SDK has had this; this SDK
+  acted on whatever URL it was handed.
+
+  It matters because hosts are told to route their whole deep-link surface
+  through this method, and any app on the device can register a scheme and fire
+  a URL at yours. Without the check, an unrelated link — your own marketing
+  link, a share intent, a stray redirect — was judged as an OAuth redirect, and
+  the honest verdict on a link carrying no `state` is
+  `TraciveStateMismatchException`: an error raised at the user about a consent
+  that is perfectly fine.
+
+  **What you need to change:** add a `case null:` to your `switch`, and treat it
+  as "carry on with my own routing". The comparison is deliberately loose —
+  scheme, authority and path, case-insensitive, trailing slashes ignored — so a
+  browser that normalises the URL on the way back cannot cost a user the consent
+  they just gave. `state` still decides whether a code may be redeemed; nothing
+  past the gate moved.
 
 - **An empty crypto address now reports `empty_address` and an empty username
   platform `empty_platform`**, instead of both reporting the generic
