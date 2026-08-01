@@ -192,8 +192,13 @@ read on its own does not enumerate who the user checked.
 ```dart
 await cache.prune();   // delete expired rows, then trim to maxEntries
 await cache.clear();   // empty it — do this on sign-out
-await cache.close();   // release the file; it reopens on next use
+await cache.close();   // terminal — release the file and stop using this cache
 ```
+
+`close()` is one-way. A closed cache stays closed: `read` and `write` degrade to
+misses, and `remove`, `clear` and `prune` throw. It used to reopen on the next
+use, which reads as convenient and is a race. Build a new `CheckCache` if you
+need one again.
 
 `prune()` runs automatically as part of `open()`, so a cold start pays for
 whatever expired while the app was closed. Eviction past `CachePolicy.maxEntries`

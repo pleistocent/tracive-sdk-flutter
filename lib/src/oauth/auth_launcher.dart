@@ -36,10 +36,10 @@ abstract class AuthLauncher {
   ///
   /// * **Android** — package visibility. Declare
   ///   `<queries><package android:name="com.pleistocent.tracive"/></queries>`
-  ///   (the SDK's own AAR manifest does this, so it merges into the host app
-  ///   automatically; a Flutter app that does not consume that AAR must add it
-  ///   to `android/app/src/main/AndroidManifest.xml`). Without it Android 11+
-  ///   answers `false` even when the app is installed.
+  ///   in your own `android/app/src/main/AndroidManifest.xml`. Nothing declares
+  ///   it for you: this package is pure Dart with no Android module, so there is
+  ///   no manifest of its own to merge into yours. Without the declaration
+  ///   Android 11+ answers `false` even when the app is installed.
   /// * **iOS** — add `tracive` to `LSApplicationQueriesSchemes` in
   ///   `Info.plist`. Without it `canOpenURL` answers `false`, again regardless
   ///   of the truth.
