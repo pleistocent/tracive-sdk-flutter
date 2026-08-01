@@ -708,6 +708,39 @@ void main() {
       expect(store.writes, 1);
       expect(store.reads, 2, reason: 'the second call really did read again');
     });
+
+    test('two callers opening the SQL store open one database', () async {
+      // `if (_database != null) return` is not a latch: both callers pass it
+      // and both call the opener, so one database handle is opened and then
+      // dropped on the floor without ever being closed.
+      var opened = 0;
+      final store = SqlCheckCacheStore(opener: () async {
+        opened++;
+        await Future<void>.delayed(Duration.zero);
+        return _FakeCacheDatabase();
+      });
+
+      await Future.wait(<Future<void>>[store.open(), store.open()]);
+
+      expect(opened, 1, reason: 'a second database handle was leaked');
+    });
+
+    test('a database that fails mid-open is closed, not leaked', () async {
+      // The handle is opened at the top of open() and only recorded at the
+      // bottom. Anything that throws in between — a PRAGMA read, the DROP, the
+      // CREATE — leaves an open handle that nothing can ever reach or close,
+      // and the cache retries on the next read and leaks another.
+      final database = _FakeCacheDatabase()..failNextExecute = true;
+      final store = SqlCheckCacheStore(opener: () async => database);
+
+      await expectLater(store.open(), throwsA(isA<StateError>()));
+      expect(
+        database.closed,
+        isTrue,
+        reason: 'the half-opened database was never closed',
+      );
+      expect(store.database, isNull);
+    });
   });
 }
 
@@ -845,9 +878,17 @@ class _FakeCacheDatabase extends CacheDatabase {
     arguments.add(args ?? const <Object?>[]);
   }
 
+  /// Makes the next [execute] throw, to model a statement failing part-way
+  /// through opening.
+  bool failNextExecute = false;
+
   @override
   Future<void> execute(String sql, [List<Object?>? args]) async {
     _record(sql, args);
+    if (failNextExecute) {
+      failNextExecute = false;
+      throw StateError('statement failed: $sql');
+    }
     switch (sql) {
       case SqlCheckCacheStore.dropTableSql:
         rows.clear();

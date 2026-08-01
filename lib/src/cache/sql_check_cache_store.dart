@@ -109,20 +109,50 @@ class SqlCheckCacheStore extends CheckCacheStore {
   /// diagnostics; the store reopens itself on the next call.
   CacheDatabase? get database => _database;
 
+  /// Non-null exactly while an [open] is running. Every other caller joins it.
+  Future<void>? _opening;
+
   @override
-  Future<void> open() async {
-    if (_database != null) return;
+  Future<void> open() {
+    if (_database != null) return Future<void>.value();
+
+    // `if (_database != null) return` is not a latch: `_database` is not
+    // assigned until the end of the open, so two concurrent callers both pass
+    // it and both call [opener]. One of the two database handles is then
+    // overwritten without ever having been closed.
+    final joined = _opening;
+    if (joined != null) return joined;
+
+    // Statement body, not an arrow: `whenComplete` awaits a Future its callback
+    // returns, and an assignment expression's value is the value assigned — so
+    // an arrow here would make the flight wait for itself.
+    final flight = _openOnce().whenComplete(() {
+      _opening = null;
+    });
+    _opening = flight;
+    return flight;
+  }
+
+  Future<void> _openOnce() async {
     final database = await opener();
-    final version = await _readSchemaVersion(database);
-    final stale = version != checkCacheSchemaVersion;
+    try {
+      final version = await _readSchemaVersion(database);
+      final stale = version != checkCacheSchemaVersion;
 
-    // Schema-version invalidation. A fresh file reports 0, so a first run
-    // takes this branch too and simply drops a table that is not there.
-    if (stale) await database.execute(dropTableSql);
-    await database.execute(createTableSql);
-    await database.execute(createIndexSql);
-    if (stale) await database.execute(writeSchemaVersionSql);
-
+      // Schema-version invalidation. A fresh file reports 0, so a first run
+      // takes this branch too and simply drops a table that is not there.
+      if (stale) await database.execute(dropTableSql);
+      await database.execute(createTableSql);
+      await database.execute(createIndexSql);
+      if (stale) await database.execute(writeSchemaVersionSql);
+    } catch (_) {
+      // The handle is open but not yet recorded in `_database`, so nothing else
+      // can ever reach it to close it. Without this, `DefaultCheckCache.open()`
+      // — which deliberately clears its own latch on error so the next read
+      // retries — leaks another one every time.
+      await database.close();
+      rethrow;
+    }
     _database = database;
   }
 
