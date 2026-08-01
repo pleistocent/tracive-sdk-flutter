@@ -209,6 +209,13 @@ This SDK will **not** auto-retry `checkScammer` on a 5xx or a timeout unless you
 pass an `idempotencyKey`. A blind retry of a POST that may already have been
 processed risks charging the user twice.
 
+Every check nonetheless leaves with an `Idempotency-Key`: when you supply none,
+the SDK generates a per-call one (prefixed `sdk-`, so a server-side log can tell
+it from yours) purely so that its **own** replay after a 401 refresh can be
+collapsed into a single charge. It is not a retry budget — that still keys off
+*your* key — and it is not deduplication across processes, because it is
+regenerated on every call.
+
 ```dart
 final key = const Uuid().v4();   // one per logical check, stable across retries
 await client.checkScammer(query, idempotencyKey: key);

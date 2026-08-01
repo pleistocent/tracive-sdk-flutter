@@ -69,6 +69,25 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **Every check now leaves with an `Idempotency-Key`.** One was sent only when
+  the caller supplied it — yet the client re-sends the identical POST after a
+  401 refresh, and without a key those two attempts are indistinguishable to the
+  server. Any billing that happens before or during authorisation was therefore
+  charged twice, with no way for the caller to detect it.
+
+  The replay was justified by "a 401 is rejected before billing": an assumption
+  about a server that is not deployed, and the one premise this SDK otherwise
+  refuses to make anywhere. Generating a key removes the need to assume
+  anything. Swift already did this.
+
+  **What you will observe:** an unkeyed check carries a generated
+  `Idempotency-Key` of the form `sdk-<uuid v4>`, prefixed so a server-side log
+  can tell an SDK-invented key from yours when a charge is disputed, and
+  regenerated per call so two deliberate re-checks of one identifier stay two
+  operations. It does **not** buy you a retry budget: a 5xx, a 429 or a timeout
+  on an unkeyed check is still surfaced immediately, exactly as `README.md` and
+  `SECURITY.md` promise, because that budget still keys off *your* key.
+
 - **`TraciveClient.signOut()` now empties the result cache as well as the
   tokens.** It only cleared the tokens, so the cached rows stayed readable
   afterwards: the departing user's check history — a list of who they suspected

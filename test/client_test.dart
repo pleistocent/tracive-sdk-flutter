@@ -104,12 +104,26 @@ void main() {
       expect(body['locale'], 'id');
     });
 
-    test('sends Idempotency-Key only when one is given', () async {
+    test('every check carries an Idempotency-Key, supplied or generated',
+        () async {
+      // The SDK re-sends this exact POST after a 401 refresh. Without a key the
+      // two attempts are indistinguishable to the server, so any billing that
+      // happens before or during authorisation is charged twice with no way for
+      // the caller to detect it. The code used to justify the replay with "a
+      // 401 is rejected before billing" — an assumption about a server that
+      // does not exist yet. Generating a key removes the need to assume it.
       final transport = _FakeTransport((_) => _ok(_checkBody()));
       final client = _client(transport: transport);
 
       await client.checkScammer(query, source: Source.server);
-      expect(transport.requests.last.header('idempotency-key'), isNull);
+      final generated = transport.requests.last.header('idempotency-key');
+      expect(generated, isNotNull);
+      expect(
+        generated,
+        startsWith('sdk-'),
+        reason: 'a key the SDK invented must be tellable from a partner\'s own '
+            'in a server-side log, or a disputed charge cannot be reconciled',
+      );
 
       await client.checkScammer(
         query,
@@ -125,7 +139,68 @@ void main() {
         source: Source.server,
         idempotencyKey: '   ',
       );
-      expect(transport.requests.last.header('idempotency-key'), isNull);
+      expect(
+        transport.requests.last.header('idempotency-key'),
+        startsWith('sdk-'),
+        reason: 'a blank key is no key, so one is generated',
+      );
+    });
+
+    test('a generated key is unique per call, never derived from the query',
+        () async {
+      // Deriving it from the identifier would collapse two deliberate re-checks
+      // of the same number into one answer and one charge — a different bug in
+      // the same family.
+      final transport = _FakeTransport((_) => _ok(_checkBody()));
+      final client = _client(transport: transport);
+
+      await client.checkScammer(query, source: Source.server);
+      await client.checkScammer(query, source: Source.server);
+
+      final keys = transport.requests
+          .map((request) => request.header('idempotency-key'))
+          .toList();
+      expect(keys, hasLength(2));
+      expect(keys.first, isNot(keys.last));
+    });
+
+    test('the post-refresh replay reuses the key of the attempt it repeats',
+        () async {
+      // The whole point. A replay under a different key is two operations to
+      // the server, which is exactly the double charge the key exists to stop.
+      var checks = 0;
+      final transport = _FakeTransport((request) {
+        if (request.url.path.endsWith('/oauth/token')) return _ok(_tokenBody());
+        checks++;
+        return checks == 1 ? _error(401, 'expired_token') : _ok(_checkBody());
+      });
+      final client =
+          _client(transport: transport, tokenStore: _authorizedStore());
+
+      await client.checkScammer(query, source: Source.server);
+
+      final sent = transport.to('/scammer-checks');
+      expect(sent, hasLength(2));
+      expect(sent.first.header('idempotency-key'), startsWith('sdk-'));
+      expect(
+        sent.last.header('idempotency-key'),
+        sent.first.header('idempotency-key'),
+        reason: 'the replay must be the same operation, not a second one',
+      );
+    });
+
+    test('a generated key does not buy a retry budget', () async {
+      // `isRetryable` still keys off the CALLER's key. The SDK's own key makes
+      // its replay collapsible; it cannot tell the caller whether the first
+      // attempt landed, and that is the decision retrying takes away from them.
+      final transport = _FakeTransport((_) => _error(503, 'unavailable'));
+      final client = _client(transport: transport, retryPolicy: _fastRetries);
+
+      await expectLater(
+        client.checkScammer(query, source: Source.server),
+        throwsA(isA<TraciveServerException>()),
+      );
+      expect(transport.requests, hasLength(1));
     });
 
     test('honours a sandbox or custom environment', () async {

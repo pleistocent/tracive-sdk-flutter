@@ -130,9 +130,11 @@ parsed — the HTTP-date form yields `null`.)
 
 ### Idempotency
 
-If the SDK sends `Idempotency-Key`, the proxy must honour it end to end: the
-same key with the same body returns the first response without charging again,
-and the same key with a *different* body is `409 idempotency_conflict`. Without
+The SDK sends `Idempotency-Key` on **every** check — the caller's when they
+supplied one, otherwise a generated per-call key prefixed `sdk-`. The proxy must
+honour it end to end: the same key with the same body returns the first response
+without charging again, and the same key with a *different* body is
+`409 idempotency_conflict`. Without
 that, the retry policy is unsafe and this SDK will refuse to auto-retry a
 check — which is the correct behaviour, but it means the partner absorbs every
 transient failure as a failed check.

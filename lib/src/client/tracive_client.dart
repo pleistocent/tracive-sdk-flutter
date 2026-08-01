@@ -15,6 +15,7 @@
 // halves drift apart.
 
 import 'dart:convert';
+import 'dart:math';
 
 import '../cache/check_cache.dart';
 import '../exception.dart';
@@ -47,6 +48,14 @@ const String creditsPath = 'credits';
 
 /// Path of the profile endpoint.
 const String profilePath = 'profile';
+
+/// Randomness for the generated `Idempotency-Key`.
+///
+/// `Random.secure()` because the cost is one draw per check and it removes a
+/// question that would otherwise need answering: a key only has to be unique,
+/// but "unique enough" arguments about a seeded generator are not worth having
+/// on a value that identifies a billable operation.
+final Random _idempotencyKeyRandom = Random.secure();
 
 /// The entry point of the SDK.
 ///
@@ -211,6 +220,13 @@ class TraciveClient {
   /// blind retry of a POST that may already have been processed risks charging
   /// the user twice. Pass a key (a UUID per logical check, stable across your
   /// own retries) and retrying becomes safe, both here and in your code.
+  ///
+  /// The request nonetheless always carries *some* `Idempotency-Key`: when you
+  /// supply none, a per-call one is generated so that this client's own replay
+  /// after a 401 refresh can be collapsed server-side. That does not give you a
+  /// retry budget — only your own key does — and it is no substitute for a key
+  /// derived from your transaction if you want retries or deduplication across
+  /// processes.
   ///
   /// Throws a [TraciveException] subtype from the error-code table, or
   /// [TraciveCacheMissException] when `source: Source.cache` finds no live
@@ -448,8 +464,8 @@ class TraciveClient {
     required String? locale,
     required String? idempotencyKey,
   }) async {
-    final hasIdempotencyKey =
-        idempotencyKey != null && idempotencyKey.trim().isNotEmpty;
+    final trimmed = idempotencyKey?.trim();
+    final callerKey = trimmed != null && trimmed.isNotEmpty ? trimmed : null;
     final body = jsonEncode(<String, Object?>{
       // phase 1 always sends USER.
       'creditSource': Billing.userCreditSource,
@@ -469,13 +485,29 @@ class TraciveClient {
         headers: <String, String>{
           'accept': 'application/json',
           'content-type': 'application/json; charset=utf-8',
-          if (hasIdempotencyKey) 'idempotency-key': idempotencyKey.trim(),
+          // Every check carries an `Idempotency-Key`, whether the caller
+          // supplied one or not.
+          //
+          // This client re-sends the identical POST after a 401 refresh (see
+          // [_sendAuthorized]). Without a key the two attempts are
+          // indistinguishable to the server, so any billing that happens before
+          // or during authorisation is charged twice, with no way for the
+          // caller to detect it. This code used to justify the replay with "a
+          // 401 is rejected before billing" — an assumption about a server that
+          // does not exist yet, and the one premise this SDK otherwise refuses
+          // to make anywhere. Generating a key removes the need to assume
+          // anything.
+          'idempotency-key': callerKey ?? _generatedIdempotencyKey(),
         },
         body: body,
       ),
-      // Without an Idempotency-Key a repeat could double-charge, so the
-      // retry policy is not allowed to fire.
-      safeToRepeat: hasIdempotencyKey,
+      // A generated key is **not** a licence to retry. The retry budget keys
+      // off the *caller's* key, so a 5xx, a 429 or a timeout on an unkeyed
+      // check is still surfaced immediately, exactly as README and SECURITY.md
+      // promise. A key the SDK invented would let the server collapse a
+      // duplicate charge, but it cannot tell the caller whether the first
+      // attempt landed, and that is the decision retrying takes away from them.
+      safeToRepeat: callerKey != null,
     );
 
     return CheckResult.fromJson(
@@ -489,12 +521,14 @@ class TraciveClient {
   ///
   /// Three distinct behaviours, deliberately not merged:
   ///
-  /// * **401 `expired_token` -> refresh -> replay, exactly once.** The rejected
-  ///   request was never processed, so replaying it cannot double-charge; that
-  ///   is why this replay is allowed even without an `Idempotency-Key`, and why
-  ///   it does not consume the retry budget. `refreshedOnce` bounds it: if the
-  ///   replay is rejected again, something is wrong that a third attempt will
-  ///   not fix.
+  /// * **401 -> refresh -> replay, exactly once.** The replay is the identical
+  ///   request, and it carries an `Idempotency-Key` — [_fetchCheck] attaches
+  ///   one even when the caller supplied none — so if the first attempt was
+  ///   billed after all, the server can collapse the two into a single charge.
+  ///   It deliberately does not consume the retry budget: this is a
+  ///   re-authentication, not a retry of a failed check. `refreshedOnce` bounds
+  ///   it, because if the replay is rejected again, something is wrong that a
+  ///   third attempt will not fix.
   /// * **401 `grant_revoked` -> clear and stop.** No refresh, no retry.
   ///   Retrying with a dead refresh token is what trips reuse detection.
   /// * **5xx / transport -> retry only if [safeToRepeat].**
@@ -555,6 +589,28 @@ class TraciveClient {
       }
       throw failure;
     }
+  }
+
+  /// A per-call key for a check the caller did not key itself.
+  ///
+  /// Prefixed so a key this SDK invented is distinguishable from a partner's
+  /// own in a server-side log, which is what makes a disputed charge
+  /// reconcilable. A v4 UUID is the right shape: the key only has to be unique,
+  /// never guessable or reproducible, and it must **never** be derived from the
+  /// query — that would collapse two deliberate re-checks of the same
+  /// identifier into one answer and one charge, which is a different bug in the
+  /// same family.
+  static String _generatedIdempotencyKey() {
+    final bytes = List<int>.generate(
+      16,
+      (_) => _idempotencyKeyRandom.nextInt(256),
+    );
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 1
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return 'sdk-${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
   }
 
   Map<String, Object?> _requireJsonObject(TraciveHttpResponse response) {

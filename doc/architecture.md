@@ -264,9 +264,12 @@ inconsistent until you see what each is protecting:
   is discarded rather than refilling the store the user just emptied.
 
 The 401 branches at the top of the diagram are `TraciveClient._sendAuthorized`,
-which is where the whole strategy now lives: `expired_token` triggers one refresh
-and one replay — safe without an `Idempotency-Key`, because a rejected request
-was never processed, and it does not consume the retry budget — while
+which is where the whole strategy now lives: a non-terminal 401 triggers one
+refresh and one replay. The replay is the identical request and carries an
+`Idempotency-Key` — the client attaches one even when the caller supplied none —
+so a first attempt that *was* billed can be collapsed server-side rather than
+charged twice. It does not consume the retry budget, being a re-authentication
+rather than a retry of a failed check. Meanwhile
 `grant_revoked` clears the tokens and stops. `grant_revoked` is never retried;
 retrying with a dead refresh token is exactly the pattern reuse detection
 punishes. A *second* `expired_token` gives up rather than looping.
