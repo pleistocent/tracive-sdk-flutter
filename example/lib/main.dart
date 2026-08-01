@@ -93,7 +93,16 @@ class _CheckScreenState extends State<CheckScreen> {
       // inside the binary.
       mode: const TraciveMode.oauth(
         clientId: 'demo-client',
-        redirectUri: 'tracive-demo://callback',
+        // An https App Link / Universal Link, not a custom scheme, and that is
+        // not a stylistic choice. A custom scheme (`tracive-demo://callback`)
+        // is claimed first-come on both platforms: any other app on the device
+        // can register the same one and receive the authorization code. An
+        // App Link is bound to a host you control by
+        // `/.well-known/assetlinks.json` (Android) or the
+        // apple-app-site-association file (iOS), so it cannot be claimed by
+        // somebody else. `SECURITY.md` says the same, and this file is what
+        // integrators copy.
+        redirectUri: 'https://example.tracive.id/oauth/callback',
         scopes: <String>['scammer.check'],
       ),
       transport: _backend,
