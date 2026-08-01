@@ -1,5 +1,7 @@
 // Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
 
+import '../oauth/authorize_url.dart';
+
 /// Which Tracive deployment the client talks to.
 ///
 /// **The Open API is not live yet.** These hosts are the documented contract,
@@ -86,6 +88,25 @@ class TraciveEnvironment {
     final suffix = path.startsWith('/') ? path.substring(1) : path;
     return Uri.parse('$baseUrl/$suffix');
   }
+
+  /// Where the authorization request is opened.
+  ///
+  /// **This is not on the API host, and it cannot be derived from [baseUrl].**
+  /// `api.tracive.id/v1` answers the data calls; the authorize URL points at
+  /// `tracive.id`, because that is the origin the shipping Tracive app claims
+  /// as an App Link and a Universal Link. Resolving this path against
+  /// [baseUrl] produces a URL no Tracive build claims — it opens a web page
+  /// instead of the app, and the consent flow cannot complete at all. This SDK
+  /// did exactly that until 2 August 2026.
+  ///
+  /// A custom environment keeps the old behaviour and appends the path to its
+  /// own base URL: a partner proxy or a local server is whatever the
+  /// integrator points it at, and there is no app claiming it either way.
+  Uri get authorizeEndpoint => switch (name) {
+        'production' => Uri.parse('https://tracive.id/oauth/authorize'),
+        'sandbox' => Uri.parse('https://sandbox.tracive.id/oauth/authorize'),
+        _ => resolve(authorizePath),
+      };
 
   static String _withoutTrailingSlash(String value) {
     var out = value;

@@ -143,8 +143,15 @@ void main() {
         partnerUserId: 'partner-user-9',
       );
 
-      expect(url.origin, 'https://api.tracive.id');
-      expect(url.path, '/v1/oauth/authorize');
+      // The authorize host is NOT the API host. `api.tracive.id` answers the
+      // data calls; only `tracive.id` is claimed by the Tracive app as an App
+      // Link, so only it opens the app rather than a web page. This assertion
+      // used to say `https://api.tracive.id` + `/v1/oauth/authorize`, and it
+      // pinned a URL no Tracive build has ever claimed — the consent flow
+      // could not complete at all, and no test in this repo could see it
+      // because the test agreed with the bug.
+      expect(url.origin, 'https://tracive.id');
+      expect(url.path, '/oauth/authorize');
       expect(url.queryParameters['response_type'], 'code');
       expect(url.queryParameters['client_id'], 'partner-client-id');
       expect(
@@ -498,7 +505,10 @@ void main() {
 
       expect(result, isNull, reason: 'null means "the browser is open"');
       final url = launcher.opened.single;
-      expect(url.path, '/v1/oauth/authorize');
+      // Host and path together: what the app claims is the whole origin, and
+      // asserting the path alone is what let the wrong host survive here.
+      expect(url.origin, 'https://tracive.id');
+      expect(url.path, '/oauth/authorize');
       expect(url.queryParameters['code_challenge_method'], 'S256');
 
       final pending = await store.readPending();

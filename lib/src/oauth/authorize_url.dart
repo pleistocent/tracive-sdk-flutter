@@ -12,7 +12,10 @@
 import '../model/tracive_environment.dart';
 import 'pkce.dart';
 
-/// Path of the authorization endpoint, relative to the environment base URL.
+/// Path of the authorization endpoint.
+///
+/// Only a custom environment resolves it against the base URL; production and
+/// sandbox have their own origin. See [TraciveEnvironment.authorizeEndpoint].
 const String authorizePath = 'oauth/authorize';
 
 /// Path of the token endpoint.
@@ -37,7 +40,7 @@ Uri buildAuthorizeUrl({
   required String codeChallenge,
   String? partnerUserId,
 }) {
-  return environment.resolve(authorizePath).replace(
+  return environment.authorizeEndpoint.replace(
     queryParameters: <String, String>{
       'response_type': 'code',
       'client_id': clientId,
