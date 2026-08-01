@@ -84,6 +84,20 @@ class TraciveTokens {
   final String? refreshToken;
 
   /// When [accessToken] stops being accepted, in UTC. `null` if unknown.
+  ///
+  /// Stored, and kept deliberately — but **nothing in this SDK acts on it**.
+  /// `TraciveOAuth.ensureAccessToken` never reads it, and no request is
+  /// refreshed ahead of it; a token is refreshed when the server answers
+  /// `401 expired_token`, and at no other moment. The reasoning is on
+  /// `TraciveOAuth.ensureAccessToken`, and the short version is that this value
+  /// can only be compared against the device's clock, which the SDK does not
+  /// own.
+  ///
+  /// It remains readable because an integrator may have a good reason to look:
+  /// warming a session before a user-visible action, showing "signed in until",
+  /// or deciding to call `TraciveOAuth.refreshTokens` early on a device whose
+  /// clock it trusts. Reading it costs nothing; letting the SDK schedule work
+  /// from it is what was removed.
   final DateTime? expiresAt;
 
   /// Scopes the server actually granted — not necessarily those requested.
@@ -99,19 +113,25 @@ class TraciveTokens {
   /// consent.
   bool get canRefresh => (refreshToken ?? '').isNotEmpty;
 
-  /// Whether [accessToken] is expired at [now], counting [skew] as expired.
+  /// Whether [accessToken] is past [expiresAt] at [now]. An unknown
+  /// [expiresAt] answers `false`.
   ///
-  /// The skew is not paranoia about clock drift so much as about flight time: a
-  /// token with four seconds left is a token that will be rejected by the time
-  /// the request lands, and that rejection costs a round trip and a refresh
-  /// anyway. An unknown [expiresAt] is treated as **not** expired — the 401
-  /// path will catch it, and guessing "expired" would refresh on every single
-  /// call.
-  bool isExpiredAt(DateTime now,
-      {Duration skew = const Duration(seconds: 60)}) {
+  /// **Informational.** No code path in this SDK calls it: sending a token is
+  /// not conditional on the answer, and neither is refreshing one. It is here
+  /// for an integrator who wants to look — see [expiresAt] for what looking is
+  /// good for, and `TraciveOAuth.ensureAccessToken` for why the SDK itself does
+  /// not.
+  ///
+  /// There is no skew parameter. Widening the window by a minute was this
+  /// SDK's way of allowing for a request's flight time, and it made the verdict
+  /// depend twice over on a clock nobody here controls — once for [now] and
+  /// once for the margin. If you want a margin, subtract it from your own
+  /// [now]; that keeps the choice, and the clock it rests on, with the caller
+  /// making it.
+  bool isExpiredAt(DateTime now) {
     final expiry = expiresAt;
     if (expiry == null) return false;
-    return !now.toUtc().isBefore(expiry.toUtc().subtract(skew));
+    return !now.toUtc().isBefore(expiry.toUtc());
   }
 
   /// The `Authorization` header value.

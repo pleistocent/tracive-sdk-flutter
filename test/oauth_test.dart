@@ -876,10 +876,15 @@ void main() {
       expect(transport.requests, isEmpty);
     });
 
-    test('an expired token is refreshed before the request goes out', () async {
+    test(
+        'an expired token is sent as it is — the 401 refreshes it, not a timer',
+        () async {
+      // Refresh is reactive, and only reactive. The stored token goes out even
+      // when `expiresAt` has passed; the server is the authority on whether it
+      // is still good, and its `401 expired_token` is what triggers the refresh.
       final clock = MutableClock(_t0);
       final store = _authorizedStore();
-      final transport = _FakeTransport((_) => _ok(_tokenBody()));
+      final transport = _FakeTransport((_) => fail('nothing should refresh'));
       final oauth = _oauth(
         tokenStore: store,
         transport: transport,
@@ -887,27 +892,37 @@ void main() {
       );
 
       clock.advance(const Duration(hours: 2));
-      expect(await oauth.ensureAccessToken(), 'access-token-2');
-      expect(transport.requests, hasLength(1));
+      expect(await oauth.ensureAccessToken(), 'access-token-1');
+      expect(transport.requests, isEmpty);
     });
 
-    test('the skew treats an about-to-expire token as expired', () async {
-      // A token with four seconds left will be rejected by the time the request
-      // lands, and that rejection costs a round trip and a refresh anyway.
+    test('a device clock running fast cannot make this refresh', () async {
+      // This is the case the removed skew got wrong. The comparison could only
+      // ever be against the device's clock, so a phone ten minutes ahead
+      // declared every token expired and refreshed on every single call — and
+      // with rotating refresh tokens, every rotation is another chance to trip
+      // reuse detection and sign the user out.
       final clock = MutableClock(_t0);
-      final transport = _FakeTransport((_) => _ok(_tokenBody()));
+      final transport = _FakeTransport((_) => fail('nothing should refresh'));
       final oauth = _oauth(
         tokenStore: _authorizedStore(),
         transport: transport,
         clock: clock,
       );
 
+      // Thirty seconds before the stored expiry: the old 60-second skew called
+      // this expired and refreshed here.
       clock.advance(const Duration(minutes: 59, seconds: 30));
-      expect(await oauth.ensureAccessToken(), 'access-token-2');
+      expect(await oauth.ensureAccessToken(), 'access-token-1');
+      expect(transport.requests, isEmpty);
     });
 
-    test('expired with no refresh token is ExpiredToken, not a silent retry',
+    test('an expired token with no refresh token is still handed over',
         () async {
+      // There is nothing to refresh, but there is also nothing to decide: the
+      // token is sent, and the server answers. Refusing here would be this SDK
+      // making an expiry judgement on a clock it does not own — the very thing
+      // that was removed.
       final clock = MutableClock(_t0);
       final store = InMemoryTokenStore(
         tokens: TraciveTokens(
@@ -918,10 +933,56 @@ void main() {
       final oauth = _oauth(tokenStore: store, clock: clock);
 
       clock.advance(const Duration(hours: 1));
+      expect(await oauth.ensureAccessToken(), 'access-token-1');
+    });
+
+    test('an empty access token is a typed error even beside a refresh token',
+        () async {
+      // Reachable only from a damaged storage record, since the token endpoint
+      // response is rejected when it carries no `access_token`. It must not
+      // become `Bearer ` on the wire now that nothing downstream of the
+      // presence check can turn it away.
+      final oauth = _oauth(
+        tokenStore: InMemoryTokenStore(
+          tokens: const TraciveTokens(
+            accessToken: '',
+            refreshToken: 'refresh-token-1',
+          ),
+        ),
+        transport: _FakeTransport((_) => fail('nothing should be sent')),
+      );
+
       await expectLater(
         oauth.ensureAccessToken(),
-        throwsA(isA<TraciveExpiredTokenException>()),
+        throwsA(isA<TraciveInvalidTokenException>()),
       );
+    });
+  });
+
+  group('TraciveTokens.isExpiredAt', () {
+    // Nothing in the SDK calls this; it is kept for an integrator who wants to
+    // look at `expiresAt` and decide for themselves.
+    test('answers on the instant, with no skew of its own', () {
+      final tokens = TraciveTokens(
+        accessToken: 'access-token-1',
+        expiresAt: _t0.add(const Duration(hours: 1)),
+      );
+
+      expect(
+        tokens.isExpiredAt(_t0.add(const Duration(minutes: 59, seconds: 59))),
+        isFalse,
+        reason: 'one second before expiry is not expired',
+      );
+      expect(
+        tokens.isExpiredAt(_t0.add(const Duration(hours: 1))),
+        isTrue,
+        reason: 'the expiry instant itself is already expired',
+      );
+    });
+
+    test('an unknown expiry is not expired', () {
+      const tokens = TraciveTokens(accessToken: 'access-token-1');
+      expect(tokens.isExpiredAt(DateTime.utc(2099)), isFalse);
     });
   });
 

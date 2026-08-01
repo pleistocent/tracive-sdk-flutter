@@ -133,9 +133,11 @@ What the ordering buys, in the order it appears:
 
 ## C. Token lifecycle
 
-Every authorized request starts with `ensureAccessToken()`. A refresh token is
+Every authorized request starts with `ensureAccessToken()`, which hands over
+whatever is stored **without consulting the expiry**. A refresh happens when the
+server says so — `401 expired_token` — and at no other moment. A refresh token is
 single-use, so presenting one twice is what the server's reuse detection looks
-for — and it answers by revoking the whole grant. Four guards keep that from
+for, and it answers by revoking the whole grant. Four guards keep that from
 happening, and the diagram is mostly those four guards.
 
 ```mermaid
@@ -143,9 +145,12 @@ flowchart TD
     Start["ensureAccessToken"]
     Read["tokenStore.read"]
     NoToken["TraciveInvalidTokenException<br/>the user never authorized"]
-    Use["return the access token"]
-    NoRefresh["TraciveExpiredTokenException<br/>consent again"]
+    Use["return the access token,<br/>whatever expiresAt says"]
+    Send["send the request with it"]
+    Done["done"]
+    Replay["replay the request, once"]
     Refresh["refreshTokens with staleAccessToken"]
+    NoRefresh["TraciveInvalidTokenException<br/>nothing to refresh with;<br/>consent again"]
     Stale{"is the stored access token<br/>still the stale one?"}
     Latch{"is a refresh already in flight?"}
     Join["await that same future"]
@@ -163,18 +168,21 @@ flowchart TD
 
     Start --> Read
     Read -->|"nothing stored"| NoToken
-    Read -->|"not expired, allowing refreshSkew"| Use
-    Read -->|"expired, no refresh token"| NoRefresh
-    Read -->|"expired, canRefresh"| Refresh
-    Refresh --> Stale
-    Stale -->|"no, somebody else refreshed"| Use
+    Read -->|"anything stored"| Use
+    Use --> Send
+    Send -->|"2xx"| Done
+    Send -->|"401 grant_revoked"| Revoked
+    Send -->|"401 expired_token,<br/>not yet replayed"| Refresh
+    Refresh -->|"no refresh token"| NoRefresh
+    Refresh -->|"canRefresh"| Stale
+    Stale -->|"no, somebody else refreshed"| Replay
     Stale -->|"yes"| Latch
     Latch -->|"yes"| Join
-    Join --> Use
+    Join --> Replay
     Latch -->|"no"| Spent
     Spent -->|"yes"| Reread
     Reread --> Replaced
-    Replaced -->|"yes"| Use
+    Replaced -->|"yes"| Replay
     Replaced -->|"no"| DeadEnd
     Spent -->|"no"| Flight
     Flight --> Perform
@@ -183,8 +191,23 @@ flowchart TD
     Post -->|"HTTP error response"| HttpError
     HttpError -->|"invalid_grant or grant_revoked"| Revoked
     Post -->|"2xx"| Write
-    Write --> Use
+    Write --> Replay
+    Replay --> Start
 ```
+
+**Why one mechanism and not two.** Refreshing ahead of `expiresAt` was tried and
+removed. The reactive path is mandatory whatever else is true — a token can be
+revoked, and a token can expire between the check and the send — so a pre-check
+could never replace it, only run in front of it. Two mechanisms for one job, and
+the redundant one hid bugs in the mandatory one: the pre-check always won first,
+so the 401 path was the one that hardly ever ran. It was also comparing against
+the *device's* clock, which this SDK does not own: a phone running ten minutes
+fast refreshed on every call, and with rotating refresh tokens every rotation is
+another chance to trip reuse detection. The price of dropping it is one wasted
+round trip per token lifetime, single-flighted so one caller pays it, and it is
+not billed — authentication precedes billing, and an unusable bearer token is
+answered with a 401 rather than with a check. `expiresAt` is still stored, for a
+caller who wants to look; see `doc/oauth.md`.
 
 The four guards, and why none of them is redundant:
 
@@ -221,11 +244,13 @@ inconsistent until you see what each is protecting:
   its network call and compares it after, so a response that lands post-sign-out
   is discarded rather than refilling the store the user just emptied.
 
-Above all this, `TraciveClient._sendAuthorized` handles the 401 itself:
-`expired_token` triggers one refresh and one replay — safe without an
-`Idempotency-Key`, because a rejected request was never processed — while
-`grant_revoked` clears the tokens and stops. It is never retried; retrying with
-a dead refresh token is exactly the pattern reuse detection punishes.
+The 401 branches at the top of the diagram are `TraciveClient._sendAuthorized`,
+which is where the whole strategy now lives: `expired_token` triggers one refresh
+and one replay — safe without an `Idempotency-Key`, because a rejected request
+was never processed, and it does not consume the retry budget — while
+`grant_revoked` clears the tokens and stops. `grant_revoked` is never retried;
+retrying with a dead refresh token is exactly the pattern reuse detection
+punishes. A *second* `expired_token` gives up rather than looping.
 
 ---
 

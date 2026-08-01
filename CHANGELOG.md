@@ -145,6 +145,49 @@ until it is frozen at `1.0.0`.
   **If you pass `installUrl` from a build variable, make sure it is set, or stop
   passing it.** The migration is one line either way: drop the argument to take
   the shared default, or pass a real URL.
+- **Tokens are now refreshed only when the server rejects them, never ahead of
+  `expiresAt`. ⚠️ Breaking: `TraciveOAuth`'s `refreshSkew` parameter is gone,
+  and so is `skew:` on `TraciveTokens.isExpiredAt`.** `ensureAccessToken()` hands
+  over the stored access token without consulting its expiry; a `401
+  expired_token` is what triggers the single-flight refresh and the one replay,
+  as it always did. Every Tracive SDK is standardising on this one strategy.
+
+  **The migration is deletion.** If you construct `TraciveOAuth` yourself and
+  pass `refreshSkew: …`, remove the argument — nothing replaces it, and
+  `TraciveClient` never accepted one. If you called `isExpiredAt(now, skew: d)`,
+  call `isExpiredAt(now.add(d))` instead; the method itself stays. An integration
+  that mentions neither is unaffected, and nothing changed on the wire.
+
+  The reason is not that proactive refresh was expensive. It is that the reactive
+  path is **mandatory regardless** — a token can be revoked, and a token can
+  expire between the check and the send — so a pre-check could never replace it,
+  only run in front of it. That made two mechanisms for one job, and the
+  redundant one hid bugs in the mandatory one: the skew always won first, so the
+  401 path was the branch that hardly ever ran in production. Removing the skew
+  exposed exactly one such gap, which now has a test: a **cold start holding an
+  already-expired token**, where nothing has refreshed yet and the session's very
+  first request is the one that 401s. That path works, and it had never run.
+
+  The second reason is that the comparison could only ever be against **the
+  device's clock, which this SDK does not own**. A phone running ten minutes fast
+  declared every token expired and refreshed on every single call — and with
+  rotating refresh tokens and server-side reuse detection, a stream of rotations
+  is not just wasted traffic, it is repeated exposure to a revocation that signs
+  the user out. The 60 seconds was also a number nobody had derived: the one
+  sibling SDK that refreshed proactively used 30, and neither of them recorded a
+  reason.
+
+  What it costs is one wasted round trip per token lifetime, paid by a single
+  caller because the refresh is single-flight, and **not billed** — authorization
+  is checked before billing, so a request carrying an unusable bearer token is
+  answered with a 401 rather than with a check.
+
+  **`expiresAt` is still stored**, still serialised by `TokenStore`, and still
+  readable, as is `isExpiredAt`. Nothing in the SDK reads either one. They are
+  there for an integrator who wants to warm a session before a user-visible
+  action, or to display "signed in until", and who can then call
+  `refreshTokens()` — a decision made by code that knows whether its own clock is
+  trustworthy, rather than a default applied to every call on every device.
 - **A started-but-unfinished authorization now expires ten minutes after
   `authorize()`, not thirty**, which is the window every Tracive SDK uses.
   `pendingAuthorizationMaxAge` is still a constructor parameter and a value you

@@ -669,6 +669,50 @@ void main() {
       expect((await store.read())?.refreshToken, 'refresh-token-2');
     });
 
+    test('a cold start with an already-expired stored token still recovers',
+        () async {
+      // The scenario the removed proactive refresh always pre-empted, and
+      // therefore the one that had never actually run: the process has just
+      // started, nothing has refreshed yet, `expiresAt` is already in the past,
+      // and the very first request of the session is the one the server
+      // rejects. Under the old strategy `ensureAccessToken` refreshed on the
+      // clock before this request was ever built, so this path was dead code in
+      // exactly the situation it exists for.
+      var checks = 0;
+      final transport = _FakeTransport((request) {
+        if (request.url.path.endsWith('/oauth/token')) return _ok(_tokenBody());
+        checks++;
+        return checks == 1 ? _error(401, 'expired_token') : _ok(_checkBody());
+      });
+      final store = InMemoryTokenStore(
+        tokens: TraciveTokens(
+          accessToken: 'access-token-1',
+          refreshToken: 'refresh-token-1',
+          // Issued before this session began and never used since.
+          expiresAt: _t0.subtract(const Duration(hours: 1)),
+          grantedScopes: const <String>['scammer.check'],
+        ),
+      );
+      final client = _client(transport: transport, tokenStore: store);
+
+      final result = await client.checkScammer(query, source: Source.server);
+
+      expect(result.riskTier, RiskTier.high);
+      expect(
+        transport.to('/scammer-checks').first.header('authorization'),
+        'Bearer access-token-1',
+        reason: 'the expired token is sent; the server is what decides',
+      );
+      expect(transport.to('/oauth/token'), hasLength(1));
+      expect(transport.to('/scammer-checks'), hasLength(2));
+      expect(
+        transport.to('/scammer-checks').last.header('authorization'),
+        'Bearer access-token-2',
+        reason: 'the replay must carry the refreshed token',
+      );
+      expect((await store.read())?.refreshToken, 'refresh-token-2');
+    });
+
     test('a second expired_token gives up rather than looping', () async {
       final transport = _FakeTransport((request) {
         if (request.url.path.endsWith('/oauth/token')) return _ok(_tokenBody());

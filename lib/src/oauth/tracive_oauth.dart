@@ -61,6 +61,8 @@ import 'token_store.dart';
 ///   `doc/oauth.md`; RFC 8252 §8.12).
 /// * It never sends `code_challenge_method=plain`.
 /// * It never puts an OAuth parameter on the install link.
+/// * It never refreshes on a clock. A token is refreshed when the server
+///   rejects it, and at no other moment — see [ensureAccessToken].
 /// * It never sends an API key. There is no API key anywhere in this SDK,
 ///   in any mode.
 class TraciveOAuth {
@@ -83,7 +85,6 @@ class TraciveOAuth {
     AuthLauncher? launcher,
     TraciveClock? clock,
     Random? random,
-    this.refreshSkew = const Duration(seconds: 60),
     this.pendingAuthorizationMaxAge = PendingAuthorization.defaultMaxAge,
   })  : _transport = transport ?? createDefaultHttpTransport(),
         _tokenStore = tokenStore ?? platform.createDefaultTokenStore(),
@@ -178,9 +179,6 @@ class TraciveOAuth {
   /// nothing to gain by sending it — there is no deferred resume, so the user
   /// installs Tracive and retries here, against a freshly generated PKCE pair.
   final String installUrl;
-
-  /// How long before expiry an access token is treated as already expired.
-  final Duration refreshSkew;
 
   /// How long a started-but-unfinished authorization stays resumable.
   ///
@@ -430,13 +428,47 @@ class TraciveOAuth {
     }
   }
 
-  /// A bearer access token, refreshing first if the stored one is expired.
+  /// The stored bearer access token.
   ///
   /// PRIVACY: the return value is a credential. Do not log it, do not put it in
   /// an analytics event, do not attach it to a crash report.
   ///
   /// Throws [TraciveInvalidTokenException] when nothing is stored — that is
   /// "the user has not authorized", not an error worth retrying.
+  ///
+  /// ## Refresh is reactive, and only reactive
+  ///
+  /// This method does **not** consult [TraciveTokens.expiresAt], and it never
+  /// refreshes. The stored token is sent; if the server answers
+  /// `401 expired_token`, `TraciveClient` refreshes once — single-flight, via
+  /// [refreshTokens] — and replays the request. Every Tracive SDK is
+  /// standardising on exactly that path, and only that path.
+  ///
+  /// Refreshing ahead of the timestamp was tried and removed, for three
+  /// reasons:
+  ///
+  /// * **The reactive path is mandatory anyway.** A token can be revoked, and a
+  ///   token can expire between the check and the send, so the 401 has to be
+  ///   handled whatever else is true. A pre-check cannot replace it, only run in
+  ///   front of it — a second mechanism for one job. The redundant one hides
+  ///   bugs in the mandatory one: while the pre-check always wins first, the 401
+  ///   path is the one that rarely runs in production.
+  /// * **The timestamp is compared against the device clock, which this SDK
+  ///   does not own.** A phone running ten minutes fast declares every token
+  ///   expired and refreshes on every single call. With rotating refresh tokens
+  ///   and server-side reuse detection, that is not merely wasteful traffic: it
+  ///   is a stream of rotations, and each one is another chance to trip a
+  ///   revocation and sign the user out.
+  /// * **The cost of getting it wrong is one round trip per token lifetime**,
+  ///   paid by a single caller because the refresh is single-flight — and that
+  ///   round trip is not billed. Authentication precedes billing, and a request
+  ///   with an unusable bearer token is answered with a 401 rather than a check.
+  ///
+  /// [TraciveTokens.expiresAt] is still stored and still readable. An
+  /// integrator who wants to warm a session before a user-visible action can
+  /// read it through [tokenStore] and call [refreshTokens] — a deliberate
+  /// choice, made by code that knows whether its clock can be trusted, rather
+  /// than a default this SDK applies to every call on every device.
   Future<String> ensureAccessToken() async {
     final tokens = await _tokenStore.read();
     if (tokens == null || !tokens.hasAccessToken) {
@@ -446,19 +478,7 @@ class TraciveOAuth {
         statusCode: 401,
       );
     }
-    if (!tokens.isExpiredAt(_clock.now(), skew: refreshSkew)) {
-      return tokens.accessToken;
-    }
-    if (!tokens.canRefresh) {
-      throw const TraciveExpiredTokenException(
-        'The access token expired and there is no refresh token. '
-        'The user must authorize again.',
-        code: 'expired_token',
-        statusCode: 401,
-      );
-    }
-    final refreshed = await refreshTokens(staleAccessToken: tokens.accessToken);
-    return refreshed.accessToken;
+    return tokens.accessToken;
   }
 
   /// Refreshes the tokens, **single-flight**.
