@@ -432,6 +432,14 @@ class TraciveClient {
     await cache.clear();
   }
 
+  /// Empties the result cache, and nothing else.
+  ///
+  /// The same call as `client.cache.clear()`, named where a reader looks for
+  /// it. [signOut] already does this; reach for this one when the user stays
+  /// signed in and only the stored verdicts should go — a "clear data" button,
+  /// or a privacy setting. The four SDKs all spell it this way.
+  Future<void> clearCache() => cache.clear();
+
   /// Releases the HTTP transport. Call it when the client is done with.
   ///
   /// Deliberately does **not** close [cache]: a cache can be shared between

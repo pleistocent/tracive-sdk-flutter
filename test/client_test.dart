@@ -1429,6 +1429,30 @@ void main() {
   // person to pick up this device must not inherit it, and the SDK must not go
   // on serving verdicts obtained under consent that has just been withdrawn.
   // ---------------------------------------------------------------------------
+  group('clearCache', () {
+    test('empties the cache and leaves the grant alone', () async {
+      final clock = MutableClock(_t0);
+      final cache = CheckCache.inMemory(clock: clock.now);
+      await cache.write(query, _cachedResult(clock.now(), reportTotal: 7));
+      final store = _authorizedStore();
+      final client = _client(
+        transport: _FakeTransport((_) => _ok('{}')),
+        cache: cache,
+        clock: clock,
+        tokenStore: store,
+      );
+
+      await client.clearCache();
+
+      expect(await cache.read(query), isNull);
+      expect(
+        await store.read(),
+        isNotNull,
+        reason: 'this is the difference from signOut: the user stays signed in',
+      );
+    });
+  });
+
   group('signOut', () {
     test('empties the result cache as well as the tokens', () async {
       final clock = MutableClock(_t0);
