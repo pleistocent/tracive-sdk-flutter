@@ -11,20 +11,34 @@ until it is frozen at `1.0.0`.
 ### Fixed
 
 - **The query fold now reproduces JavaScript's string semantics, not Dart's.**
-  The backend folds in JS, and the folded key *is* the record key, so
-  a one-code-point difference is a guaranteed miss — and a miss is billed. Two
-  divergences were measured and closed, both in the new internal
-  `lib/src/query/js_string.dart`:
-  - **Case mapping.** Dart's `toUpperCase()`/`toLowerCase()` apply the Unicode
-    *simple* mapping; JavaScript applies the *full* one, which can change a
-    string's length. `ß` now uppercases to `SS` (it used to stay `ß`) and `İ`
-    now lowercases to `i` + U+0307 (it used to lose the combining mark). 103
-    code points were affected, including the `ﬁ`/`ﬃ` ligatures that a PDF or
-    bank-statement paste carries.
-  - **Trim.** Dart's `String.trim()` strips U+0085 NEXT LINE; JavaScript's does
-    not. `jsTrim` strips exactly the 25 code points the vendored fixture lists,
-    and the `[\s-]` class used by the account fold is now built from that same
-    set rather than from Dart's `\s`.
+  The API folds in JavaScript, and the folded key *is* the record key, so a
+  one-code-point difference is a guaranteed miss — and a miss is billed. Three
+  divergences were measured and closed, in the new internal
+  `lib/src/query/js_string.dart` and its generated tables:
+  - **Case mapping, length-changing.** Dart's `toUpperCase()`/`toLowerCase()`
+    apply the Unicode *simple* mapping; JavaScript applies the *full* one, which
+    can change a string's length. `ß` now uppercases to `SS` (it used to stay
+    `ß`) and `İ` now lowercases to `i` + U+0307 (it used to lose the combining
+    mark), along with the `ﬁ`/`ﬃ` ligatures a PDF or bank-statement paste
+    carries.
+  - **Case mapping, out-of-date.** Dart's simple table is several Unicode
+    releases behind the engine the API folds in. Measured over every code point
+    `U+0000`–`U+10FFFF`: **576 uppercase and 466 lowercase code points**
+    disagreed, covering Adlam, Cherokee, Georgian Mkhedruli/Mtavruli, Osage,
+    Warang Citi, Medefaidrin, Old Hungarian, Vithkuqi, Latin Extended-D,
+    Cyrillic, Greek, Armenian, Coptic and Glagolitic. `lib/src/query/
+    js_case_data.dart` is generated from a real engine and closes all of them;
+    `tool/verify_js_case_fold.dart` re-measures on demand and currently reports
+    zero.
+  - **Greek final sigma.** `Σ` lowercases to `ς` at the end of a word and `σ`
+    elsewhere. It is a context rule, so no per-code-point table can express it;
+    it is implemented directly. Dart always produced `σ`, so every Greek
+    identifier ending in sigma built a key that could not match.
+
+  One divergence is **not** closed, and is documented at the top of
+  `js_string.dart` rather than left to be discovered: the tables are a snapshot
+  of one Unicode release, and 94 code points across two very recently
+  bicameral scripts (Garay, Beria Erfe) would disagree with an older engine.
 - **The document-id guard rejects a lone UTF-16 surrogate.** `utf8.encode`
   silently substitutes U+FFFD for an unpaired surrogate, so such a key used to
   pass the 1500-byte check and then be rejected by the API — after the credit
@@ -51,7 +65,7 @@ until it is frozen at `1.0.0`.
   `README.md` did not compile and the example app had to import
   `package:tracive_sdk/src/...` paths. Nothing was renamed; only the barrel
   changed.
-- The vendored fixture is version 2 (33 vectors, up from 25).
+- The vendored fixture is version 3 (34 vectors, up from 25).
 
 ## [0.1.0] — 2026-07-31
 
