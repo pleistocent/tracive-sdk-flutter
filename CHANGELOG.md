@@ -116,9 +116,9 @@ implementation until the API ships.
 - `lib/src/cache/tracive_cache.dart` — the ~120 lines binding
   `sqflite_sqlcipher` and `flutter_secure_storage` — is covered by on-device
   integration testing, not by the unit suite. `doc/caching.md` says what to run.
-- The install link used when the Tracive app is missing
-  (`TraciveOAuth.defaultInstallUrl`) is a placeholder and must be confirmed
-  against the live chottu link before shipping.
+- The install link used when the Tracive app is missing is a **required**
+  constructor argument (`installUrl`) with no default. This package cannot
+  derive it, so it asks for it rather than guessing.
 
 [Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.1.0

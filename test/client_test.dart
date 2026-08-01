@@ -476,12 +476,42 @@ void main() {
       expect(client.cachePolicy.enabled, isFalse);
     });
 
+    test('OAuth mode refuses to be built without an install link', () {
+      // There used to be a default here, and the SDK's own documentation called
+      // it a placeholder that had to be confirmed before shipping. A wrong one
+      // is invisible in development: it only shows as a 404 for a user without
+      // the Tracive app, which is every user's first run, for every partner.
+      // This package cannot check the URL, so it asks for it.
+      expect(
+        () => TraciveClient(
+          mode: _oauthMode,
+          transport: _FakeTransport((_) => _ok('{}')),
+          tokenStore: _authorizedStore(),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('Proxy mode needs no install link — it has no OAuth flow', () {
+      expect(
+        () => TraciveClient(
+          mode: TraciveMode.proxy(
+            baseUrl: 'https://partner.example/tracive',
+            authHeaders: const <String, String>{'x-partner-key': 'k'},
+          ),
+          transport: _FakeTransport((_) => fail('nothing should be sent')),
+        ),
+        returnsNormally,
+      );
+    });
+
     test('the default cache takes the cachePolicy it was configured with', () {
       final client = TraciveClient(
         mode: _oauthMode,
         cachePolicy: const CachePolicy(highTtl: Duration(days: 3)),
         transport: _FakeTransport((_) => _ok('{}')),
         tokenStore: _authorizedStore(),
+        installUrl: 'https://install.example/app',
       );
       expect(client.cachePolicy.highTtl, const Duration(days: 3));
     });
@@ -935,6 +965,8 @@ TraciveClient _client({
       retryPolicy: retryPolicy,
       cache: cache,
       tokenStore: tokenStore ?? _authorizedStore(),
+      // Required, with no default in the SDK: see `TraciveOAuth.installUrl`.
+      installUrl: 'https://install.example/app',
     );
 
 /// A `CheckResult` as it would be after a server answer, for priming a cache.

@@ -42,6 +42,9 @@ final client = TraciveClient(
     redirectUri: 'https://your.app/oauth/callback',
     scopes: const ['scammer.check'],
   ),
+  // Where a user without the Tracive app is sent. Required: this package
+  // cannot know it, and a wrong one is a 404 on somebody's first run.
+  installUrl: 'https://…',
   // environment: TraciveEnvironment.sandbox,  // while you are developing
 );
 ```

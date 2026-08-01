@@ -56,6 +56,7 @@ const String profilePath = 'profile';
 ///     clientId: 'your-client-id',
 ///     redirectUri: 'https://your.app/oauth/callback',
 ///   ),
+///   installUrl: 'https://…',  // the install link Tracive gave you
 /// );
 ///
 /// final result = await client.checkScammer(TraciveQuery.phone('+6281234567891'));
@@ -81,11 +82,13 @@ const String profilePath = 'profile';
 class TraciveClient {
   /// Creates a client.
   ///
-  /// The first four parameters are the configuration. The rest are seams:
+  /// The first four parameters are the configuration. [installUrl] is
+  /// required in OAuth mode and has no default — see [TraciveOAuth.installUrl]
+  /// for why a guess would be worse than an argument. The rest are seams:
   /// [transport] and [clock] are named as such by the cross-SDK contract;
-  /// [retryPolicy], [cache], [tokenStore], [launcher], [oauth] and
-  /// [installUrl] are additive, and every one of them has a working
-  /// default, so an app passes none of them.
+  /// [retryPolicy], [cache], [tokenStore], [launcher] and [oauth] are additive,
+  /// and every one of them has a working default, so an app passes none of
+  /// them.
   ///
   /// **The default [cache] is in memory**, which is deliberate: a constructor
   /// must not silently open a database file and a Keystore entry. For the
@@ -114,6 +117,14 @@ class TraciveClient {
     TraciveOAuth? oauth,
     String? installUrl,
   }) {
+    // OAuth mode needs somewhere to send a user who does not have the
+    // Tracive app, and this package cannot know the URL — see
+    // `TraciveOAuth.installUrl`. Refused here rather than defaulted,
+    // because a wrong install link is invisible until it is a 404 on a
+    // real user's first run.
+    if (mode is TraciveOAuthMode && oauth == null && installUrl == null) {
+      throw ArgumentError.notNull('installUrl');
+    }
     final resolvedTransport = transport ?? createDefaultHttpTransport();
     final resolvedClock = clock ?? TraciveClock.system;
     // Proxy mode has no OAuth flow: it authenticates with the partner's own
@@ -128,7 +139,7 @@ class TraciveClient {
               tokenStore: tokenStore,
               launcher: launcher,
               clock: resolvedClock,
-              installUrl: installUrl,
+              installUrl: installUrl!,
             ))
         : null;
     return TraciveClient._(

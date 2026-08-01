@@ -77,8 +77,8 @@ const Set<String> oauthParameterNames = <String>{
 
 /// Builds the **clean** install link.
 ///
-/// > "Not installed → open the **clean** chottu install link (no OAuth
-/// > parameters whatsoever; an attribution tag naming the client is allowed)."
+/// Clean means no OAuth parameter of any kind travels on it. An attribution tag
+/// naming the client is allowed, and is the only thing added.
 ///
 /// Why "clean" is load-bearing: the user is about to leave for an app store and
 /// come back through an install-attribution service, and every hop in that

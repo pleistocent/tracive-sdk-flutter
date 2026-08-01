@@ -40,6 +40,7 @@ final client = TraciveClient(
     redirectUri: 'https://your.app/oauth/callback',
     scopes: const ['scammer.check'],
   ),
+  installUrl: 'https://…',   // where a user without the Tracive app is sent
 );
 
 switch (await client.authorize()) {
@@ -244,11 +245,12 @@ app, and taps again. Resuming an OAuth flow across an install would mean parking
 a verifier and a `state` in an attribution service, which is a credential in a
 third party's logs.
 
-> ⚠️ `TraciveOAuth.defaultInstallUrl` is `https://tracive.chottu.link/app`,
-> which is a **placeholder**. It is the one constant in this SDK that cannot be
-> derived from the frozen spec. Confirm it against the live chottu link before
-> shipping, and until then pass your own:
-> `TraciveClient(mode: …, installUrl: 'https://…')`.
+> `installUrl` is a **required** argument, and there is no default. It is the
+> one value in this SDK that cannot be derived from anything else in it, so a
+> default would be a guess nothing here could check — and a wrong install link
+> is invisible until it is a 404 for a user who does not have the Tracive app,
+> which is every user's first run. Tracive gives you the URL with your
+> `clientId`.
 
 ---
 
@@ -260,6 +262,7 @@ Every part of the flow above is unit-tested with no network and no device:
 ```dart
 final client = TraciveClient(
   mode: TraciveMode.oauth(clientId: 'test', redirectUri: 'https://x.test/cb'),
+  installUrl: 'https://install.test/app',
   transport: FakeTransport(),         // your fake
   launcher: FakeLauncher(installed: true),
   tokenStore: InMemoryTokenStore(),

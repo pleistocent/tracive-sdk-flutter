@@ -39,6 +39,11 @@ import 'package:tracive_sdk/src/oauth/pkce.dart';
 /// A fixed instant, so nothing here depends on when it is run.
 final DateTime _t0 = DateTime.utc(2026, 7, 31, 12);
 
+/// The install link these tests configure. There is no default in the SDK —
+/// see `TraciveOAuth.installUrl` — so every construction has to name one, which
+/// is the point.
+const String _installUrl = 'https://install.example/app';
+
 void main() {
   // ---------------------------------------------------------------------------
   // PKCE — step 1 of the flow, RFC 7636.
@@ -185,10 +190,7 @@ void main() {
 
   group('the clean install link', () {
     test('carries no OAuth parameter of any kind', () {
-      final url = buildInstallUrl(
-        'https://tracive.chottu.link/app',
-        clientId: 'partner-client-id',
-      );
+      final url = buildInstallUrl(_installUrl, clientId: 'partner-client-id');
       for (final name in oauthParameterNames) {
         expect(
           url.queryParameters.containsKey(name),
@@ -202,7 +204,7 @@ void main() {
     test('strips OAuth parameters that were already on the constant', () {
       // A misconfigured link constant must not be able to defeat this.
       final url = buildInstallUrl(
-        'https://tracive.chottu.link/app?state=leaked&code_challenge=leaked&ref=x',
+        '$_installUrl?state=leaked&code_challenge=leaked&ref=x',
         clientId: 'c',
       );
       expect(url.queryParameters.containsKey('state'), isFalse);
@@ -225,7 +227,7 @@ void main() {
 
       expect(result, isA<AuthAppNotInstalled>());
       expect(launcher.opened, hasLength(1));
-      expect(launcher.opened.single.host, 'tracive.chottu.link');
+      expect(launcher.opened.single.host, Uri.parse(_installUrl).host);
       // No PKCE pair, no state, nothing persisted. There is no
       // deferred resume — the user retries here after installing.
       expect(await store.readPending(), isNull);
@@ -1140,6 +1142,7 @@ void main() {
         launcher: launcher,
         clock: MutableClock(_t0),
         retryPolicy: RetryPolicy.none,
+        installUrl: _installUrl,
       );
 
       expect(await client.authorize(), isNull);
@@ -1212,6 +1215,7 @@ TraciveOAuth _oauth({
         redirectUri: 'https://partner.example/oauth/callback',
         clientType: clientType,
       ),
+      installUrl: _installUrl,
       transport: transport ?? _FakeTransport((_) => fail('unexpected request')),
       tokenStore: tokenStore ?? InMemoryTokenStore(),
       launcher: launcher ?? _FakeLauncher(installed: true),

@@ -65,6 +65,8 @@ import 'token_store.dart';
 class TraciveOAuth {
   /// Creates a flow for [mode].
   ///
+  /// [installUrl] is required; see the field for why there is no default.
+  ///
   /// Everything after [environment] is a seam with a working default:
   /// [transport] defaults to the platform HTTP client, [tokenStore] to the
   /// Keystore/Keychain-backed store on Flutter, [launcher] to `url_launcher`.
@@ -77,15 +79,14 @@ class TraciveOAuth {
     AuthLauncher? launcher,
     TraciveClock? clock,
     Random? random,
-    String? installUrl,
+    required this.installUrl,
     this.refreshSkew = const Duration(seconds: 60),
     this.pendingAuthorizationMaxAge = const Duration(minutes: 30),
   })  : _transport = transport ?? createDefaultHttpTransport(),
         _tokenStore = tokenStore ?? platform.createDefaultTokenStore(),
         _launcher = launcher ?? platform.createDefaultAuthLauncher(),
         _clock = clock ?? TraciveClock.system,
-        _random = random,
-        installUrl = installUrl ?? defaultInstallUrl;
+        _random = random;
 
   /// URL scheme the Tracive app registers. Used **only** as the presence probe.
   static const String traciveAppScheme = 'tracive';
@@ -101,15 +102,6 @@ class TraciveOAuth {
   static final Uri appPresenceProbe =
       Uri.parse('$traciveAppScheme://authorize');
 
-  /// The clean install link opened when the Tracive app is missing.
-  ///
-  /// **Confirm this against the live chottu link before shipping.** It is the
-  /// one constant in this SDK that cannot be derived from the frozen contract,
-  /// which names the install link without giving its URL — and a wrong value
-  /// sends every un-onboarded user to a 404. Override it with
-  /// `TraciveOAuth(installUrl: …)` until it is confirmed.
-  static const String defaultInstallUrl = 'https://tracive.chottu.link/app';
-
   /// The OAuth configuration this flow runs.
   final TraciveOAuthMode mode;
 
@@ -117,6 +109,19 @@ class TraciveOAuth {
   final TraciveEnvironment environment;
 
   /// Where the user is sent when the Tracive app is not installed.
+  ///
+  /// **Required, and deliberately so.** It is the one value in this SDK that
+  /// cannot be derived from anything else here: the contract names the install
+  /// link without giving its URL, so any default this package shipped would be
+  /// a guess that nothing in it could check. A wrong guess is invisible in
+  /// development — it only shows up as a 404 for users who do not have the
+  /// Tracive app, which is every user's first run — so there is no default. Ask
+  /// Tracive for it alongside your `clientId`; it arrives with the same
+  /// onboarding.
+  ///
+  /// It must be the **clean** link. Any OAuth parameter present on it is
+  /// stripped before it is opened, because an install-attribution service must
+  /// never see one.
   final String installUrl;
 
   /// How long before expiry an access token is treated as already expired.

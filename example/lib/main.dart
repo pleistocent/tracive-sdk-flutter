@@ -105,6 +105,11 @@ class _CheckScreenState extends State<CheckScreen> {
         redirectUri: 'https://example.tracive.id/oauth/callback',
         scopes: <String>['scammer.check'],
       ),
+      // Where a user without the Tracive app is sent. Required, with no
+      // default: the SDK cannot derive this URL, and a wrong one is a 404 on a
+      // real user's first run. A real app uses the link Tracive issues with its
+      // client id.
+      installUrl: 'https://example.tracive.id/app',
       transport: _backend,
       // A real app would pass `await openTraciveCache()` — SQLCipher on disk,
       // key in Keystore/Keychain. In-memory here so the example runs on any

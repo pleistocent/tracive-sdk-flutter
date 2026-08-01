@@ -537,6 +537,7 @@ TraciveClient _clientWith(_FakeTransport transport) => TraciveClient(
         clientId: 'partner-client-id',
         redirectUri: 'https://partner.example/oauth/callback',
       ),
+      installUrl: 'https://install.example/app',
       transport: transport,
       tokenStore: InMemoryTokenStore(
         // No `expiresAt`, so nothing refreshes proactively and each test observes
