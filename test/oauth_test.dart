@@ -885,6 +885,62 @@ void main() {
       );
     });
 
+    test('a refresh that times out never presents its token again', () async {
+      // A timeout is indistinguishable from a success whose response was lost:
+      // the server may already have rotated this refresh token. Sending it
+      // again would be reuse, and reuse revokes the whole grant. Re-authorizing
+      // is the strictly better outcome — if the server did consume the token,
+      // re-authorization was required anyway and this avoids a revocation; if
+      // it did not, the cost is one consent the user did not strictly need.
+      final store = _authorizedStore();
+      var calls = 0;
+      final transport = _FakeTransport((_) {
+        calls++;
+        if (calls == 1) throw const _SimulatedTimeout();
+        return _ok(_tokenBody());
+      });
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      await expectLater(
+        oauth.refreshTokens(),
+        throwsA(isA<TraciveInvalidTokenException>()),
+        reason: 'the caller is told to re-authorize, not to retry',
+      );
+      await expectLater(
+        oauth.refreshTokens(),
+        throwsA(isA<TraciveInvalidTokenException>()),
+      );
+      expect(
+        calls,
+        1,
+        reason: 'the possibly-consumed token must not go back on the wire',
+      );
+    });
+
+    test('a 200 the SDK cannot decode still counts the token as spent',
+        () async {
+      // The other half of the same rule. A 2xx means the server DID issue a new
+      // pair, so the old refresh token is definitely consumed — even if this
+      // SDK cannot make sense of what came back.
+      final store = _authorizedStore();
+      var calls = 0;
+      final transport = _FakeTransport((_) {
+        calls++;
+        return calls == 1 ? _ok('{"expires_in":3600}') : _ok(_tokenBody());
+      });
+      final oauth = _oauth(tokenStore: store, transport: transport);
+
+      await expectLater(
+        oauth.refreshTokens(),
+        throwsA(isA<TraciveServerException>()),
+      );
+      await expectLater(
+        oauth.refreshTokens(),
+        throwsA(isA<TraciveInvalidTokenException>()),
+      );
+      expect(calls, 1);
+    });
+
     test('a failed refresh does not wedge the latch', () async {
       final store = _authorizedStore();
       var calls = 0;

@@ -621,35 +621,71 @@ class TraciveOAuth {
     }
 
     _markSpent(refreshToken);
+
+    // Whether the marker may be released again depends entirely on what kind of
+    // failure this is, and there are only two kinds worth telling apart.
+    //
+    // A complete HTTP response, whatever its status, settles the question: an
+    // OAuth token endpoint that answers with an error has issued no tokens
+    // (RFC 6749 §5.2), so the refresh token was not consumed and the marker
+    // must come off — otherwise one 500 would end the grant for good.
+    //
+    // No response at all does not settle it. A socket timeout or a dropped
+    // connection is indistinguishable from a success whose reply was lost: the
+    // server may have rotated the token and be waiting to see the new one. The
+    // marker stays, and the caller is told to re-authorize. That is the
+    // strictly better trade, not merely the cautious one — if the token really
+    // was consumed, the grant already needs re-authorization and this avoids a
+    // revocation event on top; if it was not, the cost is one consent the user
+    // did not strictly need. Retrying loses in the first case and only ties in
+    // the second.
+    //
+    // In principle a connect-phase or DNS failure proves the request never
+    // arrived and could be released. It is not detected here: the transport is
+    // injectable, so the underlying error is whatever some other package chose
+    // to throw, and guessing at its shape would be a guess about the
+    // ambiguous-versus-safe distinction that this whole rule turns on.
+    final TraciveHttpResponse response;
     try {
-      final response = await _postForm(
+      response = await _postForm(
         environment.resolve(tokenPath),
         buildRefreshForm(refreshToken: refreshToken, clientId: mode.clientId),
       );
-      if (!response.isSuccess) {
-        final error = mapTokenErrorResponse(response);
-        if (error is TraciveGrantRevokedException) await _discardCredentials();
-        throw error;
-      }
-      final tokens = _decodeTokenResponse(response, previous: current);
-      if (epoch != _credentialEpoch) {
-        // Signed out (or the grant was revoked) while this was on the wire. The
-        // server has issued a fresh pair, but nobody asked for it any more —
-        // writing it would undo the sign-out.
-        throw _discardedMidFlight;
-      }
-      // One write for the pair. The refresh token rotates, so replacing them
-      // separately could strand a new access token beside a spent refresh
-      // token.
-      await _tokenStore.write(tokens);
-      return tokens;
-    } catch (_) {
-      // The flight failed, so release the marker or a retry would be refused
-      // forever. Whether that is the right thing to do for *every* kind of
-      // failure is a separate question.
-      _spentRefreshTokens.remove(refreshToken);
-      rethrow;
+    } on TraciveException {
+      // The transport error itself is deliberately not carried through: it is
+      // produced by whichever transport the host installed, and this SDK does
+      // not put text it did not write into an exception that ends up in a crash
+      // report next to a token refresh.
+      throw const TraciveInvalidTokenException(
+        'The refresh request failed before an answer arrived, so it is not '
+        'known whether the refresh token was consumed. It will not be '
+        'presented again; the user must authorize again.',
+        code: 'invalid_token',
+        statusCode: 401,
+      );
     }
+
+    if (!response.isSuccess) {
+      _spentRefreshTokens.remove(refreshToken);
+      final error = mapTokenErrorResponse(response);
+      if (error is TraciveGrantRevokedException) await _discardCredentials();
+      throw error;
+    }
+
+    // Past this point the server has issued a new pair, so the old refresh
+    // token is spent no matter what happens next — including a body this SDK
+    // cannot decode.
+    final tokens = _decodeTokenResponse(response, previous: current);
+    if (epoch != _credentialEpoch) {
+      // Signed out (or the grant was revoked) while this was on the wire. The
+      // server has issued a fresh pair, but nobody asked for it any more —
+      // writing it would undo the sign-out.
+      throw _discardedMidFlight;
+    }
+    // One write for the pair. The refresh token rotates, so replacing them
+    // separately could strand a new access token beside a spent refresh token.
+    await _tokenStore.write(tokens);
+    return tokens;
   }
 
   Future<TraciveTokens> _exchange({
