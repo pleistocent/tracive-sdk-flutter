@@ -300,6 +300,14 @@ than looping.
 The order below is the order in `TraciveClient.checkScammer`, and every branch
 in it exists because **a miss is billed**.
 
+That is also why a latch sits in front of the request. Two checks for the same
+record key, detail and locale — a double-tapped button, or the same number
+appearing twice in a list — collapse into one request and one bill. Your own
+`idempotencyKey` is part of the latch key, so two callers who deliberately keyed
+themselves apart stay apart; a caller who passes no key changes nothing. The
+latch covers the network call; each caller writes the answer to its own cache
+afterwards, which stores the same row twice and bills once.
+
 ```mermaid
 flowchart TD
     Build["TraciveQuery builder"]
@@ -314,6 +322,7 @@ flowchart TD
     Expire["stale row deleted on the way out"]
     NetGate{"may this source use the network?"}
     Miss["TraciveCacheMissException"]
+    Latch["join the check already in flight, or start one<br/>keyed on the record key, detail, locale,<br/>and your idempotencyKey when you supplied one"]
     Post["POST scammer-checks<br/>query, detail, creditSource"]
     Ttl{"policy.ttlFor for this result"}
     Delete["delete any row already stored"]
@@ -337,7 +346,8 @@ flowchart TD
     Expire --> NetGate
     CacheRead -->|"no row"| NetGate
     NetGate -->|"no, Source.cache"| Miss
-    NetGate -->|"yes"| Post
+    NetGate -->|"yes"| Latch
+    Latch --> Post
     Post -->|"2xx and detail minimal"| Ttl
     Post -->|"2xx and detail full"| Server
     Ttl -->|"zero or less"| Delete
