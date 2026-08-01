@@ -28,7 +28,14 @@ import 'check_cache_store.dart';
 ///   1 — first release. `check_cache(cache_key, payload, risk_tier,
 ///       fetched_at, expires_at, stored_at)`, payload = `CheckResult.toJson()`
 ///       of `CheckResult.cacheable()`.
-const int checkCacheSchemaVersion = 1;
+///   2 — same table and payload shape, but the *meaning* of a row changed: a
+///       row can now only have come from a `detail: minimal` answer, which
+///       carries no locale. Rows written by version 1 may hold a `disclaimer`
+///       and `tags` in whatever language a full-detail request asked for, and
+///       the key does not record which — so they cannot be told apart and are
+///       dropped. That costs one credit per identifier once, against serving a
+///       disclaimer in the wrong language indefinitely.
+const int checkCacheSchemaVersion = 2;
 
 /// A [CheckCacheStore] on top of a SQL database.
 ///

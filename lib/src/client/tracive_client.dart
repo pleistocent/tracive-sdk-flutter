@@ -213,11 +213,36 @@ class TraciveClient {
     _ensureOAuthMode();
     final effectiveSource = source ?? defaultSource;
 
+    // Full detail never touches the cache, in either direction, and this is
+    // where that is decided because this is the only place that knows what was
+    // *asked for* — a response alone cannot tell you, since a full-detail
+    // answer for an identifier with no reports looks exactly like a minimal
+    // one.
+    //
+    // Writing is unsound because the row key is the query alone: a full-detail
+    // response carries `disclaimer` and `tags` in the requested language, so
+    // storing its projection means a later `detail: minimal` caller, whose
+    // request carried no locale at all, reads back a disclaimer in somebody
+    // else's language — in the one string this SDK tells every integrator to
+    // put on screen.
+    //
+    // Reading is unsound for a plainer reason: a cached row has no
+    // chronologies and no comments, so answering a full-detail check from it
+    // silently returns less than was asked for.
+    //
+    // The alternative would be to key rows by `(query, detail, locale)`. That
+    // is a larger contract change for no gain, because a full-detail row could
+    // only ever be served to a caller who wanted the content it is not allowed
+    // to keep. `Detail.minimal` being "the only form that is cached" is what
+    // both enum members already document; this makes the code agree.
+    final cacheApplies = detail == Detail.minimal;
+
     // `cacheFirst` and `cache` consult the cache before the network;
     // `serverFirst` consults it only after the network has failed; `server`
     // never reads it at all.
-    final readsCacheFirst =
-        effectiveSource == Source.cacheFirst || effectiveSource == Source.cache;
+    final readsCacheFirst = cacheApplies &&
+        (effectiveSource == Source.cacheFirst ||
+            effectiveSource == Source.cache);
     if (readsCacheFirst) {
       // A hit is already stamped `Origin.cache`, already checked against the
       // TTL, and cost zero credits and zero network I/O.
@@ -238,13 +263,16 @@ class TraciveClient {
         locale: locale,
         idempotencyKey: idempotencyKey,
       );
-      // The cache decides what to keep: `cacheable()` on the way in, and a
-      // non-positive `cacheTtlSeconds` deletes rather than stores (the
-      // fleet-wide invalidation lever). None of that is re-implemented here.
-      await cache.write(query, result);
+      // The cache decides what to keep *within* a cacheable answer:
+      // `cacheable()` on the way in, and a non-positive `cacheTtlSeconds`
+      // deletes rather than stores (the fleet-wide invalidation lever). None of
+      // that is re-implemented here.
+      if (cacheApplies) await cache.write(query, result);
       return result;
     } on TraciveException catch (error) {
-      if (effectiveSource == Source.serverFirst && _isWorthFallingBack(error)) {
+      if (cacheApplies &&
+          effectiveSource == Source.serverFirst &&
+          _isWorthFallingBack(error)) {
         final fallback = await cache.read(query);
         if (fallback != null) return fallback;
       }

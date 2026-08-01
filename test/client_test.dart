@@ -391,6 +391,64 @@ void main() {
       expect(result.origin, Origin.server);
     });
 
+    test('a full-detail answer is not written to the cache', () async {
+      // The cache key is the query alone, and it has to stay that way — but
+      // that is only sound while nothing that varies with `detail` or `locale`
+      // can get into a row. A full-detail response carries a `disclaimer` and
+      // `tags` in the requested language, and the projection of it kept both.
+      // Storing that means a later `detail: minimal, locale: en` caller reads
+      // an Indonesian disclaimer, in the one string the SDK tells every
+      // integrator to put on screen.
+      final clock = MutableClock(_t0);
+      final cache = CheckCache.inMemory(clock: clock.now);
+      final transport = _FakeTransport((_) => _ok(_checkBody()));
+
+      await _client(transport: transport, cache: cache, clock: clock)
+          .checkScammer(
+        query,
+        source: Source.server,
+        detail: Detail.full,
+        locale: 'id',
+      );
+
+      expect(
+        await cache.read(query),
+        isNull,
+        reason: 'a localized answer must not become a locale-less cache row',
+      );
+    });
+
+    test('a full-detail check is not answered from the cache either', () async {
+      // The other direction of the same rule. Serving a cached minimal row to
+      // a caller who asked for chronologies and comments returns less than was
+      // asked for, silently.
+      final clock = MutableClock(_t0);
+      final cache = CheckCache.inMemory(clock: clock.now);
+      await cache.write(query, _cachedResult(clock.now()));
+      expect(await cache.read(query), isNotNull);
+
+      final transport = _FakeTransport((_) => _ok(_checkBody()));
+      final result =
+          await _client(transport: transport, cache: cache, clock: clock)
+              .checkScammer(query, detail: Detail.full, locale: 'id');
+
+      expect(transport.requests, hasLength(1));
+      expect(result.origin, Origin.server);
+    });
+
+    test('a minimal-detail answer is still cached', () async {
+      // The regression guard for the two above: the cache must still do its
+      // job for the level that is actually cacheable.
+      final clock = MutableClock(_t0);
+      final cache = CheckCache.inMemory(clock: clock.now);
+      final transport = _FakeTransport((_) => _ok(_checkBody()));
+
+      await _client(transport: transport, cache: cache, clock: clock)
+          .checkScammer(query, source: Source.server);
+
+      expect(await cache.read(query), isNotNull);
+    });
+
     test('client.cache.clear() empties it', () async {
       final clock = MutableClock(_t0);
       final cache = CheckCache.inMemory(clock: clock.now);

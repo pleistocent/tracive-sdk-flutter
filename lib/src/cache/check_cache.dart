@@ -62,6 +62,11 @@ typedef CacheClock = DateTime Function();
 /// confirm a guess — which is why the database is *also* encrypted at rest
 /// (see `tracive_cache.dart`). What hashing buys is that a database read on
 /// its own does not enumerate who the user checked.
+///
+/// The key deliberately carries neither `detail` nor `locale`. That is sound
+/// only because `TraciveClient` keeps localized answers out of the cache
+/// entirely — see `CheckResult.cacheable()`. **If that ever changes, this key
+/// must become `(query, detail, locale)` first.**
 String cacheKeyFor(TraciveQuery query) =>
     cacheKeyForIndex(query.searchQueryIndex);
 

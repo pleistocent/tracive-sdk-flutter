@@ -156,13 +156,21 @@ class CheckResult {
 
   /// The subset of this result that is safe to cache.
   ///
-  /// Drops everything that varies with `detail`/`locale` or is single-use:
-  /// [topChronologies], [comments], [billing] and [checkId]. The remaining
-  /// fields are invariant, which is what lets the cache key be the query alone.
+  /// Drops the content that only a full-detail answer carries
+  /// ([topChronologies], [comments]) and the two single-use fields ([billing],
+  /// [checkId]).
   ///
-  /// If a future version ever caches full-detail content, **the cache key must
-  /// become `(query, detail, locale)`** — otherwise an Indonesian full-detail
-  /// answer would be served to an English minimal-detail caller.
+  /// [disclaimer] and [tags] are **kept**, and that is only sound because of a
+  /// rule enforced one layer up: `TraciveClient` caches an answer only when the
+  /// request was `detail: minimal`, and a minimal request carries no `locale`
+  /// at all. Every cached row therefore holds the one language the server
+  /// returns when it is not told which to use, and the cache key can stay the
+  /// query alone.
+  ///
+  /// **If a future version ever caches a full-detail or localized answer, the
+  /// cache key must become `(query, detail, locale)` first** — otherwise an
+  /// Indonesian answer is served to an English caller, in the one string this
+  /// SDK asks every integrator to put on screen.
   CheckResult cacheable() => CheckResult(
         checkId: null,
         found: found,

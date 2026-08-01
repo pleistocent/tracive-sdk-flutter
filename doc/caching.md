@@ -145,17 +145,25 @@ thirty days with no way to reach it.
 | `billing` | single-use — replaying a charge would misreport spend |
 | `checkId` | nothing was checked on a hit, so there is no id |
 
-The cache key is the **query alone**; it mentions neither `detail` nor `locale`.
-That is only sound because everything that varies with them is dropped. If a
-future version ever caches full-detail content, **the key must first become
-`(query, detail, locale)`** — otherwise an Indonesian full-detail answer gets
-served to an English minimal-detail caller. The same note is in the code, on
-`CheckResult.cacheable()` and on `cacheKeyFor`; all of them have to change
-together.
+`disclaimer` and `tags` are **kept**, and they do vary with `locale` — so the
+table above is not the whole rule.
 
-A consequence worth stating: **asking for `detail: Detail.full` does not put
-full detail in the cache, and does not read it from there.** A full-detail call
-still writes the invariant fields, and a later minimal call can hit on them.
+The cache key is the **query alone**; it mentions neither `detail` nor `locale`.
+That is sound only because of a second rule, enforced in `TraciveClient`:
+**a `detail: Detail.full` call neither writes to the cache nor reads from it.**
+A minimal request carries no `locale` at all, so every cached row holds the one
+language the server returns when it is not told which to use.
+
+Both directions matter. Writing a full-detail answer would put an Indonesian
+`disclaimer` under a key an English minimal caller reads — in the one string
+this SDK asks every integrator to put on screen. Reading one would answer a
+caller who asked for chronologies and comments with a row that has neither, and
+say nothing about it.
+
+If a future version ever wants to cache full-detail or localized content,
+**the key must first become `(query, detail, locale)`**. The same note is in
+the code, on `CheckResult.cacheable()` and on `cacheKeyFor`; all of them have to
+change together.
 
 ---
 
