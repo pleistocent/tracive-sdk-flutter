@@ -246,7 +246,7 @@ class TraciveQuery {
   static String _foldAccountId(String raw) =>
       jsToUpperCase(raw).replaceAll(_whitespaceOrHyphenPattern, '');
 
-  static String _nfc(String raw) => TraciveNormalization.normalizer.nfc(raw);
+  static String _nfc(String raw) => TraciveNormalization.fold(raw);
 
   static TraciveQuery _build(QueryType type, String key) {
     validateDocumentId(key);

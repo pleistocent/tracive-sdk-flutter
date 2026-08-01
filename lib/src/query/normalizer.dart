@@ -53,12 +53,61 @@ abstract class Normalizer {
 ///
 ///     TraciveNormalization.normalizer = const UnormNormalizer();
 ///
-/// Set it once, during start-up, before building any query.
+/// **Set it once, during start-up, before building any query — and this is
+/// enforced.** The normalizer decides the folded key, which is both what goes
+/// on the wire and what the local cache is keyed by. Changing it after a query
+/// has been folded orphans every cached row for the identifiers it affects:
+/// they are stored under the old fold, the new fold looks somewhere else, and
+/// each of those misses costs a credit. A later assignment therefore throws
+/// [StateError] rather than quietly changing the answer.
 class TraciveNormalization {
   TraciveNormalization._();
 
+  static Normalizer _normalizer = const DefaultNormalizer();
+  static bool _hasFolded = false;
+
   /// The normalizer every `TraciveQuery` builder folds through.
-  static Normalizer normalizer = const DefaultNormalizer();
+  static Normalizer get normalizer => _normalizer;
+
+  /// Installs [value].
+  ///
+  /// Throws [StateError] if a query has already been folded through a
+  /// different normalizer. Re-assigning the same instance is allowed and does
+  /// nothing, so a start-up path that runs twice is not a failure.
+  static set normalizer(Normalizer value) {
+    if (_hasFolded && !identical(value, _normalizer)) {
+      throw StateError(
+        'TraciveNormalization.normalizer was changed after a query had '
+        'already been folded with the previous one. The folded key is also '
+        'the cache key, so every row written before this point is now keyed '
+        'under a fold nothing will look for, and each of those misses costs a '
+        'credit. Install the normalizer once, during start-up, before the '
+        'first TraciveQuery.',
+      );
+    }
+    _normalizer = value;
+  }
+
+  /// Folds [input], and records that the choice of normalizer has become
+  /// load-bearing.
+  ///
+  /// The flag is set here rather than in the getter so that merely reading
+  /// [normalizer] — which a host might do to log its configuration — does not
+  /// close the door on setting it.
+  static String fold(String input) {
+    _hasFolded = true;
+    return _normalizer.nfc(input);
+  }
+
+  /// Restores the shipped normalizer and reopens the latch. **Tests only.**
+  ///
+  /// Production code has no reason to call this: it exists because a test suite
+  /// legitimately installs several normalizers in one process, which is exactly
+  /// what the latch is there to stop an application doing.
+  static void resetForTesting() {
+    _normalizer = const DefaultNormalizer();
+    _hasFolded = false;
+  }
 }
 
 /// Dependency-free NFC covering the composition half of the algorithm.

@@ -37,8 +37,10 @@ void main() {
 
   setUp(() {
     // Every vector is folded with the shipped normalizer, so an injected one
-    // from another test can never leak in.
-    TraciveNormalization.normalizer = const DefaultNormalizer();
+    // from another test can never leak in. `resetForTesting` also reopens the
+    // install-once latch, which a suite legitimately needs and an application
+    // does not.
+    TraciveNormalization.resetForTesting();
   });
 
   group('fixture', () {
@@ -713,9 +715,7 @@ void main() {
     });
 
     test('an injected normalizer is what the builders actually use', () {
-      addTearDown(() {
-        TraciveNormalization.normalizer = const DefaultNormalizer();
-      });
+      addTearDown(TraciveNormalization.resetForTesting);
 
       // The platform segment folds NFC -> uppercase, and U+212B is its own
       // uppercase, so the shipped normalizer leaves the singleton in the key.
@@ -724,11 +724,58 @@ void main() {
         'USERNAME_\u212B_x',
       );
 
+      // The latch has closed by now — a query was folded two lines up — so
+      // reopen it deliberately. An application doing this would be the defect.
+      TraciveNormalization.resetForTesting();
       TraciveNormalization.normalizer = const _AngstromAwareNormalizer();
       expect(
         TraciveQuery.username(platform: '\u212B', handle: 'x').searchQueryIndex,
         'USERNAME_\u00C5_x',
         reason: 'the seam must reach every fold that requires NFC',
+      );
+    });
+
+    test('the normalizer cannot be swapped once a query has been folded', () {
+      // The normalizer decides the folded key, and the folded key is also the
+      // cache key. Changing it mid-run leaves every row written beforehand
+      // stored under a fold nothing will ever look for — and each of those
+      // misses costs a credit. The docs said "set it once, during start-up";
+      // nothing enforced it.
+      addTearDown(TraciveNormalization.resetForTesting);
+
+      // Before any fold, installing one is fine.
+      TraciveNormalization.normalizer = const _AngstromAwareNormalizer();
+      expect(
+        TraciveQuery.username(platform: '\u212B', handle: 'x').searchQueryIndex,
+        'USERNAME_\u00C5_x',
+      );
+
+      expect(
+        () => TraciveNormalization.normalizer = const DefaultNormalizer(),
+        throwsStateError,
+      );
+    });
+
+    test('re-installing the same normalizer is not a change', () {
+      // A start-up path that runs twice — a hot restart, a second `main` in a
+      // test harness — must not be a failure. Only an actual change is.
+      addTearDown(TraciveNormalization.resetForTesting);
+      TraciveQuery.phone('+6281234567891');
+      expect(
+        () => TraciveNormalization.normalizer = const DefaultNormalizer(),
+        returnsNormally,
+      );
+    });
+
+    test('reading the normalizer does not close the latch', () {
+      // A host may reasonably read it to log its configuration. Doing so must
+      // not stop it being installed afterwards.
+      addTearDown(TraciveNormalization.resetForTesting);
+      expect(TraciveNormalization.normalizer, isA<DefaultNormalizer>());
+      expect(
+        () =>
+            TraciveNormalization.normalizer = const _AngstromAwareNormalizer(),
+        returnsNormally,
       );
     });
   });
