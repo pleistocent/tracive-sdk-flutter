@@ -92,15 +92,13 @@ jobs:
           channel: stable
           cache: true
 
-      # `example/android/` is gitignored on purpose (see `.gitignore`): a
-      # committed platform folder turns every Flutter upgrade into an
-      # unreviewable diff. So CI regenerates it, which is exactly the workflow
-      # that file documents. Only the Android platform is created — it is the
-      # one this job builds.
-      - name: Regenerate the example's Android platform folder
-        working-directory: example
-        run: flutter create --platforms=android --project-name tracive_sdk_example .
-
+      # There is deliberately no `flutter create` step here any more.
+      # `example/android/` is tracked, so this job builds the same project a
+      # reviewer can read. Regenerating it built a project nobody had seen and
+      # threw away the settings the build depends on — see `.gitignore`.
+      # The Gradle wrapper, `local.properties` and the generated plugin
+      # registrant are still absent from the repo on purpose; the Flutter tool
+      # writes them itself on first build.
       - name: Resolve dependencies
         working-directory: example
         run: flutter pub get
@@ -115,9 +113,11 @@ jobs:
         working-directory: example
         run: flutter test --reporter expanded
 
-      # §8 asks for "build + unit tests". This is the build half: it proves the
-      # SDK's plugin dependencies (sqflite_sqlcipher, flutter_secure_storage,
-      # url_launcher) actually link on a real target, which no unit test can.
+      # The build half of "build + unit tests": it proves the SDK's plugin
+      # dependencies (sqflite_sqlcipher, flutter_secure_storage, url_launcher)
+      # actually link on a real target, which no unit test can. Because the
+      # platform folder is tracked, it also proves the `<queries>` element the
+      # OAuth app-presence probe needs survives manifest merging.
       - name: Build Android APK (debug)
         working-directory: example
         run: flutter build apk --debug

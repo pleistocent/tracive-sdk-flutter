@@ -40,7 +40,14 @@ example/pubspec.lock
 # shows up as an unreviewable diff. The two hand-written pieces the OAuth flow
 # needs — the `<queries>` element and `LSApplicationQueriesSchemes` — are
 # documented in `doc/oauth.md` so they can be re-applied after a regeneration.
-example/android/
+#
+# `example/android/` is the exception, and deliberately so. CI builds a real
+# Android APK from it, which is the only step that proves the SDK's plugins
+# link on a device; regenerating it meant CI built a project nobody had ever
+# reviewed, and silently discarded the hand-edits the build needs. It is
+# tracked instead, minus the parts the Flutter tool writes for itself — see
+# `example/android/.gitignore`. A Flutter upgrade that changes that project is
+# exactly the diff a maintainer should be reading.
 example/ios/
 example/linux/
 example/macos/
