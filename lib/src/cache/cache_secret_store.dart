@@ -38,8 +38,15 @@ abstract class CacheSecretStore {
 /// entry rather than misreading the old one.
 const String cacheDatabaseKeyEntry = 'tracive.cache.database_key.v1';
 
-/// Length of the generated database key, in bytes. 32 bytes = 256 bits, which
-/// is what SQLCipher uses for AES-256.
+/// Length of the generated database key, in bytes.
+///
+/// 32 bytes of entropy, base64url-encoded. It is handed to
+/// `openDatabase(path, password:)` as a **passphrase**, not as a raw key:
+/// SQLCipher runs it through PBKDF2 to derive the actual AES-256 key. So the 32
+/// is about how much entropy goes in, not about matching a cipher's key size —
+/// the derived key is 256 bits either way, and would be even if this were
+/// shorter. It is 32 because a passphrase should carry at least as much
+/// entropy as the key derived from it.
 const int cacheDatabaseKeyBytes = 32;
 
 /// Generates a fresh database key: [cacheDatabaseKeyBytes] random bytes,
