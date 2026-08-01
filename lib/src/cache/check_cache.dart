@@ -162,7 +162,17 @@ abstract class CheckCache {
   /// many rows went. Runs automatically as part of [open].
   Future<int> prune();
 
-  /// Closes the underlying storage. The cache reopens on the next use.
+  /// Closes the underlying storage.
+  ///
+  /// **Terminal.** A closed cache stays closed: [read] and [write] degrade to a
+  /// miss and a no-op with the reason in [lastStoreError], and [remove],
+  /// [clear] and [prune] throw. Build a new cache if you need one again.
+  ///
+  /// It used to reopen on the next use, which sounds convenient and is a race:
+  /// a read arriving while the close is in flight reopens the database file
+  /// underneath it, and two handles end up on one file.
+  ///
+  /// Calling it twice is harmless.
   Future<void> close();
 }
 
@@ -188,7 +198,15 @@ class DefaultCheckCache implements CheckCache {
   final CachePolicy policy;
 
   Future<void>? _opening;
+  bool _closed = false;
   Object? _lastStoreError;
+
+  /// What every operation gets once [close] has been called.
+  static final StateError _closedError = StateError(
+    'This CheckCache has been closed. Build a new one — a closed cache is '
+    'terminal on purpose, because reopening the file underneath an in-flight '
+    'close is how two handles end up on one database.',
+  );
 
   @override
   Object? get lastStoreError => _lastStoreError;
@@ -196,15 +214,31 @@ class DefaultCheckCache implements CheckCache {
   DateTime get _now => _clock().toUtc();
 
   @override
-  Future<void> open() => _opening ??=
-          _openOnce().catchError((Object error, StackTrace stackTrace) {
-        // Let the next caller retry rather than poisoning the cache for the
-        // lifetime of the process: the usual causes (a locked file, a Keystore
-        // that is not ready before first unlock) are transient.
-        _opening = null;
-        _lastStoreError = error;
-        Error.throwWithStackTrace(error, stackTrace);
-      });
+  Future<void> open() {
+    if (_closed) throw _closedError;
+    return _opening ??=
+        _openOnce().catchError((Object error, StackTrace stackTrace) {
+      // Let the next caller retry rather than poisoning the cache for the
+      // lifetime of the process: the usual causes (a locked file, a Keystore
+      // that is not ready before first unlock) are transient.
+      _opening = null;
+      _lastStoreError = error;
+      Error.throwWithStackTrace(error, stackTrace);
+    });
+  }
+
+  /// [open], plus a second check on the way out.
+  ///
+  /// The second check is the point. [close] can only run at an `await`, and
+  /// every operation here has one inside [open] — so an operation that started
+  /// before the close and resumed after it would otherwise call straight into a
+  /// store that is closing, or (worse) reopen the file underneath the close
+  /// through `SqlCheckCacheStore`'s reopen-on-demand path.
+  Future<void> _ensureOpen() async {
+    if (_closed) throw _closedError;
+    await open();
+    if (_closed) throw _closedError;
+  }
 
   Future<void> _openOnce() async {
     await _store.open();
@@ -216,7 +250,7 @@ class DefaultCheckCache implements CheckCache {
     if (!policy.enabled) return null;
     final key = cacheKeyFor(query);
     try {
-      await open();
+      await _ensureOpen();
       final stored = await _store.read(key);
       if (stored == null) return null;
 
@@ -245,7 +279,7 @@ class DefaultCheckCache implements CheckCache {
     if (!policy.enabled) return;
     final key = cacheKeyFor(query);
     try {
-      await open();
+      await _ensureOpen();
       final ttl = policy.ttlFor(result);
       if (ttl <= Duration.zero) {
         // "Do not cache this." Anything already stored is now wrong.
@@ -273,19 +307,19 @@ class DefaultCheckCache implements CheckCache {
 
   @override
   Future<bool> remove(TraciveQuery query) async {
-    await open();
+    await _ensureOpen();
     return _store.delete(cacheKeyFor(query));
   }
 
   @override
   Future<void> clear() async {
-    await open();
+    await _ensureOpen();
     await _store.clear();
   }
 
   @override
   Future<int> prune() async {
-    await open();
+    await _ensureOpen();
     return _pruneNow();
   }
 
@@ -294,6 +328,11 @@ class DefaultCheckCache implements CheckCache {
 
   @override
   Future<void> close() async {
+    // Idempotent and terminal, and both flags are set before the first await:
+    // a `read()` arriving while this is waiting must not be able to reopen the
+    // file that is about to be closed.
+    if (_closed) return;
+    _closed = true;
     final opening = _opening;
     _opening = null;
     if (opening == null) return;

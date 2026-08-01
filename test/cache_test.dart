@@ -676,6 +676,75 @@ void main() {
     });
   });
 
+  group('close', () {
+    test('is idempotent', () async {
+      final cache = CheckCache.inMemory();
+      await cache.open();
+      await cache.close();
+      await expectLater(cache.close(), completes);
+    });
+
+    test('a read after close does not reopen the store', () async {
+      // `close()` used to clear its latch *before* awaiting, so a read arriving
+      // afterwards called `open()` again and reopened the database underneath
+      // the close — two handles on one file. Degrading to a miss is what the
+      // read contract promises anyway.
+      final store = _CountingOpenStore();
+      final cache = DefaultCheckCache(store: store);
+      await cache.open();
+      expect(store.opens, 1);
+
+      await cache.close();
+      expect(await cache.read(phone), isNull);
+
+      expect(store.opens, 1, reason: 'the store was reopened after close');
+      expect(cache.lastStoreError, isA<StateError>());
+    });
+
+    test('a write after close is a no-op, not a throw', () async {
+      // read/write are documented never to throw. A closed cache must not be
+      // the exception that proves the rule.
+      final store = _CountingOpenStore();
+      final cache = DefaultCheckCache(store: store);
+      await cache.close();
+
+      await expectLater(
+        cache.write(
+          phone,
+          _result(tier: RiskTier.high, fetchedAt: DateTime.utc(2026, 7, 31, 9)),
+        ),
+        completes,
+      );
+      expect(store.opens, 0);
+      expect(cache.lastStoreError, isA<StateError>());
+    });
+
+    test('remove/clear/prune after close throw, and say why', () async {
+      final cache = CheckCache.inMemory();
+      await cache.close();
+
+      await expectLater(cache.remove(phone), throwsStateError);
+      await expectLater(cache.clear(), throwsStateError);
+      await expectLater(cache.prune(), throwsStateError);
+    });
+
+    test('a read that was waiting on the open gives up when it closes',
+        () async {
+      // The interleaving the flag has to be checked twice for: the read is
+      // parked inside `open()` when `close()` runs, and resumes afterwards.
+      final store =
+          _CountingOpenStore(openDelay: const Duration(milliseconds: 40));
+      final cache = DefaultCheckCache(store: store);
+
+      final reading = cache.read(phone);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await cache.close();
+
+      expect(await reading, isNull);
+      expect(cache.lastStoreError, isA<StateError>());
+    });
+  });
+
   // --------------------------------------------------------------------------
   // The two open paths are read-then-write races, and both fail expensively:
   // a lost database key means the file cannot be decrypted, which the SDK
@@ -1018,5 +1087,23 @@ class _CountingSecretStore extends CacheSecretStore {
   @override
   Future<void> delete(String key) async {
     _entries.remove(key);
+  }
+}
+
+/// A [CheckCacheStore] that counts how many times it was opened, and can be
+/// made slow to open so a close can be interleaved with a read that is waiting.
+class _CountingOpenStore extends MemoryCheckCacheStore {
+  _CountingOpenStore({this.openDelay = Duration.zero});
+
+  /// How long [open] takes.
+  final Duration openDelay;
+
+  /// How many times [open] has actually run.
+  int opens = 0;
+
+  @override
+  Future<void> open() async {
+    opens++;
+    if (openDelay > Duration.zero) await Future<void>.delayed(openDelay);
   }
 }
