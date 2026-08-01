@@ -377,19 +377,32 @@ class TraciveClient {
 
   /// Whether a failed `serverFirst` call may be answered from the cache.
   ///
-  /// Yes for the failures that say "the server could not answer right now":
-  /// transport, 5xx, 429, and an exhausted credit balance. A slightly old
-  /// verdict beats no verdict on a payment screen.
+  /// Yes for **transport-shaped** failures only — the ones that say "the server
+  /// could not answer right now": a network error, a 5xx, a 429. A slightly old
+  /// verdict beats no verdict on a payment screen, and none of those three says
+  /// anything about whether the caller is entitled to a fresh one.
   ///
-  /// No for the failures that say "this caller is not entitled to an answer" —
-  /// a revoked grant, a missing scope, a rejected token. Papering over those
-  /// with a cached result hides a broken integration from the developer and
-  /// keeps serving data the user may have just revoked consent for.
+  /// No for everything else, which is to say every failure that carries a
+  /// verdict about the caller: a revoked grant, a missing scope, a rejected
+  /// token — and an exhausted credit balance. Papering over those with a cached
+  /// result hides a broken integration from the developer and keeps serving
+  /// data the user may have just revoked consent for.
+  ///
+  /// **402 used to be in this set, and that was the expensive one.** A partner
+  /// whose balance has run out would be handed a cached verdict that is
+  /// indistinguishable from a normal answer: no exception, no flag on the
+  /// result, nothing to log. They would carry on believing the integration was
+  /// healthy until the cache emptied — at which point every check would start
+  /// failing at once, on a payment screen, with no warning that the cause had
+  /// been building for days. Surfacing
+  /// [TraciveInsufficientCreditsException] the moment it happens is what gives
+  /// them the chance to top up before that. An empty balance is not a transient
+  /// server condition; it is a fact about the account that will not change on
+  /// its own.
   bool _isWorthFallingBack(TraciveException error) =>
       error is TraciveNetworkException ||
       error is TraciveServerException ||
-      error is TraciveRateLimitedException ||
-      error is TraciveInsufficientCreditsException;
+      error is TraciveRateLimitedException;
 
   Future<CheckResult> _fetchCheck({
     required TraciveQuery query,

@@ -236,11 +236,20 @@ the strength of a report nobody verified. Show it wherever you show the verdict.
 `Source.cache` never returns a silent empty result — that would read as "not a
 scammer", which is the most expensive wrong answer this SDK could give.
 
-`serverFirst` falls back to the cache only for failures that mean *the server
-could not answer right now* (transport, 5xx, 429, exhausted credits). It does
-**not** fall back for `grant_revoked`, `missing_scope` or a rejected token:
-papering over those hides a broken integration and keeps serving data the user
-may have just revoked consent for.
+`serverFirst` falls back to the cache only for **transport-shaped** failures —
+a network error, a 5xx, a 429. Those mean *the server could not answer right
+now*, and none of them says anything about whether you were entitled to an
+answer.
+
+It does **not** fall back for anything that carries a verdict about the caller:
+`grant_revoked`, `missing_scope`, a rejected token, or a **402**. The 402 is the
+one worth being explicit about. An exhausted balance served from the cache is
+indistinguishable from a normal answer — no exception, no flag on the result —
+so you would keep believing the integration was healthy until the cache emptied
+and every check started failing at once, on a payment screen, with no warning
+that it had been building for days. `TraciveInsufficientCreditsException` is
+raised the moment it happens instead, which is what gives you the chance to top
+up. An empty balance is not a transient server condition.
 
 ---
 

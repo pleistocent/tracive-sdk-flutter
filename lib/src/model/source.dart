@@ -11,8 +11,13 @@ enum Source {
   /// Always call the server. Costs a credit even when a live entry exists.
   server,
 
-  /// Call the server, and fall back on a live cache entry if the call fails.
-  /// The fallback result is still stamped `Origin.cache`.
+  /// Call the server, and fall back on a live cache entry when the call fails
+  /// for a **transport-shaped** reason: a network error, a 5xx, a 429. The
+  /// fallback result is still stamped `Origin.cache`.
+  ///
+  /// A failure that carries a verdict about the caller is never masked this
+  /// way — a revoked grant, a missing scope, a rejected token, or a 402. See
+  /// `TraciveClient.checkScammer`.
   serverFirst,
 
   /// Cache only, never any network I/O. A miss raises

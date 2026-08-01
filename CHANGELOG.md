@@ -10,6 +10,28 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **`Source.serverFirst` no longer answers a 402 from the cache.** The fallback
+  set included `TraciveInsufficientCreditsException`, so a partner whose credit
+  balance had run out received a cached verdict instead of the error: no
+  exception, no flag on the result, nothing to log, and `origin` reading `cache`
+  exactly as it does on a healthy offline fallback.
+
+  The failure that produces is quiet and then sudden. The integration looks
+  healthy for as long as the cache holds entries, and then every check starts
+  failing at once — on a payment screen, days after the balance actually
+  emptied, with nothing to connect the two. An exhausted balance is not a
+  transient server condition; it is a fact about the account that will not
+  change on its own, and the only useful moment to learn it is the first one.
+
+  The fallback set is now transport-shaped failures only: a network error, a
+  5xx, a 429. Every failure that carries a verdict about the caller — a revoked
+  grant, a missing scope, a rejected token, a 402 — is rethrown.
+
+  **What you will observe:** a `serverFirst` check against an empty balance now
+  throws `TraciveInsufficientCreditsException` even when a live cached entry
+  exists. Handle it the way `checkScammer` has always documented. Nothing else
+  in the fallback behaviour moved.
+
 - **Unicode NFC is now full NFC by default.** `TraciveNormalization` installed
   `DefaultNormalizer`, which does canonical ordering and canonical composition
   but **no canonical decomposition step**. Its own documentation measured the

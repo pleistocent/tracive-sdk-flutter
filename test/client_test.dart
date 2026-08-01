@@ -329,6 +329,34 @@ void main() {
       );
     });
 
+    test('serverFirst surfaces a 402 rather than serving a cached verdict',
+        () async {
+      // The expensive one, because it is the quiet one. An exhausted balance
+      // answered from the cache is byte-identical to a healthy answer — no
+      // exception, no flag on the result, nothing to log — so a partner keeps
+      // believing the integration works until the cache empties and every
+      // check fails at once, on a payment screen, days after the cause
+      // appeared. An empty balance is not a transient server condition; it is
+      // a fact about the account that will not fix itself, and the only useful
+      // moment to learn it is the first one.
+      final clock = MutableClock(_t0);
+      final cache = CheckCache.inMemory(clock: clock.now);
+      await cache.write(query, _cachedResult(clock.now(), reportTotal: 7));
+      final transport = _FakeTransport(
+        (_) => _error(402, 'insufficient_user_credits'),
+      );
+
+      await expectLater(
+        _client(
+          transport: transport,
+          cache: cache,
+          clock: clock,
+        ).checkScammer(query, source: Source.serverFirst),
+        throwsA(isA<TraciveInsufficientCreditsException>()),
+        reason: 'a live cached entry must not mask an empty balance',
+      );
+    });
+
     test('defaultSource applies when no source is passed', () async {
       final transport = _FakeTransport(
         (_) => fail('defaultSource: Source.cache must not reach the network'),
