@@ -684,6 +684,22 @@ abstract final class QueryRejectionReason {
   /// The bank country is not an ISO 3166-1 alpha-3 code.
   static const String countryNotAlpha3 = 'country_not_alpha3';
 
+  /// A country or dial code with no letters and no digits was given to
+  /// [normalizePhoneNumber].
+  static const String emptyCountry = 'empty_country';
+
+  /// Something that looks like a country code but names no country. An alpha-2
+  /// code such as `ID` lands here: this SDK uses alpha-3 everywhere.
+  static const String unknownCountry = 'unknown_country';
+
+  /// The phone number has no digits, or was only a trunk prefix.
+  static const String emptyPhoneNumber = 'empty_phone_number';
+
+  /// The number carries a `+` whose dial code disagrees with the country named.
+  /// Both cannot be right, and guessing would produce a key that can never
+  /// match — billed as a miss.
+  static const String countryConflict = 'country_conflict';
+
   /// The account id folded to the empty string.
   static const String emptyAccountId = 'empty_account_id';
 

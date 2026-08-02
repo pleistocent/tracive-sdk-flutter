@@ -59,6 +59,8 @@ export 'src/oauth/token_store.dart';
 export 'src/oauth/tracive_oauth.dart';
 export 'src/query/normalizer.dart';
 export 'src/query/query_type.dart';
+export 'src/query/country.dart';
+export 'src/query/phone_numbers.dart';
 export 'src/query/tracive_query.dart';
 export 'src/query/unorm_normalizer.dart';
 

@@ -150,6 +150,50 @@ shape, so it would look the key up, miss, and charge you); and there is
 deliberately **no `domain()` builder** — the backend dropped that input type, so
 such a key could only ever miss.
 
+### Local phone formats: `normalizePhoneNumber`
+
+A local-format number is rejected, not up-converted — the SDK cannot know your dial code, and a
+wrong guess still costs a credit. `normalizePhoneNumber` supplies it, so you can accept numbers the
+way people in each country actually write them:
+
+```dart
+// Indonesians share numbers starting 08. Both produce PHONE_+6285718609079.
+TraciveQuery.phone(normalizePhoneNumber('IDN', '0857-1860-9079'));
+TraciveQuery.phone(normalizePhoneNumber('+62', '0857 1860 9079'));
+
+// Or with the enum, when the country is known at compile time.
+TraciveQuery.phone(normalizePhoneNumberFor(Country.idn, '0857 1860 9079'));
+```
+
+The first argument is either an **ISO 3166-1 alpha-3** code (`IDN`, `USA` — case-insensitive) or a
+dial code with or without `+` (`+62`, `62`). They are told apart by shape: letters mean alpha-3,
+digits mean a dial code. Alpha-2 (`ID`) is refused, because this SDK speaks alpha-3 everywhere.
+
+It is a top-level function, not something hidden inside `phone()`, because you need the E.164 form
+for your own records, logging and outbound messaging too.
+
+| Input | Country | Result |
+|---|---|---|
+| `0857-1860-9079` | `IDN` | `+6285718609079` — trunk prefix `0` dropped |
+| `0062857 1860 9079` | `IDN` | `+6285718609079` — international prefix `00` dropped |
+| `+62 857 1860 9079` | `IDN` | `+6285718609079` — already international, not doubled |
+| `1 555 123 4567` | `USA` | `+15551234567` — NANP trunk prefix `1` dropped |
+| `8 912 345 67 89` | `RUS` | `+79123456789` — Russian trunk prefix `8` dropped |
+| `06 1234 5678` | `ITA` | `+390612345678` — Italy's leading `0` **kept**; it is part of the number |
+| `+64 857 1860 9079` | `IDN` | **throws `country_conflict`** — the `+64` contradicts `IDN` |
+
+That last row is the one rule these SDKs do *not* share with the Tracive app. A `+` says the number
+is already international; if the code that follows disagrees with the country you named, both cannot
+be right, and guessing produces a key that can never match — billed as a miss.
+
+`Country` is an enum of 245 values with `dialCode`, `alpha2`, `alpha3` and `countryName`, and
+`Country.fromAlpha3('idn')` looks one up case-insensitively.
+
+Everything else is a deliberate copy of the app's normalizer, pinned by
+`phone-normalization-vectors.json` — vendored byte-identically into all four SDK repositories, like
+the grammar fixture. If the app folded a number one way and this SDK another, one person would
+become two record keys, and a report filed in the app would be invisible to a check made here.
+
 ### Do not poll `credits()` before every check
 
 Make the check and handle the `402` (`TraciveInsufficientCreditsException`).
