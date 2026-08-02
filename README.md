@@ -181,8 +181,14 @@ for your own records, logging and outbound messaging too.
 | `8 912 345 67 89` | `RUS` | `+79123456789` — Russian trunk prefix `8` dropped |
 | `06 1234 5678` | `ITA` | `+390612345678` — Italy's leading `0` **kept**; it is part of the number |
 | `+64 857 1860 9079` | `IDN` | **throws `country_conflict`** — the `+64` contradicts `IDN` |
+| `+0062 857 1860 9079` | `IDN` | **throws `country_conflict`** — `+` and `00` do not stack |
 
-That last row is the one rule these SDKs do *not* share with the Tracive app. A `+` says the number
+Those last two rows are the rules these SDKs do *not* share with the Tracive app, and they differ
+in kind. The first is safe: every input it rejects produced an unusable key in the app too. The
+second is not — the app accepts `+00<dial>` and folds it correctly, so here the SDK is genuinely
+stricter. `+` and `00` are alternative spellings of the same thing rather than stackable ones: what
+follows `+` must be a country code, and `00` is none. The stored key is `PHONE_+<dial><number>`, and
+admitting one malformed concatenation has no principled stopping point (`+000062`, `++62`). A `+` says the number
 is already international; if the code that follows disagrees with the country you named, both cannot
 be right, and guessing produces a key that can never match — billed as a miss.
 
