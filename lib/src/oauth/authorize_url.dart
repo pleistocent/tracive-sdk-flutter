@@ -40,22 +40,30 @@ Uri buildAuthorizeUrl({
   required String codeChallenge,
   required String partnerUserId,
 }) {
-  return environment.authorizeEndpoint.replace(
-    queryParameters: <String, String>{
-      'response_type': 'code',
-      'client_id': clientId,
-      'redirect_uri': redirectUri,
-      if (scopes.isNotEmpty) 'scope': scopes.join(' '),
-      'state': state,
-      'code_challenge': codeChallenge,
-      'code_challenge_method': PkcePair.codeChallengeMethod,
-      // Sent as written. It is stored on the grant and echoed back to the
-      // partner in `grant.revoked`, so trimming it here would hand them back
-      // something other than what they sent. Presence is enforced at
-      // construction, not here.
-      'partner_user_id': partnerUserId,
-    },
-  );
+  // Built by hand rather than through `queryParameters`, which encodes a space as `+`. The other
+  // three SDKs emit `%20`, the app reads `partner_user_id` with `getQueryParameter` and does not
+  // normalise `+` back to a space on either platform, and that value is echoed to the partner in
+  // `grant.revoked` — so a `+` here hands them back a string they never sent, in the one field this
+  // SDK declares byte-exact.
+  final params = <String, String>{
+    'response_type': 'code',
+    'client_id': clientId,
+    'redirect_uri': redirectUri,
+    if (scopes.isNotEmpty) 'scope': scopes.join(' '),
+    'state': state,
+    'code_challenge': codeChallenge,
+    'code_challenge_method': PkcePair.codeChallengeMethod,
+    // Sent as written. It is stored on the grant and echoed back to the
+    // partner in `grant.revoked`, so trimming it here would hand them back
+    // something other than what they sent. Presence is enforced at
+    // construction, not here.
+    'partner_user_id': partnerUserId,
+  };
+  final query = params.entries
+      .map((e) => '${Uri.encodeQueryComponent(e.key).replaceAll('+', '%20')}='
+          '${Uri.encodeQueryComponent(e.value).replaceAll('+', '%20')}')
+      .join('&');
+  return environment.authorizeEndpoint.replace(query: query);
 }
 
 /// Every parameter name that would make an install link an OAuth link.

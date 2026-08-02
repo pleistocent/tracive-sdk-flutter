@@ -167,6 +167,20 @@ void main() {
       // them back something other than what they sent. This SDK trimmed it
       // until 2 August 2026 — the same defect its idempotency key had.
       expect(url.queryParameters['partner_user_id'], 'partner-user-9');
+      // %20, not `+`. Dart's `queryParameters` emits `+` for a space; the other three SDKs emit
+      // %20, and the app reads this field with getQueryParameter, which does not turn `+` back
+      // into a space. A value we echo to the partner must survive the round trip unchanged.
+      final spaced = buildAuthorizeUrl(
+        environment: TraciveEnvironment.production,
+        clientId: 'c',
+        redirectUri: 'https://partner.example/cb',
+        scopes: const <String>['a b'],
+        state: 's',
+        codeChallenge: 'ch',
+        partnerUserId: 'user nine',
+      );
+      expect(spaced.query, contains('partner_user_id=user%20nine'));
+      expect(spaced.query, isNot(contains('+')));
     });
 
     test('never says code_challenge_method=plain', () {
