@@ -87,7 +87,7 @@ class _CheckScreenState extends State<CheckScreen> {
       // Note what is absent: there is no apiKey parameter, in any mode. The
       // SDK authenticates with OAuth + PKCE so no long-lived secret ships
       // inside the binary.
-      mode: const TraciveMode.oauth(
+      mode: TraciveMode.oauth(
         partnerUserId: 'partner-user-1',
         clientId: 'demo-client',
         // An https App Link / Universal Link, not a custom scheme, and that is

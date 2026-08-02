@@ -766,7 +766,7 @@ void main() {
       // The default is the one scope every integration needs. Asking for more
       // by default would put permissions on the consent screen that the caller
       // never uses.
-      const mode = TraciveMode.oauth(
+      final mode = TraciveMode.oauth(
         partnerUserId: 'partner-user-1',
         clientId: 'partner-app',
         redirectUri: 'https://partner.example/callback',
@@ -777,7 +777,7 @@ void main() {
 
   group('TraciveMode', () {
     test('OAuth mode defaults to a public client and needs no secret', () {
-      const mode = TraciveMode.oauth(
+      final mode = TraciveMode.oauth(
         partnerUserId: 'partner-user-1',
         clientId: 'partner-app',
         redirectUri: 'https://partner.example/callback',
@@ -789,6 +789,24 @@ void main() {
       expect(oauth.partnerUserId, 'partner-user-1');
     });
 
+    test('rejects a blank partnerUserId in every build', () {
+      // A plain throw, not an assert: the AOT compiler strips asserts, so the
+      // earlier version of this guard let a release build send
+      // `partner_user_id=` while debug refused it — the worst shape a check can
+      // have, because the difference appears only in production.
+      for (final blank in <String>['', '   ', '\t\n']) {
+        expect(
+          () => TraciveMode.oauth(
+            clientId: 'c',
+            redirectUri: 'https://partner.example/cb',
+            partnerUserId: blank,
+          ),
+          throwsA(isA<ArgumentError>()),
+          reason: 'a blank id of length ${blank.length} must be refused here',
+        );
+      }
+    });
+
     test('is exhaustively switchable', () {
       String describe(TraciveMode mode) => switch (mode) {
             TraciveOAuthMode() => 'oauth',
@@ -796,7 +814,7 @@ void main() {
           };
       expect(
         describe(
-          const TraciveMode.oauth(
+          TraciveMode.oauth(
             partnerUserId: 'partner-user-1',
             clientId: 'a',
             redirectUri: 'https://b.example/c',
@@ -811,12 +829,12 @@ void main() {
     });
 
     test('compares by value', () {
-      const a = TraciveMode.oauth(
+      final a = TraciveMode.oauth(
         partnerUserId: 'partner-user-1',
         clientId: 'a',
         redirectUri: 'https://b.example/c',
       );
-      const b = TraciveMode.oauth(
+      final b = TraciveMode.oauth(
         partnerUserId: 'partner-user-1',
         clientId: 'a',
         redirectUri: 'https://b.example/c',

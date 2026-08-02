@@ -15,7 +15,7 @@ sealed class TraciveMode {
 
   /// phase 1. The user consents in the Tracive app and this SDK acts on their
   /// behalf with a PKCE-issued token.
-  const factory TraciveMode.oauth({
+  factory TraciveMode.oauth({
     required String clientId,
     required String redirectUri,
     required String partnerUserId,
@@ -38,24 +38,32 @@ sealed class TraciveMode {
 
 /// OAuth mode — see [TraciveMode.oauth].
 final class TraciveOAuthMode extends TraciveMode {
-  /// Creates an OAuth configuration.
-  const TraciveOAuthMode({
+  /// Creates an OAuth configuration, rejecting a blank [partnerUserId].
+  ///
+  /// **Deliberately not `const`.** It was, and the check was an `assert`, which
+  /// the AOT compiler strips — so a release build put `partner_user_id=` on the
+  /// wire while debug refused it, and the difference surfaced only in
+  /// production. A `const` constructor cannot call `trim()` either, so it could
+  /// not have caught a whitespace-only id in any build. Losing `const` costs an
+  /// integrator a keyword; keeping it cost the check.
+  TraciveOAuthMode({
     required this.clientId,
     required this.redirectUri,
     required this.partnerUserId,
     this.scopes = const <String>[TraciveScopes.scammerCheck],
     this.clientType = ClientType.public,
-  }) // Empty only: this constructor is `const`, and a const assert cannot call
-  // `trim()`. A whitespace-only id therefore gets past here and is refused
-  // by the Tracive app instead — which is the failure this assert exists to
-  // move earlier, so send a real id rather than a padded one.
-  : assert(
-          partnerUserId != '',
-          'TraciveOAuthMode needs a partnerUserId. The authorization request '
-          'must carry one: the Tracive app refuses a consent without it, '
-          'client-side and with no redirect, so the failure would reach you as '
-          'silence rather than as an error.',
-        );
+  }) {
+    if (partnerUserId.trim().isEmpty) {
+      throw ArgumentError.value(
+        partnerUserId,
+        'partnerUserId',
+        'must not be blank. The authorization request has to carry one: the '
+            'Tracive app refuses a consent without it, client-side and with no '
+            'redirect, so the failure would reach you as silence rather than as '
+            'an error.',
+      );
+    }
+  }
 
   /// The partner's registered OAuth client id. Public by nature — it is not a
   /// secret and is not treated as one.

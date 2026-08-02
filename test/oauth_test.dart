@@ -239,7 +239,7 @@ void main() {
       late final TraciveOAuth oauth;
       expect(
         () => oauth = TraciveOAuth(
-          mode: const TraciveOAuthMode(
+          mode: TraciveOAuthMode(
             partnerUserId: 'partner-user-1',
             clientId: 'partner-client-id',
             redirectUri: 'https://partner.example/oauth/callback',
@@ -2324,7 +2324,7 @@ void main() {
 // Fixtures and fakes.
 // -----------------------------------------------------------------------------
 
-const TraciveMode _oauthMode = TraciveMode.oauth(
+final TraciveMode _oauthMode = TraciveMode.oauth(
   partnerUserId: 'partner-user-1',
   clientId: 'partner-client-id',
   redirectUri: 'https://partner.example/oauth/callback',

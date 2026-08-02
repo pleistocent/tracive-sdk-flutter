@@ -1644,7 +1644,7 @@ void main() {
 // a fake that will eventually be trusted without being read.
 // -----------------------------------------------------------------------------
 
-const TraciveMode _oauthMode = TraciveMode.oauth(
+final TraciveMode _oauthMode = TraciveMode.oauth(
   partnerUserId: 'partner-user-1',
   clientId: 'partner-client-id',
   redirectUri: 'https://partner.example/oauth/callback',
