@@ -230,5 +230,11 @@ in the changelog's compare links, and it is the install instruction. The rule as
 what the package necessarily ships, which makes it a rule nobody can follow rather than a rule
 anybody breaks. Any *other* repository under that organisation is still an internal name.
 
-There is no automated scan in this repository, which puts it on you and on the reviewer. Read your
-diff the way a stranger would, before it is public and permanent.
+`node tool/check-hygiene.js` scans for all of this, and CI runs it. It proves every one of its rules can still
+fire — against its own self-test corpus — before it scans anything, and refuses to run if one
+matches nothing: a check that cannot fail is worse than no check, because it reads as coverage.
+
+It arrived on 2 August 2026, after the author shipped 39 Indonesian-language fixture notes into
+four published repositories. Only React Native had a scanner; it caught them, and the other
+three took the same file without a word. The scan does not replace reading your diff the way a
+stranger would — it catches the class of mistake a tired reviewer waves through.

@@ -63,6 +63,17 @@ jobs:
       # and an audit then found the four SDKs disagreeing on a digit joined to
       # a variation selector — the exact drift a pinned shared fixture exists
       # to make impossible.
+      # Public-hygiene scan. This repository's CONTRIBUTING used to say "there is no automated scan
+      # here, which puts it on you and on the reviewer" — and on 2 August 2026 the reviewer (the
+      # author) shipped 39 Indonesian-language fixture notes into four published repositories.
+      # React Native's scanner caught them; the other three took the same file without a word.
+      #
+      # The script proves every rule can still fire before it scans anything, against its own
+      # self-test corpus, and refuses to run if one matches nothing. A check that cannot fail is
+      # worse than no check, because it reads as coverage.
+      - name: Public-hygiene scan
+        run: node tool/check-hygiene.js
+
       - name: Verify the phone-normalization fixture is unmodified
         run: |
           echo "de39974af93c6d466043708e0c1aa1f4e9d9aa6e426d458c5a29a1ac015323f1  test/fixtures/phone-normalization-vectors.json" \
