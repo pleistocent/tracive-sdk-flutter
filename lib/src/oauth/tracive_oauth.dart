@@ -145,14 +145,22 @@ class TraciveOAuth {
   /// A custom-scheme URL, not the authorize URL: `canOpen` on an `https://` URL
   /// is always `true` because a browser is always installed.
   ///
-  /// **The scheme alone, with no host.** This used to probe
-  /// `tracive://authorize`, and Android resolves such a probe by intent-filter
-  /// matching — a filter naming a host requires that host to match. The app
-  /// registers custom-scheme hosts `home`, `auth`, `search`, `report` and
-  /// `dev-tools`, and no host named `authorize`, so the probe answered "not
-  /// installed" on every Android device *including the ones holding the app*,
-  /// and the user was sent to the install page while already holding it. iOS
-  /// was unaffected: `canOpenURL` there inspects only the scheme.
+  /// **The scheme alone, with no host, and that requires the app to claim it
+  /// that way.** Android resolves such a probe by intent-filter matching: a
+  /// filter that declares a host requires the URI to carry a matching one. This
+  /// probed `tracive://authorize` first, which matched nothing because no
+  /// custom-scheme host of that name is registered; the bare scheme then
+  /// matched nothing either, for the same reason — every custom-scheme filter
+  /// in the app named *some* host. Both spellings answered "not installed" on
+  /// every Android device including the ones holding the app.
+  ///
+  /// It works now because the Tracive app gained a scheme-only intent-filter,
+  /// verified on a device: `tracivedev://` went from "unable to resolve Intent"
+  /// to starting the app. So this constant and that filter are one contract —
+  /// neither is correct alone.
+  ///
+  /// iOS was never affected: `canOpenURL` there is answered by LaunchServices
+  /// from the installed app's `CFBundleURLTypes` and inspects only the scheme.
   static Uri appPresenceProbeFor(TraciveEnvironment environment) =>
       Uri.parse('${_presenceSchemeFor(environment)}://');
 
