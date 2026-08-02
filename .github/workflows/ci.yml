@@ -56,6 +56,18 @@ jobs:
           echo "f94bf48164c82bcc59fda30669d9d8c25dbc36ecc7ad93fcd7fb56ba2cdf2901  test/fixtures/query-grammar-vectors.json" \
             | sha256sum --check --strict
 
+      # The phone-normalization fixture, pinned the same way and for the same
+      # reason. Its expected values came from the Tracive app's own normalizer,
+      # so it is the contract that keeps app and SDK folding one person to one
+      # record key. It shipped on 2 August 2026 with no pin in any repository,
+      # and an audit then found the four SDKs disagreeing on a digit joined to
+      # a variation selector — the exact drift a pinned shared fixture exists
+      # to make impossible.
+      - name: Verify the phone-normalization fixture is unmodified
+        run: |
+          echo "7abb705b158f7b1c25377606d8409e2deb55998906637184b7b9a61919819f46  test/fixtures/phone-normalization-vectors.json" \
+            | sha256sum --check --strict
+
       # Deliberately not `--set-exit-if-changed` on a subset: a published
       # package is formatted or it is not. If this fails, run `dart format .`
       # at the repo root and commit the result.
