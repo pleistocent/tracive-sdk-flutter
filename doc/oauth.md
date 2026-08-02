@@ -168,7 +168,12 @@ on native code that does nothing. The cost is the few lines below.
 
 ### Android
 
-The SDK detects the Tracive app with `canLaunchUrl(Uri.parse('tracive://authorize'))`.
+The SDK detects the Tracive app with `canLaunchUrl(Uri.parse('tracive://'))` —
+the bare scheme, and `tracivedev://` against sandbox. It carries no host on
+purpose: Android resolves such a probe by intent-filter matching, and a filter
+that declares a host requires the URI to carry a matching one, so a probe
+naming a host the app does not register answers `false` for an app that is
+installed.
 On Android 11+ (API 30) that returns `false` for **any** app you have not
 declared, whether it is installed or not — package visibility. Without this
 block every user looks un-onboarded and is sent to the install link.

@@ -80,7 +80,7 @@ sequenceDiagram
     participant Api as Tracive API
 
     App->>SDK: authorize
-    SDK->>OS: canOpen tracive://authorize
+    SDK->>OS: canOpen tracive:// (the bare scheme)
     OS-->>SDK: is the Tracive app installed
     alt Tracive app missing
         SDK->>OS: openExternally, clean install link
@@ -113,8 +113,9 @@ sequenceDiagram
 What the ordering buys, in the order it appears:
 
 1. **The presence probe runs before anything is generated.** It probes the
-   custom scheme `tracive://authorize`, not the `https` authorize URL — a
-   browser is always installed, so an `https` probe always answers `true`. The
+   custom scheme with no host — `tracive://`, or `tracivedev://` against
+   sandbox — and not the `https` authorize URL, because a browser is always
+   installed and an `https` probe therefore always answers `true`. The
    probe needs a manifest declaration on both platforms or it answers `false`
    for everyone; see [`oauth.md` § Platform setup](oauth.md#platform-setup).
 2. **The challenge is always `S256`.** `code_challenge_method` is not a
