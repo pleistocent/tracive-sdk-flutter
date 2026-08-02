@@ -91,7 +91,13 @@ String normalizePhoneNumber(String countryOrDialCode, String phoneNumber) {
       digits = _withoutLeadingZeros(digits);
   }
 
-  if (digits.isEmpty) {
+  // A number that is nothing but zeros is refused here, not left to `phone()`. For most countries the
+  // trunk-prefix rule strips the zeros away and the emptiness check above catches it — but Italy, San
+  // Marino, North America and Russia do not strip leading zeros, so `+390000000` survived, matched
+  // E.164, reached the network and was billed for a miss it could only ever be. Refusing it here also
+  // makes the reason the same in every country instead of `empty_phone_number` in Indonesia and
+  // `not_e164` in Italy for the identical input.
+  if (digits.isEmpty || !digits.split('').any((String c) => c != '0')) {
     throw const TraciveQueryException(QueryRejectionReason.emptyPhoneNumber);
   }
   return '+$dialCode$digits';
