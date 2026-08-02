@@ -770,6 +770,7 @@ enum Country {
   };
 
   /// The country with this ISO 3166-1 alpha-3 code, case-insensitively, or null.
-  static Country? fromAlpha3(String alpha3) =>
-      _byAlpha3[alpha3.trim().toUpperCase()];
+  static Country? fromAlpha3(String alpha3) => _byAlpha3[alpha3
+      .replaceAll(RegExp(r'^[ \t\n\x0B\x0C\r]+|[ \t\n\x0B\x0C\r]+$'), '')
+      .toUpperCase()];
 }

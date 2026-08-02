@@ -60,7 +60,8 @@ String normalizePhoneNumber(String countryOrDialCode, String phoneNumber) {
   // stripped, so `000`, `62` and `1` are refused. The app folds those to `+62`
   // and `+1`, which cannot match any record, so this belongs with the first
   // kind — safe, not stricter.
-  if (phoneNumber.trimLeft().startsWith('+') && !digits.startsWith(dialCode)) {
+  if (_trimLeftCanonically(phoneNumber).startsWith('+') &&
+      !digits.startsWith(dialCode)) {
     throw const TraciveQueryException(QueryRejectionReason.countryConflict);
   }
 
@@ -123,7 +124,7 @@ String _withoutLeadingZeros(String value) {
 
 /// Alpha-3 in, dial code out; or digits in, the same digits out.
 String _resolveDialCode(String countryOrDialCode) {
-  final String trimmed = countryOrDialCode.trim();
+  final String trimmed = _trimCanonically(countryOrDialCode);
   if (trimmed.isEmpty) {
     throw const TraciveQueryException(QueryRejectionReason.emptyCountry);
   }
@@ -142,4 +143,37 @@ String _resolveDialCode(String countryOrDialCode) {
     throw const TraciveQueryException(QueryRejectionReason.unknownCountry);
   }
   return country.dialCode;
+}
+
+/// The characters trimmed from a country or dial code, defined here rather than
+/// delegated to `String.trim()`.
+///
+///
+/// ASCII whitespace only, and deliberately **not** U+FEFF. A byte-order mark inside a data value is
+/// an encoding fault upstream; swallowing it here would tell a partner their pipeline is clean while
+/// the same mark waits to land in a phone number or an account id, where nothing trims it and the key
+/// comes out wrong. Each platform's own trim() disagrees about this — Kotlin's follows Unicode
+/// White_Space plus U+FEFF, JavaScript's strips a different set — which made one input behave two
+/// ways across the four SDKs.
+const List<int> _trimmedCodeUnits = <int>[0x20, 0x09, 0x0A, 0x0B, 0x0C, 0x0D];
+
+String _trimCanonically(String value) {
+  var start = 0;
+  var end = value.length;
+  while (start < end && _trimmedCodeUnits.contains(value.codeUnitAt(start))) {
+    start++;
+  }
+  while (end > start && _trimmedCodeUnits.contains(value.codeUnitAt(end - 1))) {
+    end--;
+  }
+  return value.substring(start, end);
+}
+
+String _trimLeftCanonically(String value) {
+  var start = 0;
+  while (start < value.length &&
+      _trimmedCodeUnits.contains(value.codeUnitAt(start))) {
+    start++;
+  }
+  return value.substring(start);
 }

@@ -65,7 +65,7 @@ jobs:
       # to make impossible.
       - name: Verify the phone-normalization fixture is unmodified
         run: |
-          echo "4a1a52ad5d92a22ac70eb27dc546342f12507c30705fb9fd3a0d9adb2e6d0e0d  test/fixtures/phone-normalization-vectors.json" \
+          echo "4e9d8015e1368451f1d5e6edd8248c15fa89f071ad3a608095978460112f19b0  test/fixtures/phone-normalization-vectors.json" \
             | sha256sum --check --strict
 
       # Deliberately not `--set-exit-if-changed` on a subset: a published
