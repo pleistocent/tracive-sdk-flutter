@@ -749,6 +749,10 @@ abstract final class QueryRejectionReason {
     emptyAddress,
     emptyPlatform,
     invalidDocumentId,
+    emptyCountry,
+    unknownCountry,
+    emptyPhoneNumber,
+    countryConflict,
   ];
 }
 

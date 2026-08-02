@@ -55,7 +55,7 @@ String normalizePhoneNumber(String countryOrDialCode, String phoneNumber) {
   // trade: `+` and `00` are alternative spellings, not stackable ones; what
   // follows `+` must be a country code, and `00` is none. An earlier version of
   // this comment claimed the first reason covered both.
-  if (phoneNumber.contains('+') && !digits.startsWith(dialCode)) {
+  if (phoneNumber.trimLeft().startsWith('+') && !digits.startsWith(dialCode)) {
     throw const TraciveQueryException(QueryRejectionReason.countryConflict);
   }
 
