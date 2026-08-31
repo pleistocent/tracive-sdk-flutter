@@ -8,6 +8,28 @@ until it is frozen at `1.0.0`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The documented `<queries>` block did not cover sandbox, so the presence probe could never see
+  the sandbox app.** The probe follows `environment` and looks for `tracivedev://` there, but the
+  block in `doc/oauth.md` — and in the example app — declared only `tracive`. On Android 11+ that
+  makes `canLaunchUrl` answer `false` for every device, so a partner engineer testing against
+  sandbox was told to install Tracive and sent to the store, with the app already on the device.
+  `LSApplicationQueriesSchemes` had the same gap. Both now list the sandbox scheme; declare it in
+  your own manifest and `Info.plist` if you run against sandbox.
+
+- **The same block asked for a `<package>` entry that does nothing here.** The probe resolves an
+  intent, which the scheme query answers; a `<package>` entry names one build and so cannot follow
+  `environment` the way the probe does. It has been redundant since the probe moved to a bare
+  scheme. Removing it also keeps a Tracive application id out of your shipped manifest.
+
+### Breaking
+
+- **`TraciveOAuth.traciveAndroidPackage` is removed.** Nothing read it, and it existed only to
+  document the `<package>` entry that the fix above deletes. Keeping a constant that names the
+  manifest line you are now told not to add is worse than removing it.
+
+
 ### Added
 
 - **`normalizePhoneNumber`, so a locally-formatted number can reach `phone()`.** `phone()` takes

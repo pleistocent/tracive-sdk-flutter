@@ -182,10 +182,17 @@ block every user looks un-onboarded and is sent to the install link.
 
 ```xml
 <queries>
-    <package android:name="com.pleistocent.tracive" />
+    <!-- The presence probe. One entry per scheme it may use: `tracive` is the
+         production app, `tracivedev` the sandbox build. The probe follows
+         `environment`, so a missing entry here means switching to sandbox
+         answers "not installed" for everyone. -->
     <intent>
         <action android:name="android.intent.action.VIEW" />
         <data android:scheme="tracive" />
+    </intent>
+    <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="tracivedev" />
     </intent>
     <!-- url_launcher needs this to open the Custom Tab and the install link. -->
     <intent>
@@ -194,6 +201,10 @@ block every user looks un-onboarded and is sent to the install link.
     </intent>
 </queries>
 ```
+
+**No `<package>` entry is needed, and one would not help.** The probe resolves
+an intent, which a scheme query answers; a `<package>` entry names a single
+build, so it cannot follow `environment` the way the probe does.
 
 Then declare your redirect URI as an App Link, inside your `<activity>`:
 
@@ -221,11 +232,13 @@ it.
 <key>LSApplicationQueriesSchemes</key>
 <array>
     <string>tracive</string>
+    <string>tracivedev</string>
 </array>
 ```
 
 `canOpenURL` returns `false` for any scheme not in that array, so the same
-"everyone looks un-onboarded" failure applies.
+"everyone looks un-onboarded" failure applies — and it applies per scheme, so
+omitting `tracivedev` breaks sandbox only, which is the harder one to notice.
 
 Then add the Associated Domains capability with
 `applinks:your.app`, and serve

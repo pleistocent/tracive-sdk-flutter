@@ -67,11 +67,19 @@
              you have not declared here, installed or not. Without this block
              the SDK's app-presence pre-check reports "not installed" for
              everybody, and every user is sent to the install link instead of
-             the consent screen. -->
-        <package android:name="com.pleistocent.tracive"/>
+             the consent screen.
+
+             One entry per scheme the probe may use, because the probe follows
+             `environment`: `tracive` is the production app, `tracivedev` the
+             sandbox build. A `<package>` entry would name one build and so
+             could not follow it. -->
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="tracive"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tracivedev"/>
         </intent>
         <!-- url_launcher needs this to open the Custom Tab and the install
              link. -->

@@ -125,9 +125,10 @@ class TraciveOAuth {
   /// URL scheme the sandbox build registers.
   ///
   /// Sandbox and production are separate worlds by design: neither claims the
-  /// other's scheme, so a probe for one cannot see the other. The scheme is
-  /// what this SDK probes for; the sandbox build's application id is not
-  /// something it needs, and naming one here would disclose that it exists.
+  /// other's scheme, so a probe for one cannot see the other. **Your
+  /// `<queries>` block and `LSApplicationQueriesSchemes` must list this scheme
+  /// too**, or switching to [TraciveEnvironment.sandbox] silently answers "not
+  /// installed" and sends every tester to the install link.
   static const String traciveSandboxAppScheme = 'tracivedev';
 
   /// The install page a device without the Tracive app is sent to.
@@ -135,10 +136,6 @@ class TraciveOAuth {
   /// The same link in every Tracive SDK. The path is part of it — the bare host
   /// does not resolve to the install page.
   static const String defaultInstallUrl = 'https://tracive.chottu.link/install';
-
-  /// Android package id of the Tracive app, for the `<queries>` declaration
-  /// that makes the presence probe answer truthfully on Android 11+.
-  static const String traciveAndroidPackage = 'com.pleistocent.tracive';
 
   /// The URL probed to decide whether the Tracive app is installed.
   ///
