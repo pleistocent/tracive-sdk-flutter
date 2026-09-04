@@ -354,12 +354,20 @@ void main() {
 
   group('housekeeping', () {
     test('remove drops one entry and leaves the rest', () async {
-      final cache = CheckCache.inMemory();
-      final now = DateTime.utc(2026, 7, 31, 9);
-      await cache.write(phone, _result(tier: RiskTier.high, fetchedAt: now));
+      // Pinned, like every other TTL-sensitive test here. Without the clock this
+      // wrote a HIGH entry dated 31 July against the real one, so it passed until
+      // the 30-day TTL ran out on 30 August and then failed on the calendar rather
+      // than on `remove`. Moving the date forward buys another 30 days; pinning the
+      // clock is what makes the test about what it claims to test.
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
+      final cache = CheckCache.inMemory(clock: clock.call);
+      await cache.write(
+        phone,
+        _result(tier: RiskTier.high, fetchedAt: clock.now),
+      );
       await cache.write(
         otherPhone,
-        _result(tier: RiskTier.high, fetchedAt: now),
+        _result(tier: RiskTier.high, fetchedAt: clock.now),
       );
 
       expect(await cache.remove(phone), isTrue);
@@ -438,17 +446,20 @@ void main() {
 
     test('a maxEntries of 0 means no cap', () async {
       final store = MemoryCheckCacheStore();
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
       final cache = DefaultCheckCache(
         store: store,
         policy: const CachePolicy(maxEntries: 0),
+        clock: clock.call,
       );
-      final now = DateTime.utc(2026, 7, 31, 9);
       for (var i = 0; i < 5; i++) {
         await cache.write(
           TraciveQuery.phone('+628100000000$i'),
-          _result(tier: RiskTier.high, fetchedAt: now),
+          _result(tier: RiskTier.high, fetchedAt: clock.now),
         );
       }
+      // Nothing pruned because nothing is capped — not because nothing is stale.
+      // Against the real clock these entries aged out and `prune` returned 5.
       expect(await cache.prune(), 0);
       expect(await store.count(), 5);
     });
@@ -630,15 +641,17 @@ void main() {
     test('nothing that identifies the user is bound into a statement',
         () async {
       final database = _FakeCacheDatabase();
+      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
       final cache = DefaultCheckCache(
         store: SqlCheckCacheStore(opener: () async => database),
+        clock: clock.call,
       );
 
       await cache.write(
         phone,
         _result(
           tier: RiskTier.high,
-          fetchedAt: DateTime.utc(2026, 7, 31, 9),
+          fetchedAt: clock.now,
           checkId: 'chk_abc123',
           full: true,
         ),

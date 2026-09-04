@@ -10,6 +10,16 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **Three cache tests failed on the calendar rather than on the code.** They wrote a `HIGH` entry
+  dated 31 July 2026 and expected to read it back, but built the cache without passing `clock` — so
+  freshness was judged against the real `DateTime.now`. The 30-day `highTtl` ran out on 30 August
+  and all three went red, in a file nothing had touched. The clock seam already existed and sixteen
+  neighbouring tests in the same file already used it; these three did not. Now they do.
+
+  The tempting repair is to move the hardcoded date forward. That works, and buys exactly another
+  thirty days, so each site carries a line saying why the clock is pinned instead. Proved by moving
+  those three clocks to 2020 — six years stale by wall clock — and watching the tests still pass.
+
 - **The documented `<queries>` block did not cover sandbox, so the presence probe could never see
   the sandbox app.** The probe follows `environment` and looks for `tracivedev://` there, but the
   block in `doc/oauth.md` — and in the example app — declared only `tracive`. On Android 11+ that
