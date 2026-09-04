@@ -10,6 +10,12 @@ flutter test
 All four are gates in CI, so running them locally is not optional politeness — it is the whole
 check, minus the example app.
 
+> **CI is off.** The workflow is set to manual dispatch only, to stop metered Actions minutes on a
+> private repository — see the note at the top of `.github/workflows/ci.yml`, and re-enable it when
+> there is budget. Everything below still describes real gates; the only change is that **nothing
+> runs them for you**. Run `the four commands above` before you push, and read the rest of this file as instructions
+> for a human rather than a description of a robot.
+
 **Use the pinned Flutter version: 3.29.3.** CI pins it rather than tracking `stable`, because a
 floating channel lets a Flutter release turn a green pull request red with no change in this
 repository — and the formatter in particular changes its output between versions. If `flutter` on
