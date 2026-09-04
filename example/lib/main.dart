@@ -193,73 +193,80 @@ class _CheckScreenState extends State<CheckScreen> {
         title: const Text('Tracive SDK example'),
         backgroundColor: theme.colorScheme.inversePrimary,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          const _StatusBanner(),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _input,
-            decoration: const InputDecoration(
-              labelText: 'Phone number (E.164)',
-              helperText: 'Spaces and dashes are folded away by the grammar.',
-              border: OutlineInputBorder(),
+      // Scaffold does not inset its body for MediaQuery.padding — only an appBar or a
+      // bottomNavigationBar makes it do that, and there is no bottom bar here. Without this the
+      // last card sits permanently under the Android gesture pill and the iPhone home indicator,
+      // and scrolling cannot recover it because the viewport already extends behind them.
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: <Widget>[
+            const _StatusBanner(),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _input,
+              decoration: const InputDecoration(
+                labelText: 'Phone number (E.164)',
+                helperText: 'Spaces and dashes are folded away by the grammar.',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          _SourcePicker(
-            value: _source,
-            onChanged: (value) => setState(() => _source = value),
-          ),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Full detail'),
-            subtitle: const Text(
-              'detail=full adds chronologies and comments — and is never cached.',
+            const SizedBox(height: 16),
+            _SourcePicker(
+              value: _source,
+              onChanged: (value) => setState(() => _source = value),
             ),
-            value: _detail == Detail.full,
-            onChanged: (on) =>
-                setState(() => _detail = on ? Detail.full : Detail.minimal),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _busy ? null : _check,
-            icon: _busy
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.search),
-            label: const Text('Check'),
-          ),
-          const SizedBox(height: 12),
-          _CallCounter(backend: _backend),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: <Widget>[
-              OutlinedButton(
-                onPressed: _clearCache,
-                child: const Text('Clear cache'),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Full detail'),
+              subtitle: const Text(
+                'detail=full adds chronologies and comments — and is never cached.',
               ),
-              OutlinedButton(
-                onPressed: () => _armFailure(402, 'insufficient_user_credits'),
-                child: const Text('Simulate 402'),
-              ),
-              OutlinedButton(
-                onPressed: () => _armFailure(429, 'rate_limited'),
-                child: const Text('Simulate 429'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          if (_error != null) _ErrorCard(error: _error!),
-          if (_result != null)
-            _ResultCard(result: _result!, foldedKey: _foldedKey!),
-        ],
+              value: _detail == Detail.full,
+              onChanged: (on) =>
+                  setState(() => _detail = on ? Detail.full : Detail.minimal),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _busy ? null : _check,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.search),
+              label: const Text('Check'),
+            ),
+            const SizedBox(height: 12),
+            _CallCounter(backend: _backend),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                OutlinedButton(
+                  onPressed: _clearCache,
+                  child: const Text('Clear cache'),
+                ),
+                OutlinedButton(
+                  onPressed: () =>
+                      _armFailure(402, 'insufficient_user_credits'),
+                  child: const Text('Simulate 402'),
+                ),
+                OutlinedButton(
+                  onPressed: () => _armFailure(429, 'rate_limited'),
+                  child: const Text('Simulate 429'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            if (_error != null) _ErrorCard(error: _error!),
+            if (_result != null)
+              _ResultCard(result: _result!, foldedKey: _foldedKey!),
+          ],
+        ),
       ),
     );
   }

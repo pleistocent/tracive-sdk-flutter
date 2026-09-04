@@ -10,6 +10,22 @@ until it is frozen at `1.0.0`.
 
 ### Fixed
 
+- **The example app drew its last card under the gesture bar.** `Scaffold` does not inset its body
+  for `MediaQuery.padding` — only an `appBar` or a `bottomNavigationBar` makes it do that, and the
+  example has no bottom bar — so the body extended behind the navigation bar and the `ListView`
+  never padded for it. Scrolling could not recover the card either, because the viewport itself
+  already reached past the bar. The body is now wrapped in `SafeArea`.
+
+  Android 15 is what made this visible: from `targetSdk` 35 the platform lays every window out edge
+  to edge, so the inset stopped being zero. On iPhone it was already wrong, under the home
+  indicator, and had been since long before that. The top edge was never affected — the `AppBar`
+  consumes the status-bar inset and, on Material 3, sets the icon brightness from its own
+  background.
+
+  Only the example was affected; the package ships no widgets. The same defect was fixed in the
+  Kotlin SDK's Compose sample, which had it at both edges. The Swift example and the React Native
+  package have no UI to hit it.
+
 - **Three cache tests failed on the calendar rather than on the code.** They wrote a `HIGH` entry
   dated 31 July 2026 and expected to read it back, but built the cache without passing `clock` — so
   freshness was judged against the real `DateTime.now`. The 30-day `highTtl` ran out on 30 August
