@@ -54,10 +54,17 @@ Future<void> main() async {
 
   final client = TraciveClient(
     mode: TraciveMode.oauth(
+      // TODO(partner): the client id you were issued at registration.
       clientId: 'your-client-id',
-      redirectUri: 'https://your.app/oauth/callback', // an App Link you own
-      // Name scopes with `TraciveScopes`; a mistyped one is rejected by the
-      // authorization server as a whole, not granted narrowly.
+      // TODO(partner): an App Link on a host you own, registered with Tracive
+      // and matching your manifest's intent filter exactly.
+      redirectUri: 'https://your.app/oauth/callback',
+      // TODO(partner): your own stable, opaque id for this user. Required and
+      // never blank — never a raw phone number or an email.
+      partnerUserId: 'your-user-id',
+      // TODO(partner): the narrowest set you need. Name scopes with
+      // `TraciveScopes`; a mistyped one is rejected by the authorization
+      // server as a whole, not granted narrowly.
       scopes: const [TraciveScopes.scammerCheck],
     ),
     cache: await openTraciveCache(),                  // encrypted, on device
