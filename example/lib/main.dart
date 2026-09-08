@@ -18,6 +18,10 @@
 // the client's `transport`. There is no `api.tracive.id` to reach: the Open API
 // is not live yet. That is the honest state of phase 1, and this app is written
 // so that running it teaches the SDK rather than a connection error.
+//
+// USING THIS AS YOUR OWN EXPERIMENT GROUND? Everything you have to supply, and
+// every demo shortcut you have to take back out, is marked `TODO(partner)`:
+// `grep -rn "TODO(partner)" example`.
 
 import 'package:flutter/material.dart';
 
@@ -88,7 +92,11 @@ class _CheckScreenState extends State<CheckScreen> {
       // SDK authenticates with OAuth + PKCE so no long-lived secret ships
       // inside the binary.
       mode: TraciveMode.oauth(
+        // TODO(partner): your own stable id for this user — an account id or a
+        // UUID you store. Required, never blank, and never a phone number or an
+        // email.
         partnerUserId: 'partner-user-1',
+        // TODO(partner): the client id you were issued at registration.
         clientId: 'demo-client',
         // An https App Link / Universal Link, not a custom scheme, and that is
         // not a stylistic choice. A custom scheme (`tracive-demo://callback`)
@@ -99,26 +107,39 @@ class _CheckScreenState extends State<CheckScreen> {
         // apple-app-site-association file (iOS), so it cannot be claimed by
         // somebody else. `SECURITY.md` says the same, and this file is what
         // integrators copy.
+        // TODO(partner): a host you actually own, registered with Tracive. The
+        // App Link filter in android/app/src/main/AndroidManifest.xml has to
+        // match it, and that host has to serve assetlinks.json.
         redirectUri: 'https://example.tracive.id/oauth/callback',
         // Named, not typed. A scope name is only ever validated by the
         // authorization server, and it rejects the whole consent request when
         // it does not recognise one — so a typo is not a narrower grant, it is
         // an integration that cannot authorize at all.
+        // TODO(partner): the narrowest set your integration needs.
         scopes: <String>[TraciveScopes.scammerCheck],
       ),
       // `installUrl` — where a user without the Tracive app is sent — is not
       // passed here, and a real app does not pass it either: it defaults to
       // the same install page every Tracive SDK opens. Pass one only if
       // Tracive has issued you a different link.
+      // TODO(partner): delete this line. It replaces the real HTTP transport
+      // with an in-process fake so the example runs with no server; your client
+      // talks to the API. Keep the seam for your own widget tests.
       transport: _backend,
       // A real app would pass `await openTraciveCache()` — SQLCipher on disk,
       // key in Keystore/Keychain. In-memory here so the example runs on any
       // platform, including desktop and web, with no plugin.
+      // TODO(partner): `await openTraciveCache()` — SQLCipher on disk with the
+      // key in Keystore/Keychain. In-memory here only so the example runs on
+      // any platform, desktop and web included, with no plugin.
       cache: CheckCache.inMemory(),
       // Pre-seeded so the example starts signed in. A real app gets here by
       // calling `client.authorize()` and handling the redirect; that flow needs
       // the Tracive app installed and a registered redirect URI, neither of
       // which exists in a demo. See `doc/oauth.md` for the real thing.
+      // TODO(partner): delete this whole argument. It pre-seeds a fake token so
+      // the demo starts signed in; a real app gets here by calling
+      // `client.authorize()` and handling the redirect. See doc/oauth.md.
       tokenStore: InMemoryTokenStore(
         tokens: const TraciveTokens(
           accessToken: 'demo-access-token',
@@ -148,6 +169,9 @@ class _CheckScreenState extends State<CheckScreen> {
       // Validation happens here, before anything leaves the device: a key that
       // could not match is never sent, because a miss is billed.
       final query = TraciveQuery.phone(_input.text);
+      // TODO(partner): pass an idempotencyKey — one per logical check, reused
+      // only to retry that same check. Without one a 5xx or a timeout cannot be
+      // retried safely, because a blind retry risks being charged twice.
       final result = await _client.checkScammer(
         query,
         source: _source,
@@ -520,6 +544,7 @@ class _ErrorCard extends StatelessWidget {
           'Rejected before any call was made, because a miss is billed. '
               'Reason: $reason',
         ),
+      // TODO(partner): send the user into your own top-up flow here.
       TraciveInsufficientCreditsException() => (
           'Out of credits',
           'Handle the 402 — do not call credits() before every check.',

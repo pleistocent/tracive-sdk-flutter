@@ -33,8 +33,10 @@
                  `autoVerify="true"` requires https://example.tracive.id to
                  serve /.well-known/assetlinks.json naming this package and its
                  signing-certificate fingerprint. This demo does not control
-                 that host, so verification will not succeed here — replace the
-                 host with one you own. -->
+                 that host, so verification will not succeed here.
+
+                 TODO(partner): replace the host with one you own, and keep
+                 `redirectUri` in lib/main.dart in step with it. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>

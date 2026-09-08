@@ -47,6 +47,16 @@ SQLCipher on disk with the key in Keystore/Keychain. In-memory here so the
 example runs anywhere, including desktop, with no plugin. See
 [`../doc/caching.md`](../doc/caching.md).
 
+## Using it as your own experiment ground
+
+Everything you have to supply — client id, redirect, `partnerUserId`, scopes —
+and every demo shortcut you have to take back out — the fake transport, the
+in-memory cache, the pre-seeded token — is marked `TODO(partner)`:
+
+```bash
+grep -rn "TODO(partner)" example
+```
+
 ## Files worth reading
 
 | File | Why |
