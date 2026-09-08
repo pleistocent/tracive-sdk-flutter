@@ -9,6 +9,14 @@ until it is frozen at `1.0.0`.
 ## [Unreleased]
 
 ### Fixed
+- **The quick start in `README.md` did not compile.** It omitted `partnerUserId`, which the OAuth
+  configuration requires and gives no default, so the first thing anyone starting from the README
+  met was a type error. The field is now in the snippet, and every value a partner has to supply
+  carries a `TODO(partner)` marker so it travels into their code with the snippet they copied.
+
+- **The README showed `handleCallback` being given a `String`.** The parameter is a `Uri`, so the
+  deep-link line in the quick start did not analyze. The name `incomingUrl` did not help: `uni_links`
+  hands you a `String`, so the obvious reading was the wrong one. The snippet now says so.
 
 - **The example app drew its last card under the gesture bar.** `Scaffold` does not inset its body
   for `MediaQuery.padding` — only an `appBar` or a `bottomNavigationBar` makes it do that, and the
@@ -57,6 +65,21 @@ until it is frozen at `1.0.0`.
 
 
 ### Added
+- **`access_denied` is not the only refusal, and now the OAuth guide says so.** The authorization
+  server can end a consent with other codes, and the one it actually sends is
+  `temporarily_unavailable` — for two situations that look identical to your app and are not the
+  same to the user: the partner organisation has not accepted the current terms, or the device has
+  reached its daily limit on new connections to your app. Neither is a refusal by *this* user, and
+  both resolve on their own if the user retries later.
+
+  This SDK has always passed the raw code through, but nothing told a partner to read it, so the
+  natural handling was a generic failure or — worse — "you declined", which is the one thing it is
+  not. The guide now shows how to branch, and says to branch on the **code** rather than the error
+  type: the type differs between the Tracive SDKs, the code string does not. `error_description`
+  carries the server's own wording, including any reset time, so show that.
+
+  A test pins the code and the description, alongside the existing one that covers the mechanism
+  with a stand-in code.
 
 - **`normalizePhoneNumber`, so a locally-formatted number can reach `phone()`.** `phone()` takes
   E.164 and refuses `081234567891`, for a reason it states: the SDK cannot know your dial code, and a

@@ -835,6 +835,41 @@ void main() {
       expect((result as AuthFailed).error.code, 'server_error');
     });
 
+    // The one non-denial code the server actually sends, kept as its own case.
+    //
+    // The test above already covers the mechanism with a stand-in code. This pins the code the
+    // backend really emits, for the two situations that produce it: the partner organisation has
+    // not accepted the current terms, and the device has hit its daily connection limit to this
+    // partner. Neither is a refusal by this user, and a host that branches on the exception type
+    // rather than the code cannot tell them apart — hence the assertion is on `code`.
+    //
+    // The description matters as much as the code: it carries the server's own wording, including
+    // the reset time, which is what a partner app shows instead of 'you declined'. The attempt is
+    // spent, so the user authorizes again rather than resuming.
+    test('temporarily_unavailable reaches the host with its code', () async {
+      final store = InMemoryTokenStore();
+      final oauth = _oauth(tokenStore: store);
+      final pending = await _startFlow(oauth, store);
+
+      final result = await oauth.handleCallback(
+        Uri.parse(
+          'https://partner.example/oauth/callback'
+          '?error=temporarily_unavailable'
+          '&error_description=daily+connection+limit+for+this+device+reached'
+          '&state=${pending.state}',
+        ),
+      );
+
+      expect(result, isA<AuthFailed>());
+      final error = (result as AuthFailed).error;
+      expect(error.code, 'temporarily_unavailable');
+      expect(
+        error.message,
+        contains('daily connection limit for this device reached'),
+      );
+      expect(await store.readPending(), isNull);
+    });
+
     test('a redirect with no code at all fails rather than exchanging',
         () async {
       final store = InMemoryTokenStore();
