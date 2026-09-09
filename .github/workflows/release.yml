@@ -1,0 +1,241 @@
+name: Release
+
+# ---------------------------------------------------------------------------------------------
+# Prepares a release and creates the tag. Publishing to pub.dev is publish.yml, and it is a
+# separate workflow because pub.dev requires it to be.
+#
+# pub.dev accepts an automated publish only from a run triggered by a **tag push** matching the
+# tag pattern configured on the package. `workflow_dispatch` is rejected outright — that is
+# dart-lang/pub-dev#7177, still open. So this workflow cannot publish no matter how it is written;
+# the most it can do is decide that a tag deserves to exist and then create it.
+#
+# The second half of the problem: GitHub does not start workflow runs from GITHUB_TOKEN events, so
+# a tag pushed by this workflow with the default token will not trigger publish.yml. Supply a
+# `RELEASE_PAT` and it will; without one, this workflow stops at the tag and prints the two
+# commands to push it by hand. Both paths are in doc/RELEASING.md.
+# ---------------------------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.1.0 — no "v" prefix'
+        required: true
+        type: string
+      dry_run:
+        description: 'Run every check, but create no tag'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # A published pub.dev version cannot be replaced, so two runs of the same version must never
+  # overlap. Keyed on the version rather than the ref.
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  # Releasing is limited to admin and maintain. `workflow_dispatch` already requires write access,
+  # so what this adds is the difference between "anyone who can push" and "someone who owns this
+  # package" — and for an SDK that ships into partner apps those are not the same set.
+  #
+  # A GitHub environment with required reviewers would be the native way to say this, and it is not
+  # available here: environments on a private repository need GitHub Pro or Team, and the
+  # `pleistocent` organisation is on Free. So the rule is a job, and it is the first one.
+  #
+  # It fails closed. GITHUB_TOKEN can read this endpoint with the `contents: read` and
+  # `metadata: read` it already has — checked on a runner rather than assumed — so an API error
+  # here stops the release instead of waving it through.
+  authorize:
+    name: Authorize
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Only a maintainer may cut a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.triggering_actor }}
+          REPO: ${{ github.repository }}
+        run: |
+          role="$(gh api "repos/$REPO/collaborators/$ACTOR/permission" --jq '.role_name')"
+          case "$role" in
+            admin|maintain)
+              echo "$ACTOR is '$role' on $REPO"
+              ;;
+            *)
+              echo "::error::$ACTOR is '$role' on $REPO — cutting a release is limited to admin and maintain"
+              exit 1
+              ;;
+          esac
+
+  preflight:
+    name: Preflight
+    needs: authorize
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Tags, so the "already released" check below can see them. Set explicitly rather than
+          # left to fall out of fetch-depth: without it the check silently passes on every run.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Validate the version
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version '$VERSION' — expected x.y.z with no 'v' prefix"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION"
+
+      - name: pubspec.yaml agrees this is the version
+        run: |
+          # pub.dev checks this itself — it requires the tag's version to match pubspec.yaml before
+          # it will accept the publish — but it checks it at the very end, after the tag is already
+          # pushed and public. Checking here means the mismatch costs a re-dispatch instead of a
+          # deleted tag.
+          DECLARED="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -1)"
+          if [ "$DECLARED" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::pubspec.yaml says $DECLARED but this run asked for ${{ steps.version.outputs.version }} — bump one of them"
+            exit 1
+          fi
+
+      - name: The changelog has a section for this version
+        run: |
+          # pub.dev renders CHANGELOG.md on the package page and scores the package partly on it,
+          # and the GitHub release body comes from the same section. A missing one is the commonest
+          # mistake in this procedure: publishing with the changes still under `## [Unreleased]`.
+          VERSION="${{ steps.version.outputs.version }}"
+          awk -v head="## [$VERSION]" '
+            index($0, head) == 1 { inside = 1; next }
+            inside && index($0, "## ") == 1 { exit }
+            inside { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section, or it is empty — move the entries out of [Unreleased] first"
+            exit 1
+          fi
+          echo "Release notes ($(wc -l < /tmp/release-notes.md) lines):"
+          cat /tmp/release-notes.md
+
+      - name: This version has not been released already
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Tag v$VERSION already exists — bump the version"
+            exit 1
+          fi
+          # A pub.dev version can be retracted but not replaced, and a retracted version stays
+          # visible and resolvable for anyone who already pinned it.
+          url="https://pub.dev/api/packages/tracive_sdk/versions/$VERSION"
+          code="$(curl -sS -o /dev/null -w '%{http_code}' "$url" || echo 000)"
+          case "$code" in
+            200)
+              echo "::error::tracive_sdk $VERSION is already on pub.dev and cannot be replaced — bump the version"
+              exit 1
+              ;;
+            404) echo "Not on pub.dev yet, which is what we want" ;;
+            *) echo "::warning::Could not tell whether $VERSION is on pub.dev (HTTP $code) — continuing; pub.dev rejects a duplicate itself" ;;
+          esac
+
+  # The same gates CI runs.
+  verify:
+    name: Verify
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+
+  # `flutter analyze` and the tests say the code is right; they say nothing about whether the
+  # package can be published at all. `pub publish --dry-run` is what catches a missing licence
+  # header, an oversized archive, a path dependency or a description pub.dev will reject — and it
+  # runs here rather than inside publish.yml because by then the tag is public and the failure is
+  # no longer free.
+  package-check:
+    name: Package dry run
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          # The version ci.yml pins. The reusable workflow that does the real publish installs its
+          # own Flutter, so this is a check of the package rather than of that toolchain.
+          flutter-version: 3.29.3
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter pub publish --dry-run
+
+  tag:
+    name: Tag
+    needs: [preflight, verify, package-check]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The exact commit this dispatch started from, not whatever main has become since the
+          # gates started running.
+          ref: ${{ github.sha }}
+          token: ${{ secrets.RELEASE_PAT || github.token }}
+
+      - name: Push the tag, or say how to
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          HAVE_PAT: ${{ secrets.RELEASE_PAT != '' }}
+        run: |
+          git tag -a "v$VERSION" -m "v$VERSION" "${{ github.sha }}"
+          if [ "$HAVE_PAT" = "true" ]; then
+            # Pushed as the PAT's owner rather than as github-actions[bot], which is the whole
+            # point: a GITHUB_TOKEN push starts no workflow run, so publish.yml would never fire
+            # and the release would stop here without saying so.
+            git push origin "v$VERSION"
+            {
+              echo "### Tagged v$VERSION"
+              echo ""
+              echo "Pushed with \`RELEASE_PAT\`, so **Publish** has been triggered — it publishes to pub.dev and creates the GitHub release."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::No RELEASE_PAT, so the tag was not pushed. A tag pushed by GITHUB_TOKEN cannot trigger publish.yml, and pub.dev only accepts a publish triggered by a tag push — so pushing it here would produce a tag that publishes nothing."
+            {
+              echo "### v$VERSION is ready to tag"
+              echo ""
+              echo "Every gate passed. The tag was **not** pushed: a tag pushed by \`GITHUB_TOKEN\` starts no workflow run, and pub.dev only accepts a publish triggered by a tag push — so it would produce a tag that publishes nothing."
+              echo ""
+              echo "Push it yourself, from a checkout of this commit:"
+              echo ""
+              echo '```bash'
+              echo "git fetch origin && git tag -a v$VERSION -m v$VERSION ${{ github.sha }}"
+              echo "git push origin v$VERSION"
+              echo '```'
+              echo ""
+              echo "That push triggers **Publish**, which publishes to pub.dev and creates the GitHub release."
+              echo ""
+              echo "To make this one dispatch instead of two, add a \`RELEASE_PAT\` secret — see doc/RELEASING.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  dry-run-summary:
+    name: Dry run
+    needs: [preflight, verify, package-check]
+    if: ${{ inputs.dry_run }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          {
+            echo "### Dry run of ${{ needs.preflight.outputs.version }}"
+            echo ""
+            echo "Every gate passed and the package publishes cleanly in dry-run. Nothing was tagged."
+          } >> "$GITHUB_STEP_SUMMARY"

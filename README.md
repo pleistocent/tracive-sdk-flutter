@@ -288,6 +288,7 @@ vulnerability.
 | [`doc/oauth.md`](doc/oauth.md) | The flow, platform setup, tokens, public vs confidential clients |
 | [`doc/caching.md`](doc/caching.md) | TTLs, the invalidation lever, what is never cached, what is not unit-tested |
 | [`doc/proxy-contract.md`](doc/proxy-contract.md) | phase 2: what a partner proxy must implement |
+| [`doc/RELEASING.md`](doc/RELEASING.md) | Cutting a release, and why pub.dev makes it two workflows |
 | [`SECURITY.md`](SECURITY.md) | Design invariants, reporting a vulnerability |
 | [`CHANGELOG.md`](CHANGELOG.md) | Including the known limitations of `0.1.0` |
 

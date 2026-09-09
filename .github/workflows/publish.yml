@@ -1,0 +1,158 @@
+name: Publish
+
+# ---------------------------------------------------------------------------------------------
+# Publishes to pub.dev and creates the GitHub release. Triggered by a tag push and by nothing
+# else, because pub.dev allows nothing else.
+#
+# pub.dev's automated publishing validates the GitHub OIDC token against the tag pattern
+# configured on the package, and rejects a run that was not triggered by a matching tag push.
+# `workflow_dispatch` is not accepted — dart-lang/pub-dev#7177 asks for it and is still open. That
+# is why this is a second workflow rather than the tail of release.yml, and why the tag has to be
+# pushed by something other than GITHUB_TOKEN (which starts no workflow runs at all).
+#
+# release.yml is what decides a tag deserves to exist; this is what happens once one does.
+# doc/RELEASING.md has the whole procedure.
+# ---------------------------------------------------------------------------------------------
+
+on:
+  push:
+    tags:
+      # Matches the tag pattern that has to be configured on pub.dev: `v{{version}}`. Kept strict
+      # so a `v0.2.0-beta` or a `v1.2` cannot start a publish that pub.dev would reject anyway.
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # The same rule release.yml applies at dispatch, applied again here — because this workflow can
+  # also be reached by pushing a tag directly, which needs only write access. Without this, the
+  # gate on release.yml would be a gate on the polite path only.
+  #
+  # This job also re-checks the two things that must be true of the tag itself. release.yml checked
+  # them, but a hand-pushed tag never went through release.yml.
+  guard:
+    name: Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Only a maintainer may publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.triggering_actor }}
+          REPO: ${{ github.repository }}
+        run: |
+          role="$(gh api "repos/$REPO/collaborators/$ACTOR/permission" --jq '.role_name')"
+          case "$role" in
+            admin|maintain)
+              echo "$ACTOR is '$role' on $REPO"
+              ;;
+            *)
+              echo "::error::$ACTOR is '$role' on $REPO — publishing is limited to admin and maintain"
+              exit 1
+              ;;
+          esac
+
+      - name: Read the version off the tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag $GITHUB_REF does not name an x.y.z version"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing $VERSION"
+
+      - name: pubspec.yaml agrees with the tag
+        run: |
+          # pub.dev enforces this too, but only after the upload starts. Failing here keeps the
+          # rejection off the package's history.
+          DECLARED="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -1)"
+          if [ "$DECLARED" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::Tag says ${{ steps.version.outputs.version }} but pubspec.yaml says $DECLARED"
+            exit 1
+          fi
+
+      - name: Extract the release notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          awk -v head="## [$VERSION]" '
+            index($0, head) == 1 { inside = 1; next }
+            inside && index($0, "## ") == 1 { exit }
+            inside { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section, or it is empty"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 1
+
+  # dart-lang's own reusable workflow. Used rather than reimplemented because it is what pub.dev's
+  # documentation points at, and because it already installs Flutter as well as Dart — a Flutter
+  # package cannot be published by a bare Dart SDK, since `dart pub publish` cannot resolve the
+  # `flutter: sdk: flutter` dependency in pubspec.yaml. It runs `pub publish --dry-run` and then
+  # `pub publish -f`, authenticating with the OIDC token rather than any stored credential.
+  #
+  # It installs its own Flutter version rather than the 3.29.3 that ci.yml pins. That is a real
+  # difference and an accepted one: publishing packs sources, it does not compile them.
+  publish:
+    name: Publish to pub.dev
+    needs: guard
+    permissions:
+      # Mints the OIDC token pub.dev checks. This is the credential — there is no pub.dev token
+      # stored in this repository, and there should not be one.
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+
+  github-release:
+    name: GitHub release
+    needs: [guard, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          # After pub.dev, not before. pub.dev is the artifact partners resolve; a GitHub release
+          # that ran first would announce a version that may never have been published.
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes-file release-notes.md \
+            --verify-tag
+
+      - name: Summary
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          {
+            echo "### Released $VERSION"
+            echo ""
+            echo "\`tracive_sdk: ^$VERSION\` — published to pub.dev with no stored credential; the OIDC token was the authentication."
+            echo ""
+            echo "- [pub.dev](https://pub.dev/packages/tracive_sdk/versions/$VERSION)"
+            echo "- [GitHub release](https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v$VERSION)"
+          } >> "$GITHUB_STEP_SUMMARY"

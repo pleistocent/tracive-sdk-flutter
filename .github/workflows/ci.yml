@@ -31,6 +31,10 @@ on:
   # Manual only, so a run costs something only when someone asks for it. See the note above.
   workflow_dispatch:
 
+  # release.yml runs these same gates before it tags anything, and the tag is what publishes to
+  # pub.dev. With automatic CI off, a release is otherwise cut from code nothing has checked.
+  workflow_call:
+
 # A new push to a PR makes the previous run's answer worthless.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
