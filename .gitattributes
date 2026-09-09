@@ -1,0 +1,15 @@
+# Line endings, so a checkout on Windows builds the same as one on macOS.
+#
+# Git's own heuristic already treats a keystore as binary — it holds NUL bytes well inside the
+# block Git inspects — but the heuristic is not the only thing in play. A developer with
+# `* text=auto eol=crlf` in a global config, or a tool that rewrites the working tree, turns the
+# lone LF bytes inside `example/android/app/debug.keystore` into CRLF and the file grows. Gradle
+# then fails with `Invalid keystore format` on that machine only, from a file the diff says nobody
+# touched. Naming it here removes the dependency on per-developer config.
+#
+# The Gradle wrapper needs no entry: `gradlew`, `gradlew.bat` and `gradle-wrapper.jar` are not
+# tracked in this repository — the Flutter tool writes them on first build. See
+# example/android/.gitignore.
+*.keystore binary
+*.jks binary
+*.p12 binary

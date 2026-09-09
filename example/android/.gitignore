@@ -12,3 +12,10 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# One exception, and it is not a secret: this example's debug identity. Alias
+# `androiddebugkey`, password `android` — the well-known pair every Android SDK installation
+# generates, and one Play rejects on upload. It is committed so the example is signed by the
+# same certificate on macOS, Windows and every CI run; see app/build.gradle.kts for why that
+# matters. A negation, so every other keystore stays blocked.
+!app/debug.keystore
