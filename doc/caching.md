@@ -73,9 +73,12 @@ discrepancy from the source.
 
 If the database file will not open — almost always because a device backup
 restored app files without the (deliberately non-backed-up) Keychain entry — the
-file is **deleted and rebuilt**. Nothing of value is lost: every row is a copy of
-an answer the server can produce again. The alternative is an SDK whose cache
-never opens again on that device.
+file is **deleted and rebuilt**. Every cache entry is a copy of an answer the
+server can produce again, so that much costs only credits; any transaction
+records in the file go too, and those cannot be re-fetched — see
+[Recording what a transaction was shown](#recording-what-a-transaction-was-shown)
+for why that is survivable. The alternative is an SDK whose cache never opens
+again on that device.
 
 The Keychain entry is written with `first_unlock_this_device`: readable after
 the first unlock following a boot, never synced to iCloud, never included in a
@@ -187,6 +190,83 @@ read on its own does not enumerate who the user checked.
 
 ---
 
+## Recording what a transaction was shown
+
+`read(query)` answers "what does Tracive say about this account **now**". A transaction-detail screen
+asks something else: "what was this user shown **before they sent the money**". Those two answers
+diverge, and the cache cannot give you the second one — it holds the latest answer per identifier and
+expires it as soon as it stops being trustworthy, so by the next morning a `RiskTier.none` result is
+gone and the card on yesterday's transfer would be blank.
+
+So record it against your own transaction id:
+
+```dart
+// 1. On the confirmation screen, before the PIN.
+final result = await client.checkScammer(query);
+showCheckResult(result);                       // tier, counts, and result.disclaimer
+
+// 2. Once the transfer exists and has a reference number.
+await client.cache.writeTransactionCheck('TRF26090814320771', result);
+
+// 3. Weeks later, on the transaction detail.
+final shown = await client.cache.readTransactionCheck('TRF26090814320771');
+if (shown != null) renderSecurityCheckCard(shown);   // never "no reports" when it is null
+```
+
+It is a separate call rather than a parameter on `checkScammer` because of the order those two things
+happen in: the check runs on the confirmation screen, and the reference number is minted after the
+PIN. There is no transaction id to pass when the check is made.
+
+**Each record is a snapshot, not a pointer into the cache.** That is the whole design decision, and
+it is what makes the card truthful. A user transfers to the same account in September, when it is
+clean, and again in October, after it has been reported. A pointer would rewrite September's card to
+show October's verdict — an audit trail saying the user was warned before a transfer where they were
+shown nothing of the kind. Two records, two answers, neither one editing the other.
+
+**One check can serve several transactions.** The second transfer to an account you already checked
+is a cache hit: no request, no credit, and `writeTransactionCheck` called a second time with that
+transfer's id. Both details get a card, and the second one's `origin` is `Origin.cache`, which is how
+your UI knows that transfer spent nothing.
+
+| | `write` / `read` | `writeTransactionCheck` / `readTransactionCheck` |
+|---|---|---|
+| Keyed on | the identifier | your transaction id, hashed, under a `txn:` prefix |
+| Lifetime | tier TTL, 1 hour to 30 days | `transactionCheckRetention`, 90 days by default |
+| Server `cacheTtlSeconds` | applied, including retraction | **not applied** — a record of the past cannot be retracted |
+| Overwritten by a later check | yes | no |
+| `origin` on read | restamped `Origin.cache` | kept as recorded |
+| `checkId`, `billing` | dropped | kept — this record *is* that one call |
+| `topChronologies`, `comments` | dropped | dropped |
+
+Both kinds of row live in the one table. A cache key is 64 hex digits and `:` is not a hex digit, so
+a `txn:`-prefixed key cannot collide with one — which is what lets them share a table without a
+`kind` column. Such a column would sort a stolen database into "answers held" and "transfers made"
+before anyone had to decrypt it.
+
+Four things to know before you build a screen on it:
+
+- **`null` means "no check is on file", never "nothing was found".** A transfer where the user chose
+  to skip the check has no record, and rendering that as a clean result invents a reassurance nobody
+  gave. Show nothing.
+- **The id is hashed, and it is matched verbatim** apart from a trim. `TRF-1` and `trf-1` are two
+  records; normalise your own reference before it gets here if its case can vary. A blank id is an
+  `ArgumentError` rather than a shared row that would hand a transaction someone else's verdict.
+- **`clear()` takes the records with it**, so a Tracive sign-out empties the cards on transactions
+  that are still in your history. That follows from whose data it is: the verdict was read under a
+  grant that no longer exists.
+- **Records are counted by `maxEntries`** and, with the defaults, evicted last: eviction drops
+  whatever is closest to expiry, and 90 days outlives every tier TTL. That ordering is a consequence
+  of the numbers, not a rule — raise a tier TTL above `transactionCheckRetention`, or lower the
+  retention below one, and records start going first. If you record more transactions than
+  `maxEntries`, raise it: an evicted cache entry costs a credit to replace and an evicted record
+  cannot be replaced at all.
+
+And the reason this lives in the SDK rather than in your backend: the partner terms forbid uploading
+Tracive results, derived values included — a risk tier and a report count are as much our database as
+the rows behind them. Local storage on the user's own device is the permitted place for them, which
+is exactly what these rows are. What may go to your server is the user's *decision*: `riskAccepted`,
+`riskAcceptedAt`. That is the audit trail you can defend, and it contains no result at all.
+
 ## Housekeeping
 
 ```dart
@@ -237,6 +317,16 @@ change.
 
 A pragma that cannot be read is treated as a mismatch, which rebuilds the table.
 That is the safe direction.
+
+**Transaction records go with the table, and that half is not disposable.** The
+rebuild drops every row, and by design there is no column that could tell the
+two kinds apart, so a bump empties the check card on every transaction in the
+user's history as well. A cache entry that goes costs one credit; a record that
+goes cannot be recovered at all. So bump only when the alternative is a wrong
+answer, and do not build a flow that *depends* on a record still being there —
+the card is something a transaction detail shows when it can, not the audit
+trail. The audit trail is the `riskAccepted` / `riskAcceptedAt` pair on your own
+server.
 
 ---
 

@@ -146,6 +146,27 @@ in [`doc/architecture.md`](doc/architecture.md).
 
 ---
 
+## Showing the check again on a transaction detail
+
+A cache read answers "what does Tracive say about this account now". A transaction-detail screen asks
+"what was this user shown before they sent the money" — a different question, and one the cache cannot
+answer, because it keeps only the latest verdict per account and drops a clean one after an hour.
+Record it against your own transaction id instead:
+
+```dart
+// Once the transfer exists and has a reference number.
+await client.cache.writeTransactionCheck('TRF26090814320771', result);
+
+// Weeks later. null = no check on file; render nothing, never "no reports found".
+final shown = await client.cache.readTransactionCheck('TRF26090814320771');
+if (shown != null) renderSecurityCheckCard(shown);
+```
+
+Each record is a snapshot on its own 90-day retention, so a later check of the same account cannot
+rewrite an older transaction's card, and one check can be recorded against several transactions — the
+second transfer to an account you already checked costs nothing and still gets a card. Full rules in
+[doc/caching.md](doc/caching.md#recording-what-a-transaction-was-shown).
+
 ## Five things that will bite you if you skip them
 
 ### A miss is billed
