@@ -45,19 +45,30 @@ local.properties
 /pubspec.lock
 
 # Generated platform folders in the example app. `flutter create .` regenerates
-# them from `example/pubspec.yaml`; committing them means every Flutter upgrade
-# shows up as an unreviewable diff. The two hand-written pieces the OAuth flow
-# needs — the `<queries>` element and `LSApplicationQueriesSchemes` — are
-# documented in `doc/oauth.md` so they can be re-applied after a regeneration.
+# them from `example/pubspec.yaml`. The four below stay ignored because nothing
+# in this repository builds them: the SDK supports Android and iOS, so those
+# folders exist only because `flutter create` writes every platform it knows,
+# and a folder nobody builds rots without anyone noticing.
 #
-# `example/android/` is the exception, and deliberately so. CI builds a real
-# Android APK from it, which is the only step that proves the SDK's plugins
-# link on a device; regenerating it meant CI built a project nobody had ever
-# reviewed, and silently discarded the hand-edits the build needs. It is
-# tracked instead, minus the parts the Flutter tool writes for itself — see
-# `example/android/.gitignore`. A Flutter upgrade that changes that project is
-# exactly the diff a maintainer should be reading.
-example/ios/
+# `example/android/` and `example/ios/` are tracked, and it is one argument
+# applied twice. Building the example is the only step that proves the SDK's
+# plugins — `sqflite_sqlcipher`, `flutter_secure_storage`, `url_launcher` —
+# actually link on a real target; no unit test reaches that. While these were
+# regenerated, that step built a project nobody had ever reviewed and silently
+# discarded the hand-edits the app needs: the `<queries>` element on Android,
+# `LSApplicationQueriesSchemes` on iOS, the launcher icon, the display name.
+# Silently is the word that matters — an iOS example missing that array builds
+# and runs perfectly while reporting "not installed" for a Tracive app that is.
+# `doc/oauth.md` still carries both, because every integrator must add them to
+# their own app; that makes it documentation, not this repo's restore procedure.
+#
+# The cost is real and worth naming: a Flutter upgrade now lands as an Xcode
+# project diff as well as a Gradle one. That is exactly the diff a maintainer
+# should be reading.
+#
+# Both are tracked minus what the Flutter tool writes for itself — generated
+# xcconfigs, plugin registrants, `Pods/`, `.symlinks/`, every `xcuserdata` —
+# see `example/android/.gitignore` and `example/ios/.gitignore`.
 example/linux/
 example/macos/
 example/windows/
