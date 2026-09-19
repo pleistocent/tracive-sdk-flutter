@@ -294,12 +294,13 @@ opened.
 ### Sign-out
 
 ```dart
-await client.signOut();   // revoke + clear tokens
-await client.cache.clear();
+await client.signOut();   // revoke, clear tokens, then empty the cache
 ```
 
-The cache holds no identifiers, but it does hold the *answers* to one user's
-questions. Clear it when the user leaves.
+`signOut()` empties the cache itself. The cache holds no identifiers, but it
+does hold the *answers* to one user's questions, and the next user of the device
+must not inherit them. `client.clearCache()` does the same on its own, for a
+user who stays signed in.
 
 ---
 
