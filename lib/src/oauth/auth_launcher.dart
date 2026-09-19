@@ -1,4 +1,5 @@
-// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 PT Pleistocent Teknologi Nusantara.
+// Licensed under the Apache License, Version 2.0.
 //
 // Opening URLs outside the app — steps 1 and 3 of the flow in `doc/oauth.md`.
 //

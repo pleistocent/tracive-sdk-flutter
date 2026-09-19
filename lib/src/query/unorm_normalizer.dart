@@ -1,4 +1,5 @@
-// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 PT Pleistocent Teknologi Nusantara.
+// Licensed under the Apache License, Version 2.0.
 //
 // Full Unicode NFC for the query grammar — and the SDK's default fold.
 //

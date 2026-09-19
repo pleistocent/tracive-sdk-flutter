@@ -1,4 +1,5 @@
-// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 PT Pleistocent Teknologi Nusantara.
+// Licensed under the Apache License, Version 2.0.
 
 /// The OAuth scopes the authorization server recognises, as their exact wire
 /// strings.

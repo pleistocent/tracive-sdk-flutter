@@ -1,4 +1,5 @@
-// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 PT Pleistocent Teknologi Nusantara.
+// Licensed under the Apache License, Version 2.0.
 //
 // JavaScript string semantics, so that a key folded here is byte-identical to
 // the key the Tracive API folds. The rules below are the ones stated in the

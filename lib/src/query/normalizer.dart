@@ -1,4 +1,5 @@
-// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 PT Pleistocent Teknologi Nusantara.
+// Licensed under the Apache License, Version 2.0.
 //
 // Unicode NFC for the query grammar — the `rules` block of
 // `test/fixtures/query-grammar-vectors.json`.

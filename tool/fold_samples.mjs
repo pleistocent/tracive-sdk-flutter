@@ -1,4 +1,5 @@
-// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 PT Pleistocent Teknologi Nusantara.
+// Licensed under the Apache License, Version 2.0.
 //
 // Folds a JSON array of strings with the JavaScript engine's own
 // `toUpperCase()` / `toLowerCase()`, and writes `[[upper, lower], ...]`.

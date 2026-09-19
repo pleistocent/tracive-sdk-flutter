@@ -1,4 +1,5 @@
-// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 PT Pleistocent Teknologi Nusantara.
+// Licensed under the Apache License, Version 2.0.
 //
 // Regenerates `lib/src/query/js_case_data.dart`.
 //
@@ -178,7 +179,8 @@ String _render({
   required List<List<int>> caseIgnorable,
 }) {
   return '''
-// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 PT Pleistocent Teknologi Nusantara.
+// Licensed under the Apache License, Version 2.0.
 //
 // GENERATED FILE - DO NOT EDIT BY HAND.
 //

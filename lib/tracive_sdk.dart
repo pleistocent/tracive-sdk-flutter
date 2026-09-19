@@ -1,4 +1,5 @@
-// Copyright (c) Tracive. Licensed under the Apache License, Version 2.0.
+// Copyright 2026 PT Pleistocent Teknologi Nusantara.
+// Licensed under the Apache License, Version 2.0.
 
 /// Tracive SDK for Dart and Flutter — check a phone number, e-mail address,
 /// bank account, crypto address or social handle against Tracive's scam
