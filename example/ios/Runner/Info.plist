@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Tracive Flutter</string>
+	<string>$(TRACIVE_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -54,5 +54,28 @@
 		<string>tracive</string>
 		<string>tracivedev</string>
 	</array>
+	<!-- The OAuth redirect target, per flavor from ios/Flavors/*.xcconfig; it
+	     has to match lib/flavor.dart. A private-use scheme only because this
+	     example controls no domain: a real integration uses a Universal Link
+	     it owns (SECURITY.md).
+	     TODO(partner): an applinks: entitlement for a host you own. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(TRACIVE_REDIRECT_SCHEME)</string>
+			</array>
+		</dict>
+	</array>
+	<!-- app_links delivers the redirect to Dart. Flutter's own deep linking
+	     would also push it onto the Navigator as a route, which this app has
+	     no route for. -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 </dict>
 </plist>

@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="Tracive Flutter"
+        android:label="${appLabel}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
@@ -26,26 +26,30 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!-- The OAuth redirect target; see doc/oauth.md.
-                 An App Link, not a custom scheme: a custom scheme is claimed
-                 first-come, so any other app on the device could register the
-                 same one and receive the authorization code.
+            <!-- app_links delivers the redirect to Dart. Flutter's own deep
+                 linking would also push it onto the Navigator as a route
+                 name, which this app has no route for. -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
 
-                 `autoVerify="true"` requires https://example.tracive.id to
-                 serve /.well-known/assetlinks.json naming this package and its
-                 signing-certificate fingerprint. This demo does not control
-                 that host, so verification will not succeed here.
+            <!-- The OAuth redirect target; see doc/oauth.md. The scheme is
+                 per flavor, from productFlavors in build.gradle.kts, and has
+                 to match lib/flavor.dart.
 
-                 TODO(partner): replace the host with one you own, and keep
-                 `redirectUri` in lib/main.dart in step with it. -->
-            <intent-filter android:autoVerify="true">
+                 A private-use scheme only because this example controls no
+                 domain. Any app on the device can claim one, so a real
+                 integration uses an App Link it owns — SECURITY.md.
+
+                 TODO(partner): an App Link on a host you own, with
+                 android:autoVerify="true" and assetlinks.json served there. -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data
-                    android:scheme="https"
-                    android:host="example.tracive.id"
-                    android:pathPrefix="/oauth/callback"/>
+                    android:scheme="${traciveRedirectScheme}"
+                    android:host="oauth"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

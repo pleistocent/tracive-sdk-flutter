@@ -2,15 +2,41 @@
 
 A runnable app for `package:tracive_sdk`.
 
-**It does not talk to a server.** The Tracive Open API is not live yet (phase 1),
-so this example injects `DemoBackend` — an in-process fake, about 190 readable
-lines in [`lib/demo_backend.dart`](lib/demo_backend.dart) — as the client's HTTP
-transport. Nothing here opens a socket.
+## Three flavors
 
-That is not just a workaround for the missing backend; it demonstrates the
-point. `HttpTransport` is a one-method interface precisely so that a fake is
-short enough to read. The same fake is how you would widget-test your own
-checkout screen without a network.
+| Flavor | Run | Talks to | Installs as |
+|---|---|---|---|
+| `demo` (default) | `flutter run` | nothing — `DemoBackend`, in-process | `….demo`, "Flutter Demo" |
+| `sandbox` | `flutter run --flavor sandbox` | `https://api-sandbox.tracive.id/v1` | `….sandbox`, "Flutter Sandbox" |
+| `production` | `flutter run --flavor production` | `https://api.tracive.id/v1` | the base id, "Tracive Flutter" |
+
+**`demo` does not talk to a server.** It injects `DemoBackend` — an in-process
+fake, about 190 readable lines in [`lib/demo_backend.dart`](lib/demo_backend.dart)
+— as the client's HTTP transport, and pre-seeds a token, so a fresh clone runs
+with no credentials and nothing to bill. `HttpTransport` is a one-method
+interface precisely so that a fake is short enough to read; the same fake is how
+you would widget-test your own checkout screen without a network.
+
+**`sandbox` and `production` are the real integration**: the default transport,
+the encrypted on-disk cache (`openTraciveCache()`), and **Authorize**, which
+runs the OAuth round trip through the Tracive app and back to this one. Put the
+client id Tracive issued you for each environment in
+[`lib/flavor.dart`](lib/flavor.dart), and register that flavor's redirect on it —
+they are separate registrations, and a sandbox client id is unknown to
+production.
+
+Each flavor installs as its own app. The SDK's token store and cache are not
+keyed by environment, so one app rebuilt from sandbox to production would send
+the sandbox grant to production and serve sandbox verdicts as production
+answers. Separate apps need separate redirect schemes too, or the OS picks which
+of them receives the authorization code. The per-flavor values live in
+`lib/flavor.dart`, `productFlavors` in `android/app/build.gradle.kts`, and
+`ios/Flavors/*.xcconfig`; Xcode has one scheme per flavor.
+
+The redirects are private-use schemes (`tracive-flutter-sandbox://oauth/callback`)
+only because this example controls no domain to host `assetlinks.json` or an
+apple-app-site-association file on. A real integration uses an App Link /
+Universal Link it owns — [`../SECURITY.md`](../SECURITY.md) says why.
 
 ## The launcher icon and the name
 
@@ -40,9 +66,10 @@ for iOS, the `mipmap-*` directories for Android) rather than a list of its own,
 so it fills whatever the template declares. In between, the committed PNGs are
 what the build uses.
 
-The display name is `Tracive Flutter` — `CFBundleDisplayName` in
-`example/ios/Runner/Info.plist`, `android:label` in the Android manifest. Keep it
-about that short. iOS does not simply truncate a home-screen label that does not
+The display name is `Tracive Flutter` for production, and "Flutter Sandbox" and
+"Flutter Demo" for the other two — `TRACIVE_DISPLAY_NAME` in
+`ios/Flavors/*.xcconfig`, `appLabel` in `productFlavors`. Keep each about that
+short. iOS does not simply truncate a home-screen label that does not
 fit — it tightens the tracking until the spaces close up, so an 18-character name
 rendered as "TraciveSDKSa…", which reads as a typo rather than a long name; 15
 still renders in full. The name says the platform rather than repeating "SDK",
@@ -53,13 +80,14 @@ which the ribbon already carries, and which would push this one to 19.
 ```bash
 cd example
 flutter pub get
-flutter run
+flutter run                        # demo
+flutter run --flavor sandbox       # or --flavor production
 ```
 
 The SDK is referenced by path (`tracive_sdk: {path: ../}`), so you are always
 running the working tree, never a published version that may differ.
 
-## What to try
+## What to try (demo)
 
 | Do this | And notice |
 |---|---|
@@ -71,23 +99,21 @@ running the working tree, never a published version that may differ.
 | Press **Simulate 402** then **Check** | The typed `TraciveInsufficientCreditsException` — the one you should handle instead of polling `credits()`. |
 | Look at the folded key under any result | `+62 812-3456-7891` became `PHONE_+6281234567891`. That folded string is both what goes on the wire and what the cache key is hashed from. |
 
-## Two things this example is not
+## Two things the demo flavor is not
 
-**It is not signed in the way your app will be.** The token store here is
-pre-seeded with a fake token so the demo starts usable. A real app calls
+**It is not signed in the way your app will be.** Its token store is pre-seeded
+with a fake token so the demo starts usable. The live flavors call
 `client.authorize()`, which requires the Tracive app to be installed and a
 registered redirect URI — see [`../doc/oauth.md`](../doc/oauth.md).
 
-**Its cache is in memory.** A real app passes `await openTraciveCache()`:
-SQLCipher on disk with the key in Keystore/Keychain. In-memory here so the
-example runs anywhere, including desktop, with no plugin. See
-[`../doc/caching.md`](../doc/caching.md).
+**Its cache is in memory**, so it runs anywhere, desktop included, with no
+plugin. The live flavors pass `await openTraciveCache()`: SQLCipher on disk with
+the key in Keystore/Keychain. See [`../doc/caching.md`](../doc/caching.md).
 
 ## Using it as your own experiment ground
 
-Everything you have to supply — client id, redirect, `partnerUserId`, scopes —
-and every demo shortcut you have to take back out — the fake transport, the
-in-memory cache, the pre-seeded token — is marked `TODO(partner)`:
+Everything you have to supply — a client id and a redirect per environment,
+`partnerUserId`, scopes — is marked `TODO(partner)`:
 
 ```bash
 grep -rn "TODO(partner)" example

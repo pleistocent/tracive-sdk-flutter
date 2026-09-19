@@ -23,6 +23,11 @@ dependencies:
 
   cupertino_icons: ^1.0.8
 
+  # Delivers the OAuth redirect to Dart in the sandbox and production flavors,
+  # including the one that cold-starts the app. Any deep-link package works;
+  # the SDK only needs the Uri (doc/oauth.md).
+  app_links: ^6.4.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -30,3 +35,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # `flutter run` with no --flavor. The demo needs no credentials and no
+  # network, so a fresh clone still runs. See lib/flavor.dart.
+  default-flavor: demo

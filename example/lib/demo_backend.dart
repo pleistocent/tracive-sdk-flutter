@@ -2,9 +2,8 @@
 //
 // A fake Tracive backend, in-process.
 //
-// WHY THIS EXISTS. The Open API is not live yet: there is no `api.tracive.id`
-// to call. Without something to answer, this example could only demonstrate a
-// spinner turning into a network error, which teaches nothing about the SDK.
+// WHY THIS EXISTS. It is what the `demo` flavor talks to, so the example runs
+// on a fresh clone with no credentials, nothing to reach and nothing to bill.
 //
 // It is also the honest way to show the SDK's headline testability property.
 // `HttpTransport` is a one-method interface precisely so that a fake is short

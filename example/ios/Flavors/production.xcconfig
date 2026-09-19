@@ -1,0 +1,6 @@
+// The production flavor: `flutter run --flavor production`. See demo.xcconfig.
+PRODUCT_BUNDLE_IDENTIFIER = id.tracive.traciveSdkExample
+TRACIVE_DISPLAY_NAME = Tracive Flutter
+
+// TODO(partner): your own production scheme — keep lib/flavor.dart in step.
+TRACIVE_REDIRECT_SCHEME = tracive-flutter

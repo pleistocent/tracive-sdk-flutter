@@ -2,8 +2,9 @@
 //
 // Widget tests for the example app.
 //
-// NO NETWORK. The app injects `DemoBackend` as the client's transport, so these
-// tests exercise the real SDK decode path with nothing listening on a socket.
+// NO NETWORK. With no `--flavor` the app is the demo flavor, which injects
+// `DemoBackend` as the client's transport, so these tests exercise the real SDK
+// decode path with nothing listening on a socket.
 // That is the same seam a host app would use for its own widget tests, which is
 // half of why the example is written this way.
 
@@ -35,12 +36,16 @@ Future<void> _tapCheck(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('states up front that the backend is not live', (tester) async {
+  testWidgets('states up front that the demo answers from a fake', (
+    tester,
+  ) async {
     await _pumpApp(tester);
 
-    expect(find.textContaining('phase 1'), findsOneWidget);
-    expect(find.textContaining('not live'), findsOneWidget);
+    expect(find.textContaining('Demo flavor'), findsOneWidget);
+    expect(find.textContaining('DemoBackend'), findsOneWidget);
     expect(find.text('Backend calls this session: 0'), findsOneWidget);
+    // The live flavors' OAuth controls are not the demo's: it is pre-seeded.
+    expect(find.text('Authorize'), findsNothing);
   });
 
   testWidgets('a check shows a verdict, the folded key and the disclaimer', (

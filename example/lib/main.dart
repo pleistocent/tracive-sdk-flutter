@@ -14,15 +14,18 @@
 //     it in any UI built on the SDK, so this UI surfaces it.
 //   * Typed errors, triggered on demand rather than described.
 //
-// NO NETWORK. Every call is answered in-process by `DemoBackend`, injected as
-// the client's `transport`. There is no `api.tracive.id` to reach: the Open API
-// is not live yet. That is the honest state of phase 1, and this app is written
-// so that running it teaches the SDK rather than a connection error.
+// THREE FLAVORS (lib/flavor.dart). `demo`, the default, answers every call
+// in-process from `DemoBackend`, so it runs on a fresh clone with nothing to
+// reach and nothing to bill. `sandbox` and `production` are the real
+// integration: the default transport, the encrypted on-disk cache, and the
+// OAuth round trip through the Tracive app.
 //
-// USING THIS AS YOUR OWN EXPERIMENT GROUND? Everything you have to supply, and
-// every demo shortcut you have to take back out, is marked `TODO(partner)`:
-// `grep -rn "TODO(partner)" example`.
+// USING THIS AS YOUR OWN EXPERIMENT GROUND? Everything you have to supply is
+// marked `TODO(partner)`: `grep -rn "TODO(partner)" example`.
 
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 
 // Everything this app needs comes through the public barrel — which is the
@@ -31,20 +34,38 @@ import 'package:flutter/material.dart';
 import 'package:tracive_sdk/tracive_sdk.dart';
 
 import 'demo_backend.dart';
+import 'flavor.dart';
 
-void main() {
+Future<void> main() async {
   // Nothing is installed here on purpose. The SDK already folds every query
   // through full Unicode NFC (`UnormNormalizer`), so an integrator has nothing
   // to configure to get a key that matches the server's. The seam exists for
   // the app that has measured the fold as too slow and knows its identifiers
   // are ASCII; see `doc/integration.md` before taking it.
-  runApp(const TraciveExampleApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  final flavor = ExampleFlavor.current;
+  runApp(
+    TraciveExampleApp(
+      flavor: flavor,
+      // Opened before the first frame: it is asynchronous, and the client
+      // takes its cache at construction.
+      cache: flavor.isLive ? await openTraciveCache() : null,
+    ),
+  );
 }
 
 /// The example application.
 class TraciveExampleApp extends StatelessWidget {
-  /// Creates the app.
-  const TraciveExampleApp({super.key});
+  /// Creates the app. [cache] is required for a live [flavor].
+  const TraciveExampleApp({
+    super.key,
+    this.flavor = ExampleFlavor.demo,
+    this.cache,
+  });
+
+  final ExampleFlavor flavor;
+
+  final CheckCache? cache;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -54,14 +75,18 @@ class TraciveExampleApp extends StatelessWidget {
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F6FEB)),
           useMaterial3: true,
         ),
-        home: const CheckScreen(),
+        home: CheckScreen(flavor: flavor, cache: cache),
       );
 }
 
 /// The one screen: enter an identifier, check it, read the result.
 class CheckScreen extends StatefulWidget {
   /// Creates the screen.
-  const CheckScreen({super.key});
+  const CheckScreen({super.key, required this.flavor, this.cache});
+
+  final ExampleFlavor flavor;
+
+  final CheckCache? cache;
 
   @override
   State<CheckScreen> createState() => _CheckScreenState();
@@ -72,13 +97,16 @@ class _CheckScreenState extends State<CheckScreen> {
     text: '+62 812-3456-7891',
   );
 
-  late final DemoBackend _backend;
+  /// Only the demo has one; the live flavors talk to the real API.
+  DemoBackend? _backend;
   late final TraciveClient _client;
+  StreamSubscription<Uri>? _links;
 
   Source _source = Source.cacheFirst;
   Detail _detail = Detail.minimal;
 
   bool _busy = false;
+  bool _authorized = false;
   CheckResult? _result;
   Object? _error;
   String? _foldedKey;
@@ -86,72 +114,73 @@ class _CheckScreenState extends State<CheckScreen> {
   @override
   void initState() {
     super.initState();
-    _backend = DemoBackend();
-    _client = TraciveClient(
-      // Note what is absent: there is no apiKey parameter, in any mode. The
-      // SDK authenticates with OAuth + PKCE so no long-lived secret ships
-      // inside the binary.
-      mode: TraciveMode.oauth(
-        // TODO(partner): your own stable id for this user — an account id or a
-        // UUID you store. Required, never blank, and never a phone number or an
-        // email.
-        partnerUserId: 'partner-user-1',
-        // TODO(partner): the client id you were issued at registration.
-        clientId: 'demo-client',
-        // An https App Link / Universal Link, not a custom scheme, and that is
-        // not a stylistic choice. A custom scheme (`tracive-demo://callback`)
-        // is claimed first-come on both platforms: any other app on the device
-        // can register the same one and receive the authorization code. An
-        // App Link is bound to a host you control by
-        // `/.well-known/assetlinks.json` (Android) or the
-        // apple-app-site-association file (iOS), so it cannot be claimed by
-        // somebody else. `SECURITY.md` says the same, and this file is what
-        // integrators copy.
-        // TODO(partner): a host you actually own, registered with Tracive. The
-        // App Link filter in android/app/src/main/AndroidManifest.xml has to
-        // match it, and that host has to serve assetlinks.json.
-        redirectUri: 'https://example.tracive.id/oauth/callback',
-        // Named, not typed. A scope name is only ever validated by the
-        // authorization server, and it rejects the whole consent request when
-        // it does not recognise one — so a typo is not a narrower grant, it is
-        // an integration that cannot authorize at all.
-        // TODO(partner): the narrowest set your integration needs.
-        scopes: <String>[TraciveScopes.scammerCheck],
-      ),
-      // `installUrl` — where a user without the Tracive app is sent — is not
-      // passed here, and a real app does not pass it either: it defaults to
-      // the same install page every Tracive SDK opens. Pass one only if
-      // Tracive has issued you a different link.
-      // TODO(partner): delete this line. It replaces the real HTTP transport
-      // with an in-process fake so the example runs with no server; your client
-      // talks to the API. Keep the seam for your own widget tests.
-      transport: _backend,
-      // A real app would pass `await openTraciveCache()` — SQLCipher on disk,
-      // key in Keystore/Keychain. In-memory here so the example runs on any
-      // platform, including desktop and web, with no plugin.
-      // TODO(partner): `await openTraciveCache()` — SQLCipher on disk with the
-      // key in Keystore/Keychain. In-memory here only so the example runs on
-      // any platform, desktop and web included, with no plugin.
-      cache: CheckCache.inMemory(),
-      // Pre-seeded so the example starts signed in. A real app gets here by
-      // calling `client.authorize()` and handling the redirect; that flow needs
-      // the Tracive app installed and a registered redirect URI, neither of
-      // which exists in a demo. See `doc/oauth.md` for the real thing.
-      // TODO(partner): delete this whole argument. It pre-seeds a fake token so
-      // the demo starts signed in; a real app gets here by calling
-      // `client.authorize()` and handling the redirect. See doc/oauth.md.
-      tokenStore: InMemoryTokenStore(
-        tokens: const TraciveTokens(
-          accessToken: 'demo-access-token',
-          refreshToken: 'demo-refresh-token',
-          grantedScopes: <String>[TraciveScopes.scammerCheck],
-        ),
-      ),
+    final flavor = widget.flavor;
+    // Note what is absent: there is no apiKey parameter, in any mode. The SDK
+    // authenticates with OAuth + PKCE so no long-lived secret ships inside the
+    // binary.
+    final mode = TraciveMode.oauth(
+      // TODO(partner): your own stable id for this user — an account id or a
+      // UUID you store. Required, never blank, and never a phone number or an
+      // email.
+      partnerUserId: 'partner-user-1',
+      clientId: flavor.clientId,
+      redirectUri: flavor.redirectUri,
+      // Named, not typed. A scope name is only ever validated by the
+      // authorization server, and it rejects the whole consent request when
+      // it does not recognise one — so a typo is not a narrower grant, it is
+      // an integration that cannot authorize at all.
+      // TODO(partner): the narrowest set your integration needs.
+      scopes: <String>[TraciveScopes.scammerCheck],
     );
+
+    final environment = flavor.environment;
+    if (environment != null) {
+      // The real integration. `installUrl` — where a user without the Tracive
+      // app is sent — is not passed: it defaults to the install page every
+      // Tracive SDK opens. Pass one only if Tracive has issued you another.
+      _client = TraciveClient(
+        mode: mode,
+        environment: environment,
+        cache: widget.cache!,
+      );
+      // Every incoming link goes to the SDK, which answers null for anything
+      // that is not its own redirect. The stream also carries the link that
+      // cold-started the app, which is how a flow survives the OS killing
+      // this process while the user was in the Tracive app.
+      _links = AppLinks().uriLinkStream.listen(_onLink);
+      unawaited(
+        _client.isAuthorized.then((authorized) {
+          if (mounted) setState(() => _authorized = authorized);
+        }),
+      );
+    } else {
+      final backend = DemoBackend();
+      _backend = backend;
+      _client = TraciveClient(
+        mode: mode,
+        // An in-process fake in place of the HTTP transport, so the demo runs
+        // with no server. The same seam is how you widget-test your own screen.
+        transport: backend,
+        // In memory so the demo runs on any platform, desktop and web
+        // included, with no plugin. The live flavors use `openTraciveCache()`.
+        cache: CheckCache.inMemory(),
+        // Pre-seeded so the demo starts signed in; the live flavors get here
+        // through `authorize()`. See `doc/oauth.md`.
+        tokenStore: InMemoryTokenStore(
+          tokens: const TraciveTokens(
+            accessToken: 'demo-access-token',
+            refreshToken: 'demo-refresh-token',
+            grantedScopes: <String>[TraciveScopes.scammerCheck],
+          ),
+        ),
+      );
+      _authorized = true;
+    }
   }
 
   @override
   void dispose() {
+    unawaited(_links?.cancel());
     _client.close();
     _input.dispose();
     super.dispose();
@@ -203,10 +232,58 @@ class _CheckScreenState extends State<CheckScreen> {
   }
 
   void _armFailure(int status, String code) {
-    _backend.failNextCall = (status: status, code: code);
+    _backend!.failNextCall = (status: status, code: code);
+    _say('Next call will fail with $status $code.');
+  }
+
+  void _say(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Next call will fail with $status $code.')),
+      SnackBar(content: Text(message)),
     );
+  }
+
+  /// Opens the consent screen and returns; the answer arrives at [_onLink].
+  Future<void> _authorize() async {
+    final start = await _client.authorize();
+    if (!mounted) return;
+    _say(switch (start) {
+      null => 'Consent screen opened. Finish it in the Tracive app.',
+      AuthAppNotInstalled() =>
+        'Install the Tracive app first — the install page has been opened.',
+      AuthFailed(:final error) => error.message,
+      // authorize() returns nothing else; handleCallback does.
+      _ => 'Unexpected result from authorize(): $start',
+    });
+  }
+
+  Future<void> _onLink(Uri uri) async {
+    final result = await _client.handleCallback(uri);
+    // TODO(partner): null means not a Tracive redirect. Route it to whatever
+    // else in your app handles deep links, instead of dropping it.
+    if (result == null || !mounted) return;
+    setState(() => _authorized = result is AuthAuthorized);
+    _say(switch (result) {
+      AuthAuthorized(:final grantedScopes) =>
+        'Authorized. Scopes granted: ${grantedScopes.join(", ")}',
+      // Only reachable for a confidential client; this example is public.
+      // TODO(partner): a confidential client forwards the code and verifier
+      // over TLS to its own backend, which completes the exchange.
+      AuthCodeReceived() =>
+        'Authorization code received. Forward it to your backend.',
+      AuthDenied() => 'You declined the request.',
+      AuthFailed(:final error) => error.message,
+      AuthAppNotInstalled() => 'The Tracive app is not installed.',
+    });
+  }
+
+  Future<void> _signOut() async {
+    await _client.signOut();
+    if (!mounted) return;
+    setState(() {
+      _authorized = false;
+      _result = null;
+    });
+    _say('Signed out. The grant and the cached verdicts are gone.');
   }
 
   @override
@@ -225,8 +302,25 @@ class _CheckScreenState extends State<CheckScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
-            const _StatusBanner(),
+            _StatusBanner(flavor: widget.flavor),
             const SizedBox(height: 16),
+            if (widget.flavor.isLive) ...<Widget>[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  FilledButton.tonal(
+                    onPressed: _authorized ? null : _authorize,
+                    child: Text(_authorized ? 'Authorized' : 'Authorize'),
+                  ),
+                  OutlinedButton(
+                    onPressed: _authorized ? _signOut : null,
+                    child: const Text('Sign out'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
             TextField(
               controller: _input,
               decoration: const InputDecoration(
@@ -264,8 +358,10 @@ class _CheckScreenState extends State<CheckScreen> {
               label: const Text('Check'),
             ),
             const SizedBox(height: 12),
-            _CallCounter(backend: _backend),
-            const SizedBox(height: 12),
+            if (_backend case final backend?) ...<Widget>[
+              _CallCounter(backend: backend),
+              const SizedBox(height: 12),
+            ],
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -274,15 +370,17 @@ class _CheckScreenState extends State<CheckScreen> {
                   onPressed: _clearCache,
                   child: const Text('Clear cache'),
                 ),
-                OutlinedButton(
-                  onPressed: () =>
-                      _armFailure(402, 'insufficient_user_credits'),
-                  child: const Text('Simulate 402'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _armFailure(429, 'rate_limited'),
-                  child: const Text('Simulate 429'),
-                ),
+                if (_backend != null) ...<Widget>[
+                  OutlinedButton(
+                    onPressed: () =>
+                        _armFailure(402, 'insufficient_user_credits'),
+                    child: const Text('Simulate 402'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _armFailure(429, 'rate_limited'),
+                    child: const Text('Simulate 429'),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 24),
@@ -296,14 +394,17 @@ class _CheckScreenState extends State<CheckScreen> {
   }
 }
 
-/// Says plainly what this app is talking to. phase 1 has no live backend, and a
-/// demo that hid that would be teaching the wrong thing.
+/// Says plainly what this app is talking to, so a demo answer is never
+/// mistaken for a real one and sandbox is never mistaken for production.
 class _StatusBanner extends StatelessWidget {
-  const _StatusBanner();
+  const _StatusBanner({required this.flavor});
+
+  final ExampleFlavor flavor;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final environment = flavor.environment;
     return Card(
       color: theme.colorScheme.secondaryContainer,
       child: Padding(
@@ -311,13 +412,21 @@ class _StatusBanner extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Icon(Icons.science_outlined),
+            Icon(
+              environment == null
+                  ? Icons.science_outlined
+                  : Icons.cloud_outlined,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'phase 1: OAuth mode only, and the Tracive Open API is not live '
-                'yet. Every response below comes from an in-process fake '
-                '(DemoBackend). Nothing here opens a socket.',
+                environment == null
+                    ? 'Demo flavor. Every response below comes from an '
+                        'in-process fake (DemoBackend); nothing here opens a '
+                        'socket. Run with --flavor sandbox or --flavor '
+                        'production for the real API.'
+                    : '${environment.name} · ${environment.baseUrl}\n'
+                        'Every check below is a real call to this environment.',
                 style: theme.textTheme.bodySmall,
               ),
             ),

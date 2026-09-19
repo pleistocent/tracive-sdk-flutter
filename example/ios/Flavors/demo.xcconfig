@@ -1,0 +1,7 @@
+// The demo flavor: `flutter run` with no --flavor. lib/flavor.dart says what each flavor is for and
+// why each installs as its own app. Every Debug-/Release-/Profile-demo configuration includes this.
+//
+// No `://` in any value: xcconfig reads `//` as the start of a comment wherever it appears.
+PRODUCT_BUNDLE_IDENTIFIER = id.tracive.traciveSdkExample.demo
+TRACIVE_DISPLAY_NAME = Flutter Demo
+TRACIVE_REDIRECT_SCHEME = tracive-flutter-demo

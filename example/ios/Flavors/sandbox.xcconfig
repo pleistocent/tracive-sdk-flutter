@@ -1,0 +1,6 @@
+// The sandbox flavor: `flutter run --flavor sandbox`. See demo.xcconfig.
+PRODUCT_BUNDLE_IDENTIFIER = id.tracive.traciveSdkExample.sandbox
+TRACIVE_DISPLAY_NAME = Flutter Sandbox
+
+// TODO(partner): your own sandbox scheme — keep lib/flavor.dart in step.
+TRACIVE_REDIRECT_SCHEME = tracive-flutter-sandbox

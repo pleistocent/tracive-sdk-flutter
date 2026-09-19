@@ -69,6 +69,33 @@ android {
         }
     }
 
+    // One flavor per way of running the example — lib/flavor.dart says why each
+    // installs as its own app with its own redirect scheme. `default-flavor` in
+    // pubspec.yaml makes a bare `flutter run` the demo. The debug keystore above
+    // signs all three.
+    flavorDimensions += "environment"
+    productFlavors {
+        create("demo") {
+            dimension = "environment"
+            applicationIdSuffix = ".demo"
+            manifestPlaceholders["appLabel"] = "Flutter Demo"
+            manifestPlaceholders["traciveRedirectScheme"] = "tracive-flutter-demo"
+        }
+        create("sandbox") {
+            dimension = "environment"
+            applicationIdSuffix = ".sandbox"
+            manifestPlaceholders["appLabel"] = "Flutter Sandbox"
+            // TODO(partner): your own sandbox redirect scheme — keep lib/flavor.dart in step.
+            manifestPlaceholders["traciveRedirectScheme"] = "tracive-flutter-sandbox"
+        }
+        create("production") {
+            dimension = "environment"
+            manifestPlaceholders["appLabel"] = "Tracive Flutter"
+            // TODO(partner): your own production redirect scheme — keep lib/flavor.dart in step.
+            manifestPlaceholders["traciveRedirectScheme"] = "tracive-flutter"
+        }
+    }
+
     buildTypes {
         release {
             // Debug keys, so `flutter run --release` works out of the box. Fine for a
