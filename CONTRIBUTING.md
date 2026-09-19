@@ -30,9 +30,9 @@ The example app under `example/` is analyzed, tested and built as a debug Androi
 job. It consumes the package the way an integrator does, so a break in the public surface fails
 there before it fails for them.
 
-Nothing in this repository talks to a server, and nothing can: the Tracive API is not live, and
-every test injects a fake transport. If a step ever starts needing a credential, something has gone
-wrong.
+Nothing in this repository talks to a server: every test injects a fake transport, so the suite
+never depends on either Tracive environment being up. If a step ever starts needing a credential,
+something has gone wrong.
 
 ---
 

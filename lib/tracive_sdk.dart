@@ -4,9 +4,9 @@
 /// bank account, crypto address or social handle against Tracive's scam
 /// reports.
 ///
-/// **Status: phase 1, OAuth mode only. The backend Open API is not live yet.**
-/// Everything here is built against a frozen contract; no
-/// test in this repo talks to a network, and none can.
+/// **Status: phase 1, OAuth mode only.** Sandbox and production are separate
+/// registrations, each with its own client id; no test in this repo talks to a
+/// network, and none can.
 ///
 /// Two invariants worth knowing before you integrate:
 ///

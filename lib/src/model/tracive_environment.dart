@@ -4,9 +4,8 @@ import '../oauth/authorize_url.dart';
 
 /// Which Tracive deployment the client talks to.
 ///
-/// **The Open API is not live yet.** These hosts are the documented contract,
-/// not a running service; see the README. Nothing in this SDK can be tested
-/// against them, and no test in this repo tries.
+/// Sandbox and production are separate registrations: a client id issued in
+/// one is unknown to the other. No test in this repo reaches either host.
 class TraciveEnvironment {
   const TraciveEnvironment._(this.baseUrl, this.name);
 

@@ -1,9 +1,10 @@
 # Integration guide
 
-> **Status: phase 1 — OAuth mode only, and the backend Open API is not live
-> yet.** You can integrate, compile and unit-test against this SDK today. You
-> cannot get a real answer from it, because there is no server to answer.
-> Proxy mode arrives in phase 2 (`doc/proxy-contract.md`).
+> **Status: phase 1 — OAuth mode only.** Build against sandbox first. Sandbox
+> and production are separate registrations: each needs a client id issued for
+> it, with your redirect registered on that client, and a sandbox client id is
+> unknown to production. Proxy mode arrives in phase 2
+> (`doc/proxy-contract.md`).
 
 ---
 
@@ -394,6 +395,6 @@ TraciveClient(
 );
 ```
 
-Write your tests the same way. A test that reaches for `api.tracive.id` cannot
-pass today (there is no server) and will be flaky the day there is one.
+Write your tests the same way. A test that reaches for either environment
+fails whenever that environment is down or mid-deploy.
 

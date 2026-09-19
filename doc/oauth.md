@@ -1,9 +1,10 @@
 # OAuth
 
 > Contract: the Tracive OAuth specification
-> **The backend is not live yet** — no `/oauth/authorize`,
-> `/oauth/token` or `/oauth/revoke` endpoint exists. Everything here is
-> implemented against the frozen contract and tested without a network.
+> Consent happens in the build of the Tracive app that matches your
+> environment — the sandbox build for `TraciveEnvironment.sandbox` — and the
+> redirect must be registered on the client id issued in that environment.
+> Everything here is tested without a network.
 
 phase 1 authenticates with **OAuth 2.0 Authorization Code + PKCE (S256)**. The
 end user consents inside the Tracive app; your app receives a short-lived token

@@ -3,9 +3,9 @@
 > Diagrams of what this SDK does and where each decision is made. Every arrow
 > below is taken from the code in `lib/src/`; nothing here is aspirational.
 >
-> **The backend Open API is not live yet.** The shapes below are the frozen
-> contract this SDK is built against, and no test in this repository reaches a
-> network. See the README before you plan a launch around it.
+> The shapes below are the contract this SDK is built against, in sandbox and
+> in production alike, and no test in this repository reaches a network. See
+> the README before you plan a launch around it.
 
 The other documents cover the same ground in prose and go further on the
 details: [`integration.md`](integration.md), [`oauth.md`](oauth.md),
