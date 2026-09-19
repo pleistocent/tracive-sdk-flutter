@@ -3,10 +3,9 @@
 // The API client.
 //
 // NO NETWORK. Every response in this file is a literal `TraciveHttpResponse`
-// handed back by `_FakeTransport`. The Open API does not exist yet (spec
-// preamble), so a test that opened a socket could only be aspirational — and
-// once the API is live, a suite that talks to it fails whenever somebody else
-// is mid-deploy. There is no host name in this file that is ever resolved.
+// handed back by `_FakeTransport`. A suite that talks to a live environment
+// fails whenever somebody else is mid-deploy. There is no host name in this
+// file that is ever resolved.
 //
 // What is asserted here, in rough order of what it would cost to get wrong:
 //
@@ -110,8 +109,9 @@ void main() {
       // two attempts are indistinguishable to the server, so any billing that
       // happens before or during authorisation is charged twice with no way for
       // the caller to detect it. The code used to justify the replay with "a
-      // 401 is rejected before billing" — an assumption about a server that
-      // does not exist yet. Generating a key removes the need to assume it.
+      // 401 is rejected before billing" — an assumption about the server's
+      // ordering that nothing on the client can verify. Generating a key
+      // removes the need to assume it.
       final transport = _FakeTransport((_) => _ok(_checkBody()));
       final client = _client(transport: transport);
 

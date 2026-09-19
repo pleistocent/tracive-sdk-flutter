@@ -4,10 +4,9 @@
 // default is the platform HTTP client.
 //
 // This interface exists so that **no test in this repo can reach a network**.
-// The Open API does not exist yet, so a test that opened a
-// socket could only ever be aspirational; and once it does exist, a test suite
-// that talks to it is a test suite that fails when someone else's deploy is
-// mid-flight. Everything above this line is exercised against a fake.
+// A test suite that talks to a live environment fails when someone else's
+// deploy is mid-flight, and cannot make the server answer a 402 or a 429 on
+// demand. Everything above this line is exercised against a fake.
 //
 // Deliberately smaller than `package:http`'s `Client`: one method, plain
 // strings, no streaming. A fake for it is ten lines, which is the point.

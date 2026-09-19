@@ -738,7 +738,7 @@ void main() {
       // A scope name is only ever validated by the authorization server, and it
       // rejects the whole consent request when it does not recognise one — so a
       // wrong name is not a narrower grant, it is an integration that cannot
-      // authorize at all. There is no server to find that out against yet.
+      // authorize at all, and only a live consent screen would show it.
       expect(TraciveScopes.scammerCheck, 'scammer.check');
       expect(TraciveScopes.creditsRead, 'credits.read');
       expect(TraciveScopes.profileRead, 'profile.read');

@@ -250,7 +250,8 @@ void main() {
       expect(await cache.removeTransactionCheck(firstTransfer), isTrue);
       expect(await cache.readTransactionCheck(firstTransfer), isNull);
       expect(await cache.readTransactionCheck(secondTransfer), isNotNull,
-          reason: 'records are independent; dropping one must not touch another');
+          reason:
+              'records are independent; dropping one must not touch another');
     });
 
     test('clear takes the records with it', () async {
@@ -297,13 +298,13 @@ void main() {
       final clock = _MutableClock(start);
       final cache = CheckCache.inMemory(clock: clock.call);
 
-      await cache.writeTransactionCheck(
-          ' $firstTransfer ', _result(tier: RiskTier.high, fetchedAt: clock.now));
+      await cache.writeTransactionCheck(' $firstTransfer ',
+          _result(tier: RiskTier.high, fetchedAt: clock.now));
 
       expect(await cache.readTransactionCheck(firstTransfer), isNotNull,
           reason: 'a trimmed id finds its record');
-      expect(await cache.readTransactionCheck(firstTransfer.toLowerCase()),
-          isNull,
+      expect(
+          await cache.readTransactionCheck(firstTransfer.toLowerCase()), isNull,
           reason: "case is not folded: a host's reference format is its own");
     });
 
@@ -311,8 +312,8 @@ void main() {
       final cache = CheckCache.inMemory(clock: _MutableClock(start).call);
       final result = _result(tier: RiskTier.high, fetchedAt: start);
 
-      expect(() => cache.writeTransactionCheck('  ', result),
-          throwsArgumentError);
+      expect(
+          () => cache.writeTransactionCheck('  ', result), throwsArgumentError);
       expect(() => cache.readTransactionCheck(''), throwsArgumentError);
       expect(() => cache.removeTransactionCheck('\t'), throwsArgumentError);
     });

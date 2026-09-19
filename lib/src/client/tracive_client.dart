@@ -3,10 +3,9 @@
 // The API client.
 //
 // NO NETWORK IN TESTS. Every byte leaves through the injected [HttpTransport],
-// so `test/client_test.dart` drives the whole thing against a fake. The Open
-// API does not exist yet (spec preamble); a test that reached for it could only
-// be aspirational, and once the API is live, a suite that depends on it fails
-// whenever somebody else is mid-deploy.
+// so `test/client_test.dart` drives the whole thing against a fake. A suite
+// that depends on a live environment fails whenever somebody else is
+// mid-deploy.
 //
 // The cache lives in `lib/src/cache/`, not here. This file decides *whether* to
 // consult it for a given `Source`; everything about TTL, the hashed key, the
@@ -613,10 +612,10 @@ class TraciveClient {
           // indistinguishable to the server, so any billing that happens before
           // or during authorisation is charged twice, with no way for the
           // caller to detect it. This code used to justify the replay with "a
-          // 401 is rejected before billing" — an assumption about a server that
-          // does not exist yet, and the one premise this SDK otherwise refuses
-          // to make anywhere. Generating a key removes the need to assume
-          // anything.
+          // 401 is rejected before billing" — an assumption about the server's
+          // ordering that nothing on the client can verify, and the one premise
+          // this SDK otherwise refuses to make anywhere. Generating a key
+          // removes the need to assume anything.
           'idempotency-key': callerKey ?? _generatedIdempotencyKey(),
         },
         body: body,

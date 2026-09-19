@@ -1,7 +1,7 @@
 # CI for the Tracive Flutter SDK.
 #
-# NO NETWORK IN TESTS. Nothing in this repo talks to a server, and nothing can:
-# the Tracive Open API is not live yet, and every test injects a fake transport.
+# NO NETWORK IN TESTS. Nothing in this repo talks to a server: every test
+# injects a fake transport, so no run depends on a Tracive environment being up.
 # So this workflow needs no secrets, no service containers and no environment —
 # if a step here ever starts needing a credential, something has gone wrong.
 #

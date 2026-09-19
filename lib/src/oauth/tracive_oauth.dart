@@ -3,9 +3,8 @@
 // The OAuth flow — "phase 1 core".
 //
 // NO NETWORK IN TESTS: every request goes through the injected [HttpTransport],
-// so `test/oauth_test.dart` drives the whole state machine against a fake. The
-// Open API does not exist yet; nothing here has ever spoken to a real server,
-// and it is written so that this stays true.
+// so `test/oauth_test.dart` drives the whole state machine against a fake, and
+// no test of it ever speaks to a real server.
 
 import 'dart:async';
 import 'dart:math';

@@ -2,9 +2,8 @@
 //
 // The error-code table, exhaustively.
 //
-// NO NETWORK. Every response here is a literal `TraciveHttpResponse`. The Open
-// API does not exist yet; nothing in this repo has ever opened a socket, and
-// this file is written so that stays true.
+// NO NETWORK. Every response here is a literal `TraciveHttpResponse`: no
+// server answers a 402 or a 429 on demand, and this file needs every one.
 //
 // Why this file is worth its length: error mapping is the part of an SDK that
 // is exercised least in development and most in production, and it is where a
