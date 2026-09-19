@@ -12,10 +12,13 @@ handle against Tracive's scam reports, from a Flutter app.
 
 Three things, stated plainly, because finding them out later is expensive:
 
-1. **The backend Open API is not live yet.** No `/v1/*` route, no
-   `/oauth/token`, nothing. This SDK is built against a frozen contract, and
-   every one of its tests runs **with no network, by design**. You can
-   integrate, compile and unit-test today. You cannot get a real answer.
+1. **Sandbox and production are separate registrations.** Both environments
+   answer — `https://api-sandbox.tracive.id/v1` and `https://api.tracive.id/v1`,
+   with consent in the matching build of the Tracive app — and each needs a
+   client id issued for it, with your redirect registered on that client. A
+   sandbox client id is unknown to production. Build against
+   `TraciveEnvironment.sandbox`; `production` is the default. Every test in
+   this SDK still runs **with no network, by design**.
 2. **phase 1 is OAuth mode only.** `TraciveMode.proxy(...)` exists in the type
    system so that adding it later is not a breaking change — and every call made
    in that mode throws `TraciveNotImplementedException('Proxy mode arrives in

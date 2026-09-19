@@ -1,7 +1,7 @@
 name: tracive_sdk_example
 description: >-
-  A runnable example for package:tracive_sdk. It talks to an in-process fake
-  backend, because the Tracive Open API is not live yet.
+  A runnable example for package:tracive_sdk: an offline demo flavor on an
+  in-process fake backend, and sandbox and production flavors on the real API.
 
 # Never published: it exists to be read and run, not depended on.
 publish_to: 'none'
