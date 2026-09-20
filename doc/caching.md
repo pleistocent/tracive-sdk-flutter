@@ -120,20 +120,18 @@ Three properties of the implementation are worth knowing:
   keeps a device that checks the same handful of numbers from accumulating dead
   rows between prune passes.
 
-### `cacheTtlSeconds` — the invalidation lever
+### The tier ladder is the whole policy
 
-When a response carries `cacheTtlSeconds`, it **overrides** the tier default.
-This is the fleet-wide invalidation lever: it is how the backend shortens the
-life of answers that are already sitting on devices when a verdict changes.
+`policy.defaultTtlFor(tier)` is the lifetime, and nothing in a response can
+change it. The backend used to be able to send a `cacheTtlSeconds` that replaced
+the tier default; that duplicated the ladder above on the server, so it is gone.
+A `cacheTtlSeconds` still arriving from a proxy is an unknown JSON key and is
+ignored, not an error.
 
-`cacheTtlSeconds: 0` means *do not cache this*, and it does more than skip the
-write — it **deletes whatever row is already there**. Honouring it only for new
-writes would leave the stale answer in place, which is the exact situation the
-lever exists for.
-
-You can turn the override off with `CachePolicy(honourServerTtl: false)`.
-**Leave it on.** Turning it off means a wrong `HIGH` can sit on a device for
-thirty days with no way to reach it.
+A tier TTL of `Duration.zero` means *do not cache this tier*, and it does more
+than skip the write — it **deletes whatever row is already there**. Honouring it
+only for new writes would leave a superseded answer in place to be served for
+the rest of its old lifetime.
 
 ---
 
@@ -232,7 +230,6 @@ your UI knows that transfer spent nothing.
 |---|---|---|
 | Keyed on | the identifier | your transaction id, hashed, under a `txn:` prefix |
 | Lifetime | tier TTL, 1 hour to 30 days | `transactionCheckRetention`, 90 days by default |
-| Server `cacheTtlSeconds` | applied, including retraction | **not applied** — a record of the past cannot be retracted |
 | Overwritten by a later check | yes | no |
 | `origin` on read | restamped `Origin.cache` | kept as recorded |
 | `checkId`, `billing` | dropped | kept — this record *is* that one call |

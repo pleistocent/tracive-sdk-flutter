@@ -77,7 +77,8 @@ void main() {
       expect(result.comments!.single.fromCredibleReport, isTrue);
       expect(result.billing!.unitsCharged, 1);
       expect(result.billing!.partnerBalanceRemaining, 998);
-      expect(result.serverTtl, const Duration(hours: 1));
+      // `cacheTtlSeconds` is in the payload above but is no longer modelled. It
+      // must be skipped, not fatal — `fromJson` would have thrown otherwise.
       expect(result.disclaimer, isNotNull);
       expect(result.origin, Origin.server);
       expect(result.fetchedAt, fetchedAt);
@@ -230,7 +231,6 @@ void main() {
           Comment(date: 'd', text: 't', fromCredibleReport: true),
         ],
         billing: const Billing(creditSource: 'USER', unitsCharged: 1),
-        cacheTtlSeconds: 60,
         disclaimer: 'd',
         origin: Origin.server,
         fetchedAt: DateTime.utc(2026, 7, 30),
@@ -245,7 +245,6 @@ void main() {
       expect(cached.origin, Origin.cache);
       expect(cached.riskTier, RiskTier.high);
       expect(cached.reportTotal, 5);
-      expect(cached.cacheTtlSeconds, 60);
       expect(cached.disclaimer, 'd');
       expect(
         cached.fetchedAt,
@@ -283,10 +282,9 @@ void main() {
   });
 
   group('CachePolicy', () {
-    CheckResult resultFor(RiskTier tier, {int? ttlSeconds}) => CheckResult(
+    CheckResult resultFor(RiskTier tier) => CheckResult(
           found: tier != RiskTier.none,
           riskTier: tier,
-          cacheTtlSeconds: ttlSeconds,
           origin: Origin.server,
           fetchedAt: DateTime.utc(2026, 7, 30, 12),
         );
@@ -299,29 +297,17 @@ void main() {
       expect(policy.defaultTtlFor(RiskTier.none), const Duration(hours: 1));
     });
 
-    test('a server TTL overrides the tier default', () {
-      // The fleet-wide invalidation lever. If this stops working, a wrong HIGH
-      // verdict sits on devices for 30 days.
-      const policy = CachePolicy.defaultPolicy;
+    test('a tier TTL can be zero, so a host can refuse to cache that tier', () {
+      // Zero is not merely a short TTL: the cache stores nothing and drops what
+      // is there. It is the only lifetime with a second meaning.
+      const policy = CachePolicy(noneTtl: Duration.zero);
+      expect(policy.defaultTtlFor(RiskTier.none), Duration.zero);
+      expect(policy.defaultTtlFor(RiskTier.high), const Duration(days: 30));
       expect(
-        policy.ttlFor(resultFor(RiskTier.high, ttlSeconds: 90)),
-        const Duration(seconds: 90),
+        policy.isFresh(resultFor(RiskTier.none), DateTime.utc(2026, 7, 30, 12)),
+        isFalse,
+        reason: 'a zero TTL is stale even at the instant of the fetch',
       );
-      expect(policy.ttlFor(resultFor(RiskTier.high)), const Duration(days: 30));
-    });
-
-    test('honourServerTtl: false ignores the override', () {
-      const policy = CachePolicy(honourServerTtl: false);
-      expect(
-        policy.ttlFor(resultFor(RiskTier.caution, ttlSeconds: 5)),
-        const Duration(hours: 24),
-      );
-    });
-
-    test('a zero server TTL means do not cache, even at the fetch instant', () {
-      const policy = CachePolicy.defaultPolicy;
-      final result = resultFor(RiskTier.high, ttlSeconds: 0);
-      expect(policy.isFresh(result, result.fetchedAt), isFalse);
     });
 
     test('freshness is measured from fetchedAt', () {

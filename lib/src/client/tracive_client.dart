@@ -315,9 +315,8 @@ class TraciveClient {
         idempotencyKey: idempotencyKey,
       );
       // The cache decides what to keep *within* a cacheable answer:
-      // `cacheable()` on the way in, and a non-positive `cacheTtlSeconds`
-      // deletes rather than stores (the fleet-wide invalidation lever). None of
-      // that is re-implemented here.
+      // `cacheable()` on the way in, and a non-positive tier TTL deletes rather
+      // than stores. None of that is re-implemented here.
       if (cacheApplies) await cache.write(query, result);
       return result;
     } on TraciveException catch (error) {

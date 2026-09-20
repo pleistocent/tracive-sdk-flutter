@@ -463,25 +463,24 @@ void main() {
   // Cache behaviour the client is responsible for.
   // ---------------------------------------------------------------------------
   group('cache integration', () {
-    test('a zero cacheTtlSeconds evicts what is already stored', () async {
-      // The fleet-wide invalidation lever. Honouring it only for new writes
-      // would leave the wrong verdict sitting on the device — which is the
-      // exact situation the lever exists for.
+    test('a cacheTtlSeconds still on the wire changes nothing', () async {
+      // The backend stopped sending it (pleistocent-firebase@88fd6f9). A proxy
+      // that still does must not shorten the entry, and must not break the
+      // decode: the answer is stored for the HIGH tier's thirty days, so a
+      // second check two days later is served from the cache.
       final clock = MutableClock(_t0);
       final cache = CheckCache.inMemory(clock: clock.now);
-      await cache.write(query, _cachedResult(clock.now(), reportTotal: 7));
-      expect(await cache.read(query), isNotNull);
 
       final transport = _FakeTransport(
         (_) => _ok(_checkBody(cacheTtlSeconds: 0)),
       );
-      await _client(
-        transport: transport,
-        cache: cache,
-        clock: clock,
-      ).checkScammer(query, source: Source.server);
+      final client = _client(transport: transport, cache: cache, clock: clock);
+      await client.checkScammer(query, source: Source.server);
 
-      expect(await cache.read(query), isNull);
+      clock.advance(const Duration(days: 2));
+      final replayed = await client.checkScammer(query, source: Source.cache);
+      expect(replayed.origin, Origin.cache);
+      expect(transport.requests, hasLength(1));
     });
 
     test('an expired entry is not served, and the server is called', () async {

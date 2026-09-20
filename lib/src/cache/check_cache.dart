@@ -180,9 +180,9 @@ abstract class CheckCache {
   /// is the query alone and a `detail=full`, `locale=id` answer must never be
   /// served to a `detail=minimal`, `locale=en` caller.
   ///
-  /// A TTL of zero or less (a server `cacheTtlSeconds: 0`, the fleet-wide
-  /// invalidation lever) does not merely skip the write: it **deletes** any
-  /// row already stored for [query]. Never throws.
+  /// A TTL of zero or less — a tier the host has opted out of caching — does
+  /// not merely skip the write: it **deletes** any row already stored for
+  /// [query]. Never throws.
   Future<void> write(TraciveQuery query, CheckResult result);
 
   /// Files [result] as the answer that was shown for [transactionId].
@@ -202,9 +202,9 @@ abstract class CheckCache {
   ///     user who transfers to the same account twice — is two calls with two
   ///     ids and one billed check.
   ///   * **It outlives the cache entry.** The lifetime is
-  ///     [CachePolicy.transactionCheckRetention], not a tier TTL, and
-  ///     `cacheTtlSeconds` is not applied: that field retracts a verdict, and a
-  ///     record of the past cannot be retracted.
+  ///     [CachePolicy.transactionCheckRetention], not a tier TTL, because a
+  ///     clean answer stops being *trustworthy* after an hour but never stops
+  ///     being *what was shown*.
   ///   * **`origin` and `fetchedAt` are stored as given**, so a record marked
   ///     `Origin.cache` is the honest statement that this transfer spent no
   ///     credit.
@@ -384,9 +384,10 @@ class DefaultCheckCache implements CheckCache {
     final key = cacheKeyFor(query);
     try {
       await _ensureOpen();
-      final ttl = policy.ttlFor(result);
+      final ttl = policy.defaultTtlFor(result.riskTier);
       if (ttl <= Duration.zero) {
-        // "Do not cache this." Anything already stored is now wrong.
+        // The host does not cache this tier. Anything already stored is now
+        // superseded, so it goes rather than being left to be served.
         await _store.delete(key);
         return;
       }

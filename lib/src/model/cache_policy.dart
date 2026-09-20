@@ -20,7 +20,6 @@ class CachePolicy {
     this.elevatedTtl = const Duration(days: 7),
     this.cautionTtl = const Duration(hours: 24),
     this.noneTtl = const Duration(hours: 1),
-    this.honourServerTtl = true,
     this.maxEntries = 5000,
     this.transactionCheckRetention = const Duration(days: 90),
   });
@@ -47,14 +46,6 @@ class CachePolicy {
   /// TTL for [RiskTier.none]. Default 1 hour.
   final Duration noneTtl;
 
-  /// Whether `cacheTtlSeconds` from a response overrides the tier default.
-  ///
-  /// Leave this on. It is the fleet-wide invalidation lever: it is how the
-  /// backend shortens the life of already-stored answers when a verdict
-  /// changes. Turning it off means a wrong `HIGH` can sit on a device for
-  /// 30 days.
-  final bool honourServerTtl;
-
   /// Soft cap on stored entries, enforced by the prune pass on open.
   final int maxEntries;
 
@@ -72,12 +63,15 @@ class CachePolicy {
   /// it if your history screen goes back further — and raise [maxEntries] with
   /// it, since records are counted by the same cap as cache entries.
   ///
-  /// [honourServerTtl] does not apply to these. `cacheTtlSeconds` retracts a
-  /// verdict the backend no longer stands behind, which is the wrong lever for
-  /// a record of what a user was already shown.
   final Duration transactionCheckRetention;
 
-  /// The tier default, ignoring any server override.
+  /// How long a result of [tier] stays usable — the whole of the cache's
+  /// lifetime policy.
+  ///
+  /// There is no per-response override. The backend used to be able to send a
+  /// `cacheTtlSeconds` that replaced this, which duplicated the ladder below on
+  /// the server; cache lifetime is the SDK's own business, so a host that wants
+  /// different numbers sets them here.
   Duration defaultTtlFor(RiskTier tier) => switch (tier) {
         RiskTier.high => highTtl,
         RiskTier.elevated => elevatedTtl,
@@ -85,34 +79,17 @@ class CachePolicy {
         RiskTier.none => noneTtl,
       };
 
-  /// The TTL that actually applies to [result]: the server's
-  /// `cacheTtlSeconds` when present and [honourServerTtl] is set, otherwise
-  /// the tier default.
-  ///
-  /// A non-positive server TTL means "do not cache this" and yields
-  /// [Duration.zero].
-  Duration ttlFor(CheckResult result) {
-    if (honourServerTtl) {
-      final serverTtl = result.serverTtl;
-      if (serverTtl != null) {
-        return serverTtl.isNegative ? Duration.zero : serverTtl;
-      }
-    }
-    return defaultTtlFor(result.riskTier);
-  }
-
   /// When [result] stops being usable, given when it was fetched.
   DateTime expiryFor(CheckResult result) =>
-      result.fetchedAt.toUtc().add(ttlFor(result));
+      result.fetchedAt.toUtc().add(defaultTtlFor(result.riskTier));
 
   /// Whether [result] is still usable at [now] (UTC).
   ///
   /// A zero TTL is always stale, including at the exact instant of the fetch —
-  /// that is what "do not cache this" has to mean.
+  /// that is what "do not cache this tier" has to mean.
   bool isFresh(CheckResult result, DateTime now) {
     if (!enabled) return false;
-    final ttl = ttlFor(result);
-    if (ttl <= Duration.zero) return false;
+    if (defaultTtlFor(result.riskTier) <= Duration.zero) return false;
     return now.toUtc().isBefore(expiryFor(result));
   }
 
@@ -123,7 +100,6 @@ class CachePolicy {
     Duration? elevatedTtl,
     Duration? cautionTtl,
     Duration? noneTtl,
-    bool? honourServerTtl,
     int? maxEntries,
     Duration? transactionCheckRetention,
   }) =>
@@ -133,7 +109,6 @@ class CachePolicy {
         elevatedTtl: elevatedTtl ?? this.elevatedTtl,
         cautionTtl: cautionTtl ?? this.cautionTtl,
         noneTtl: noneTtl ?? this.noneTtl,
-        honourServerTtl: honourServerTtl ?? this.honourServerTtl,
         maxEntries: maxEntries ?? this.maxEntries,
         transactionCheckRetention:
             transactionCheckRetention ?? this.transactionCheckRetention,
@@ -148,7 +123,6 @@ class CachePolicy {
           other.elevatedTtl == elevatedTtl &&
           other.cautionTtl == cautionTtl &&
           other.noneTtl == noneTtl &&
-          other.honourServerTtl == honourServerTtl &&
           other.maxEntries == maxEntries &&
           other.transactionCheckRetention == transactionCheckRetention;
 
@@ -159,7 +133,6 @@ class CachePolicy {
         elevatedTtl,
         cautionTtl,
         noneTtl,
-        honourServerTtl,
         maxEntries,
         transactionCheckRetention,
       );
@@ -167,6 +140,6 @@ class CachePolicy {
   @override
   String toString() => 'CachePolicy(enabled: $enabled, high: $highTtl, '
       'elevated: $elevatedTtl, caution: $cautionTtl, none: $noneTtl, '
-      'honourServerTtl: $honourServerTtl, maxEntries: $maxEntries, '
+      'maxEntries: $maxEntries, '
       'transactionCheckRetention: $transactionCheckRetention)';
 }

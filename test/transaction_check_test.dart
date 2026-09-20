@@ -90,23 +90,22 @@ void main() {
           reason: 'an expired record is deleted as it is found');
     });
 
-    test('a server TTL of zero does not retract a record', () async {
-      // `cacheTtlSeconds` is the backend's lever for un-trusting a verdict.
-      // Applied to a record it would erase the evidence that a warning was
-      // shown — precisely what a partner needs when the transfer is disputed.
+    test('a tier TTL of zero does not stop a record being filed', () async {
+      // A host that declines to cache HIGH at all must still be able to show
+      // what the user was warned about — precisely what a partner needs when
+      // the transfer is disputed.
       final clock = _MutableClock(start);
-      final cache = CheckCache.inMemory(clock: clock.call);
-      final retracted = _result(
-        tier: RiskTier.high,
-        fetchedAt: clock.now,
-        cacheTtlSeconds: 0,
+      final cache = CheckCache.inMemory(
+        clock: clock.call,
+        policy: const CachePolicy(highTtl: Duration.zero),
       );
+      final shown = _result(tier: RiskTier.high, fetchedAt: clock.now);
 
-      await cache.write(scammer, retracted);
-      await cache.writeTransactionCheck(firstTransfer, retracted);
+      await cache.write(scammer, shown);
+      await cache.writeTransactionCheck(firstTransfer, shown);
 
       expect(await cache.read(scammer), isNull,
-          reason: 'a zero server TTL retracts the cached answer');
+          reason: 'a zero tier TTL stores no cache entry');
       final record = await cache.readTransactionCheck(firstTransfer);
       expect(record!.riskTier, RiskTier.high);
     });
@@ -337,7 +336,6 @@ void main() {
 CheckResult _result({
   required RiskTier tier,
   required DateTime fetchedAt,
-  int? cacheTtlSeconds,
   String? checkId,
   bool full = false,
 }) =>
@@ -373,7 +371,6 @@ CheckResult _result({
           : null,
       billing:
           full ? const Billing(creditSource: 'USER', unitsCharged: 1) : null,
-      cacheTtlSeconds: cacheTtlSeconds,
       disclaimer: 'User reports, not adjudicated findings.',
       origin: Origin.server,
       fetchedAt: fetchedAt,

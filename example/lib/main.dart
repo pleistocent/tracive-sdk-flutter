@@ -550,11 +550,6 @@ class _ResultCard extends StatelessWidget {
                     .join(', '),
               ),
             _Row(label: 'Fetched at', value: '${result.fetchedAt.toUtc()}'),
-            if (result.cacheTtlSeconds != null)
-              _Row(
-                label: 'Server cache TTL',
-                value: '${result.cacheTtlSeconds}s',
-              ),
             if (result.checkId != null)
               _Row(label: 'Check id', value: result.checkId!),
 

@@ -151,17 +151,16 @@ void main() {
     });
   });
 
-  group('server TTL override', () {
-    test('a shorter cacheTtlSeconds wins over the tier default', () async {
+  group('the tier ladder is the only TTL policy', () {
+    test('a shorter configured tier TTL is obeyed', () async {
       final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
-      final cache = CheckCache.inMemory(clock: clock.call);
+      final cache = CheckCache.inMemory(
+        clock: clock.call,
+        policy: const CachePolicy(highTtl: Duration(seconds: 60)),
+      );
       await cache.write(
         phone,
-        _result(
-          tier: RiskTier.high, // would otherwise live 30 days
-          fetchedAt: clock.now,
-          cacheTtlSeconds: 60,
-        ),
+        _result(tier: RiskTier.high, fetchedAt: clock.now),
       );
 
       clock.advance(const Duration(seconds: 59));
@@ -170,39 +169,14 @@ void main() {
       expect(await cache.read(phone), isNull);
     });
 
-    test('a longer cacheTtlSeconds also wins', () async {
-      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
-      final cache = CheckCache.inMemory(clock: clock.call);
-      await cache.write(
-        phone,
-        _result(
-          tier: RiskTier.none, // would otherwise live 1 hour
-          fetchedAt: clock.now,
-          cacheTtlSeconds: 86400,
-        ),
-      );
-
-      clock.advance(const Duration(hours: 23));
-      expect(await cache.read(phone), isNotNull);
-      clock.advance(const Duration(hours: 2));
-      expect(await cache.read(phone), isNull);
-    });
-
-    test('cacheTtlSeconds survives the round trip', () async {
-      final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
-      final cache = CheckCache.inMemory(clock: clock.call);
-      await cache.write(
-        phone,
-        _result(tier: RiskTier.high, fetchedAt: clock.now, cacheTtlSeconds: 60),
-      );
-      expect((await cache.read(phone))!.cacheTtlSeconds, 60);
-    });
-
-    test('cacheTtlSeconds: 0 stores nothing and evicts what was there',
-        () async {
+    test('a zero tier TTL stores nothing and drops what was there', () async {
       final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
       final store = MemoryCheckCacheStore();
-      final cache = DefaultCheckCache(store: store, clock: clock.call);
+      final cache = DefaultCheckCache(
+        store: store,
+        clock: clock.call,
+        policy: const CachePolicy(noneTtl: Duration.zero),
+      );
 
       await cache.write(
         phone,
@@ -210,25 +184,33 @@ void main() {
       );
       expect(await store.count(), 1);
 
-      // The fleet-wide invalidation lever: the server has changed its mind.
+      // The verdict flips to a tier this host does not cache. Declining to
+      // store the new answer is not enough — the old HIGH would keep being
+      // served for the rest of its thirty days.
       await cache.write(
         phone,
-        _result(tier: RiskTier.high, fetchedAt: clock.now, cacheTtlSeconds: 0),
+        _result(tier: RiskTier.none, fetchedAt: clock.now),
       );
       expect(await store.count(), 0);
       expect(await cache.read(phone), isNull);
     });
 
-    test('honourServerTtl: false falls back on the tier default', () async {
+    test('a cacheTtlSeconds still on the wire is ignored', () async {
+      // The backend stopped sending it (pleistocent-firebase@88fd6f9) and the
+      // SDK no longer models it. `fromJson` must skip the key rather than
+      // throw, and the tier default must decide the lifetime.
       final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
-      final cache = CheckCache.inMemory(
-        clock: clock.call,
-        policy: const CachePolicy(honourServerTtl: false),
+      final cache = CheckCache.inMemory(clock: clock.call);
+      final decoded = CheckResult.fromJson(
+        <String, Object?>{
+          'found': true,
+          'riskTier': 'HIGH',
+          'cacheTtlSeconds': 60,
+        },
+        fetchedAt: clock.now,
       );
-      await cache.write(
-        phone,
-        _result(tier: RiskTier.high, fetchedAt: clock.now, cacheTtlSeconds: 60),
-      );
+
+      await cache.write(phone, decoded);
 
       clock.advance(const Duration(days: 2));
       expect(await cache.read(phone), isNotNull,
@@ -830,11 +812,10 @@ void main() {
 /// A result with the shape of a `POST /scammer-checks` answer.
 ///
 /// [full] adds the `detail = full` payload plus billing, which the cache must
-/// drop; [cacheTtlSeconds] is the server's TTL override.
+/// drop.
 CheckResult _result({
   required RiskTier tier,
   required DateTime fetchedAt,
-  int? cacheTtlSeconds,
   String? checkId,
   bool full = false,
 }) =>
@@ -870,7 +851,6 @@ CheckResult _result({
           : null,
       billing:
           full ? const Billing(creditSource: 'USER', unitsCharged: 1) : null,
-      cacheTtlSeconds: cacheTtlSeconds,
       disclaimer: 'User reports, not adjudicated findings.',
       origin: Origin.server,
       fetchedAt: fetchedAt,

@@ -92,9 +92,6 @@ implementation.
 
 - **`billing.creditSource` must say `PARTNER`,** and
   `billing.partnerBalanceRemaining` is what the partner's dashboard shows.
-- **`cacheTtlSeconds` must be forwarded if present.** It is the fleet-wide
-  invalidation lever (see `doc/caching.md`); a proxy that strips it leaves stale
-  verdicts on devices with no way to reach them.
 - **`disclaimer` must be forwarded.** The host app is required to surface it.
 - Adding fields is fine. This SDK ignores unknown JSON fields by design.
 
@@ -146,9 +143,8 @@ transient failure as a failed check.
 - **The query grammar.** `searchQueryIndex` is folded identically. The
   anti-drift fixture (`test/fixtures/query-grammar-vectors.json`) applies to the
   proxy's upstream calls too.
-- **The cache.** Same key, same TTLs, same `cacheTtlSeconds` override, same
-  "never cache full detail" rule. A cached hit in Proxy mode costs the partner
-  nothing, which is the whole point.
+- **The cache.** Same key, same TTLs, same "never cache full detail" rule. A
+  cached hit in Proxy mode costs the partner nothing, which is the whole point.
 - **The error types.** Same `TraciveException` subclasses.
 - **No API key in the surface.** Still true. Still not negotiable.
 

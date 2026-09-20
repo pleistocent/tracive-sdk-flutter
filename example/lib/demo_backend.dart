@@ -81,8 +81,8 @@ class DemoBackend extends HttpTransport {
   /// same answer and different inputs give different ones.
   ///
   /// The rule is arbitrary on purpose — it is a demo, not a model. What it does
-  /// preserve is the response field *shape*, including `cacheTtlSeconds` and the
-  /// `disclaimer` a host app is required to surface.
+  /// preserve is the response field *shape*, including the `disclaimer` a host
+  /// app is required to surface.
   TraciveHttpResponse _check(TraciveHttpRequest request) {
     final body = _decodeObject(request.body) ?? const <String, Object?>{};
     final query = body['query'];
@@ -137,9 +137,6 @@ class DemoBackend extends HttpTransport {
           },
         ],
       'billing': <String, Object?>{'creditSource': 'USER', 'unitsCharged': 1},
-      // The server-driven TTL override. Short here so the cache's
-      // behaviour is observable inside a demo session.
-      'cacheTtlSeconds': 120,
       'disclaimer':
           'These are user-submitted reports, not adjudicated findings. '
               'Verify independently before acting on them.',

@@ -36,7 +36,6 @@ class CheckResult {
     this.topChronologies,
     this.comments,
     this.billing,
-    this.cacheTtlSeconds,
     this.disclaimer,
   })  : fraudAmount = Map<String, double>.unmodifiable(fraudAmount),
         tags = List<String>.unmodifiable(tags);
@@ -73,7 +72,6 @@ class CheckResult {
           chronologies?.map(Chronology.fromJson).toList(growable: false),
       comments: commentMaps?.map(Comment.fromJson).toList(growable: false),
       billing: billingJson == null ? null : Billing.fromJson(billingJson),
-      cacheTtlSeconds: asIntOrNull(json['cacheTtlSeconds']),
       disclaimer: asString(json['disclaimer']),
       origin: origin ?? Origin.fromWire(json['origin']),
       fetchedAt: fetchedAt ??
@@ -129,12 +127,6 @@ class CheckResult {
   /// What this call cost. `null` on a cache hit (a cache hit costs nothing).
   final Billing? billing;
 
-  /// Server-driven TTL override, in seconds.
-  ///
-  /// This **overrides** the tier default and is the fleet-wide
-  /// invalidation lever — honour it.
-  final int? cacheTtlSeconds;
-
   /// Legal/UX disclaimer. **Surface this in any UI built on the SDK.**
   final String? disclaimer;
 
@@ -144,10 +136,6 @@ class CheckResult {
   /// When the underlying data was fetched from the server, in UTC. On a cache
   /// hit this is the original fetch time, which is what TTL is measured from.
   final DateTime fetchedAt;
-
-  /// [cacheTtlSeconds] as a [Duration], when the server sent one.
-  Duration? get serverTtl =>
-      cacheTtlSeconds == null ? null : Duration(seconds: cacheTtlSeconds!);
 
   /// Whether this result carries `detail = full` content.
   bool get hasFullDetail => topChronologies != null || comments != null;
@@ -187,7 +175,6 @@ class CheckResult {
         topChronologies: null,
         comments: null,
         billing: null,
-        cacheTtlSeconds: cacheTtlSeconds,
         disclaimer: disclaimer,
         origin: Origin.cache,
         fetchedAt: fetchedAt,
@@ -224,7 +211,6 @@ class CheckResult {
         topChronologies: null,
         comments: null,
         billing: billing,
-        cacheTtlSeconds: cacheTtlSeconds,
         disclaimer: disclaimer,
         origin: origin,
         fetchedAt: fetchedAt,
@@ -250,7 +236,6 @@ class CheckResult {
     List<Chronology>? topChronologies,
     List<Comment>? comments,
     Billing? billing,
-    int? cacheTtlSeconds,
     String? disclaimer,
     Origin? origin,
     DateTime? fetchedAt,
@@ -270,7 +255,6 @@ class CheckResult {
         topChronologies: topChronologies ?? this.topChronologies,
         comments: comments ?? this.comments,
         billing: billing ?? this.billing,
-        cacheTtlSeconds: cacheTtlSeconds ?? this.cacheTtlSeconds,
         disclaimer: disclaimer ?? this.disclaimer,
         origin: origin ?? this.origin,
         fetchedAt: fetchedAt ?? this.fetchedAt,
@@ -297,7 +281,6 @@ class CheckResult {
         if (comments != null)
           'comments': <Object?>[for (final item in comments!) item.toJson()],
         if (billing != null) 'billing': billing!.toJson(),
-        if (cacheTtlSeconds != null) 'cacheTtlSeconds': cacheTtlSeconds,
         if (disclaimer != null) 'disclaimer': disclaimer,
         'origin': origin.wireValue,
         'fetchedAt': toIso8601Utc(fetchedAt),
@@ -321,7 +304,6 @@ class CheckResult {
           listEquals(other.topChronologies, topChronologies) &&
           listEquals(other.comments, comments) &&
           other.billing == billing &&
-          other.cacheTtlSeconds == cacheTtlSeconds &&
           other.disclaimer == disclaimer &&
           other.origin == origin &&
           other.fetchedAt == fetchedAt;
@@ -342,7 +324,6 @@ class CheckResult {
         listHash(topChronologies),
         listHash(comments),
         billing,
-        cacheTtlSeconds,
         disclaimer,
         origin,
         fetchedAt,

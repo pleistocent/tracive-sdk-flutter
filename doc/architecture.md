@@ -367,7 +367,7 @@ flowchart TD
 | Not cached | Why |
 |---|---|
 | Anything from a `detail: Detail.full` call | The cache key is the query alone. A full-detail answer carries `disclaimer` and `tags` in the requested language, so storing it would serve an Indonesian disclaimer to an English `detail: minimal` caller — in the one string this SDK asks every integrator to put on screen. Reading one is unsound for a plainer reason: a cached row has no chronologies and no comments, so it would silently answer with less than was asked for. |
-| A response whose `cacheTtlSeconds` is zero or negative | The fleet-wide invalidation lever. It does more than skip the write — it **deletes** whatever row is already stored, because leaving the stale answer in place is the exact situation the lever exists for. |
+| A response whose tier the host has given a zero or negative TTL | Zero means "do not keep answers of this tier". It does more than skip the write — it **deletes** whatever row is already stored, because leaving a superseded answer in place would serve it for the rest of its old lifetime. |
 | `topChronologies` and `comments`, within a cached row | `detail = full` content, and the most sensitive part of the response. `CheckResult.cacheable()` drops them. |
 | `billing` and `checkId`, within a cached row | Single-use. A cache hit charged nothing and was assigned no id, so replaying either would misreport spend. |
 | Every response, when `CachePolicy.enabled` is false | `CheckCache.disabled()` and `CachePolicy.disabled` exist for callers who must have a live answer every time. Every check then costs a credit. |
