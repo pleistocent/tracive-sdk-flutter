@@ -53,12 +53,12 @@ until it is frozen at `1.0.0`.
 ### Breaking
 - **The server TTL override is gone: `CachePolicy.honourServerTtl`, `CachePolicy.ttlFor`,
   `CheckResult.cacheTtlSeconds` and `CheckResult.serverTtl` are all removed.** The backend stopped
-  sending `cacheTtlSeconds` (`pleistocent-firebase@88fd6f9`) because its per-tier ladder was a copy
-  of the one every SDK already has locally; cache lifetime is the SDK's own business. So the flag
-  gated a branch that could never be taken. `policy.defaultTtlFor(tier)` is now the whole of the
-  lifetime policy — use it where you used `ttlFor`, and pass your own `CachePolicy` if you want
-  different numbers. A `cacheTtlSeconds` still arriving from a proxy is an unknown JSON key and is
-  ignored, as `CheckResult.fromJson` ignores any key it does not model.
+  sending `cacheTtlSeconds` because its per-tier ladder was a copy of the one every SDK already has
+  locally; cache lifetime is the SDK's own business. So the flag gated a branch that could never be
+  taken. `policy.defaultTtlFor(tier)` is now the whole of the lifetime policy — use it where you
+  used `ttlFor`, and pass your own `CachePolicy` if you want different numbers. A `cacheTtlSeconds`
+  still arriving from a proxy is an unknown JSON key and is ignored, as `CheckResult.fromJson`
+  ignores any key it does not model.
 
   One behaviour goes with it: a zero `cacheTtlSeconds` used to evict a row already on the device.
   Setting that tier's TTL to `Duration.zero` in your own `CachePolicy` is now the only way to reach

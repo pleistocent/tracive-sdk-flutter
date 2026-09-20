@@ -464,10 +464,10 @@ void main() {
   // ---------------------------------------------------------------------------
   group('cache integration', () {
     test('a cacheTtlSeconds still on the wire changes nothing', () async {
-      // The backend stopped sending it (pleistocent-firebase@88fd6f9). A proxy
-      // that still does must not shorten the entry, and must not break the
-      // decode: the answer is stored for the HIGH tier's thirty days, so a
-      // second check two days later is served from the cache.
+      // The backend stopped sending it. A proxy that still does must not
+      // shorten the entry, and must not break the decode: the answer is stored
+      // for the HIGH tier's thirty days, so a second check two days later is
+      // served from the cache.
       final clock = MutableClock(_t0);
       final cache = CheckCache.inMemory(clock: clock.now);
 

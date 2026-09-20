@@ -196,9 +196,9 @@ void main() {
     });
 
     test('a cacheTtlSeconds still on the wire is ignored', () async {
-      // The backend stopped sending it (pleistocent-firebase@88fd6f9) and the
-      // SDK no longer models it. `fromJson` must skip the key rather than
-      // throw, and the tier default must decide the lifetime.
+      // The backend stopped sending it and the SDK no longer models it.
+      // `fromJson` must skip the key rather than throw, and the tier default
+      // must decide the lifetime.
       final clock = _MutableClock(DateTime.utc(2026, 7, 31, 9));
       final cache = CheckCache.inMemory(clock: clock.call);
       final decoded = CheckResult.fromJson(
