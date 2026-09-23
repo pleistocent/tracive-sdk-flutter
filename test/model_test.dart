@@ -389,10 +389,22 @@ void main() {
         isA<TracivePartnerSuspendedException>(),
       );
       expect(
+        map(403, 'user_credit_not_permitted'),
+        isA<TraciveUserCreditNotPermittedException>(),
+      );
+      expect(
+        map(403, 'translation_not_permitted'),
+        isA<TraciveTranslationNotPermittedException>(),
+      );
+      expect(
         map(409, 'idempotency_conflict'),
         isA<TraciveIdempotencyConflictException>(),
       );
       expect(map(429, 'rate_limited'), isA<TraciveRateLimitedException>());
+      expect(
+        map(429, 'daily_quota_exceeded'),
+        isA<TraciveRateLimitedException>(),
+      );
     });
 
     test('distinguishes the three 402s by which balance ran out', () {

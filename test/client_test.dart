@@ -1070,11 +1070,17 @@ void main() {
       await expectLater(
         client.credits(),
         throwsA(
-          isA<TraciveRateLimitedException>().having(
-            (e) => e.retryAfter,
-            'retryAfter',
-            const Duration(seconds: 43200),
-          ),
+          isA<TraciveRateLimitedException>()
+              .having(
+                (e) => e.retryAfter,
+                'retryAfter',
+                const Duration(seconds: 43200),
+              )
+              .having(
+                (e) => e.isDailyQuotaExceeded,
+                'isDailyQuotaExceeded',
+                isTrue,
+              ),
         ),
       );
       expect(transport.requests, hasLength(1));

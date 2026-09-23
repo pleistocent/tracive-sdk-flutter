@@ -26,6 +26,8 @@
 //   DetailNotPermitted        -> TraciveDetailNotPermittedException
 //   CredentialMismatch        -> TraciveCredentialMismatchException
 //   PartnerSuspended          -> TracivePartnerSuspendedException
+//   UserCreditNotPermitted    -> TraciveUserCreditNotPermittedException
+//   TranslationNotPermitted   -> TraciveTranslationNotPermittedException
 //   IdempotencyConflict       -> TraciveIdempotencyConflictException
 //   RateLimited(retryAfter)   -> TraciveRateLimitedException(retryAfter)
 //   Network(cause)            -> TraciveNetworkException(cause)
@@ -258,6 +260,22 @@ sealed class TraciveException implements Exception {
           checkId: checkId,
           messageFromServer: fromServer,
         );
+      case 'user_credit_not_permitted':
+        return TraciveUserCreditNotPermittedException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+          messageFromServer: fromServer,
+        );
+      case 'translation_not_permitted':
+        return TraciveTranslationNotPermittedException(
+          text,
+          code: normalizedCode,
+          statusCode: statusCode,
+          checkId: checkId,
+          messageFromServer: fromServer,
+        );
       case 'idempotency_conflict':
         return TraciveIdempotencyConflictException(
           text,
@@ -267,12 +285,16 @@ sealed class TraciveException implements Exception {
           messageFromServer: fromServer,
         );
       case 'rate_limited':
+      // Stays a rate limit so an existing handler keeps working;
+      // `isDailyQuotaExceeded` tells the two apart.
+      case 'daily_quota_exceeded':
         return TraciveRateLimitedException(
           retryAfter: retryAfter,
           message: text,
           statusCode: statusCode,
           checkId: checkId,
           messageFromServer: fromServer,
+          code: normalizedCode!,
         );
     }
 
@@ -294,6 +316,7 @@ sealed class TraciveException implements Exception {
         statusCode: statusCode,
         checkId: checkId,
         messageFromServer: fromServer,
+        code: normalizedCode ?? 'rate_limited',
       );
     }
     return TraciveUnknownException(
@@ -543,6 +566,37 @@ final class TracivePartnerSuspendedException extends TraciveException {
   });
 }
 
+/// 403 `user_credit_not_permitted` — this partner's contract does not allow
+/// charging the user's subscription credits. Refused before any charge;
+/// retrying will not help.
+final class TraciveUserCreditNotPermittedException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveUserCreditNotPermittedException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+    super.messageFromServer,
+  });
+}
+
+/// 403 `translation_not_permitted` — a `Detail.full` check asked for a
+/// non-English locale, and either the partner's contract withholds translation
+/// or the user has no premium subscription. Checking again without a locale
+/// returns the English result.
+final class TraciveTranslationNotPermittedException extends TraciveException {
+  /// Creates the exception from a decoded error envelope: [message],
+  /// [code], [statusCode] and [checkId] all come off the wire.
+  const TraciveTranslationNotPermittedException(
+    super.message, {
+    super.code,
+    super.statusCode,
+    super.checkId,
+    super.messageFromServer,
+  });
+}
+
 /// 409 `idempotency_conflict` — the same `Idempotency-Key` was replayed with a
 /// different body.
 final class TraciveIdempotencyConflictException extends TraciveException {
@@ -557,7 +611,8 @@ final class TraciveIdempotencyConflictException extends TraciveException {
   });
 }
 
-/// 429 `rate_limited`.
+/// 429 `rate_limited`, or `daily_quota_exceeded` — tell them apart with
+/// [isDailyQuotaExceeded].
 final class TraciveRateLimitedException extends TraciveException {
   /// Creates the exception. [retryAfter] carries the server's `Retry-After`
   /// header when it sent one; the request is retryable either way.
@@ -567,13 +622,19 @@ final class TraciveRateLimitedException extends TraciveException {
     int? statusCode = 429,
     super.checkId,
     bool messageFromServer = false,
+    String code = 'rate_limited',
   }) : super(message,
-            code: 'rate_limited',
+            code: code,
             statusCode: statusCode,
             messageFromServer: messageFromServer);
 
   /// Value of the `Retry-After` response header, when the server sent one.
   final Duration? retryAfter;
+
+  /// The organisation's daily check quota is spent, rather than a short burst
+  /// limit. Waiting a few seconds will not help: [retryAfter] points at the
+  /// reset at 00:00 UTC.
+  bool get isDailyQuotaExceeded => code == 'daily_quota_exceeded';
 
   @override
   bool get isRetryable => true;

@@ -178,6 +178,18 @@ void main() {
       code: 'partner_suspended',
       matcher: isA<TracivePartnerSuspendedException>(),
     );
+    expectsMapping(
+      'UserCreditNotPermitted',
+      status: 403,
+      code: 'user_credit_not_permitted',
+      matcher: isA<TraciveUserCreditNotPermittedException>(),
+    );
+    expectsMapping(
+      'TranslationNotPermitted',
+      status: 403,
+      code: 'translation_not_permitted',
+      matcher: isA<TraciveTranslationNotPermittedException>(),
+    );
 
     // 409
     expectsMapping(
@@ -235,6 +247,39 @@ void main() {
         const Duration(seconds: 42),
       );
       expect(mapped.isRetryable, isTrue);
+    });
+
+    // A spent daily quota stays a rate limit, so an existing handler keeps
+    // working, and says which it is: its wait runs to 00:00 UTC.
+    test('429 daily_quota_exceeded is a rate limit that says so', () {
+      final mapped = mapErrorResponse(
+        _errorResponse(
+          429,
+          'daily_quota_exceeded',
+          headers: const <String, String>{'Retry-After': '43200'},
+        ),
+      );
+      expect(mapped, isA<TraciveRateLimitedException>());
+      final rateLimited = mapped as TraciveRateLimitedException;
+      expect(rateLimited.isDailyQuotaExceeded, isTrue);
+      expect(rateLimited.code, 'daily_quota_exceeded');
+      expect(rateLimited.retryAfter, const Duration(seconds: 43200));
+    });
+
+    test('only daily_quota_exceeded claims isDailyQuotaExceeded', () {
+      TraciveRateLimitedException rateLimited(String? code) =>
+          TraciveException.fromApiError(statusCode: 429, code: code)
+              as TraciveRateLimitedException;
+      expect(rateLimited('rate_limited').isDailyQuotaExceeded, isFalse);
+      expect(rateLimited('slow_down').isDailyQuotaExceeded, isFalse);
+      expect(rateLimited(null).isDailyQuotaExceeded, isFalse);
+      expect(const TraciveRateLimitedException().isDailyQuotaExceeded, isFalse);
+    });
+
+    test('an unrecognised 429 code keeps its raw code', () {
+      final mapped = mapErrorResponse(_errorResponse(429, 'slow_down'));
+      expect(mapped, isA<TraciveRateLimitedException>());
+      expect(mapped.code, 'slow_down');
     });
 
     test('429 without Retry-After yields a null delay, not a wrong one', () {

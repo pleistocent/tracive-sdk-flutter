@@ -9,6 +9,16 @@ until it is frozen at `1.0.0`.
 ## [Unreleased]
 
 ### Added
+
+- **Three newer server error codes now have a type.** `user_credit_not_permitted`
+  and `translation_not_permitted` (both 403 on a check) map to the new
+  `TraciveUserCreditNotPermittedException` and
+  `TraciveTranslationNotPermittedException` instead of `TraciveUnknownException`.
+  `daily_quota_exceeded` stays `TraciveRateLimitedException`, so an existing
+  handler keeps working; its `code` is now the real code rather than
+  `rate_limited`, and the new `isDailyQuotaExceeded` tells it apart from a short
+  burst limit. Any other unrecognised 429 code is likewise kept on `code`. An
+  exhaustive `switch` over the sealed `TraciveException` gains two cases.
 - **A check can now be recorded against your own transaction, so a transaction-detail screen can show
   it again later.** `client.cache` gains `writeTransactionCheck`, `readTransactionCheck` and
   `removeTransactionCheck`.
