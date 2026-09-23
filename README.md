@@ -63,7 +63,9 @@ Future<void> main() async {
       // and matching your manifest's intent filter exactly.
       redirectUri: 'https://your.app/oauth/callback',
       // TODO(partner): your own stable, opaque id for this user. Required and
-      // never blank — never a raw phone number or an email.
+      // never blank — never a raw phone number or an email, at most 200
+      // characters. The constructor checks the server's rule and throws.
+      // A numeric customer number is fine.
       partnerUserId: 'your-user-id',
       // TODO(partner): the narrowest set you need. Name scopes with
       // `TraciveScopes`; a mistyped one is rejected by the authorization

@@ -776,6 +776,41 @@ void main() {
       expect(oauth.partnerUserId, 'partner-user-1');
     });
 
+    // SDK-2: the rest of the server's partner_user_id rule.
+    test('rejects a partnerUserId the server would refuse', () {
+      for (final bad in <String>[
+        'budi@bca.co.id',
+        '08123456789',
+        '628123456789',
+        '+62 812-3456-7890',
+        '+6591234567',
+        'x' * 201,
+      ]) {
+        expect(
+          () => TraciveMode.oauth(
+            clientId: 'cli_1',
+            redirectUri: 'https://partner.test/cb',
+            partnerUserId: bad,
+          ),
+          throwsArgumentError,
+          reason: bad,
+        );
+      }
+      for (final ok in <String>[
+        '0012345678',
+        '1234567890123456',
+        '3f2b9c1e-uuid',
+        'pelanggan-ñandú',
+        'x' * 200,
+      ]) {
+        TraciveMode.oauth(
+          clientId: 'cli_1',
+          redirectUri: 'https://partner.test/cb',
+          partnerUserId: ok,
+        );
+      }
+    });
+
     test('rejects a blank partnerUserId in every build', () {
       // A plain throw, not an assert: the AOT compiler strips asserts, so the
       // earlier version of this guard let a release build send

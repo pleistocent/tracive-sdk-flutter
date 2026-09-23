@@ -64,6 +64,19 @@ final class TraciveOAuthMode extends TraciveMode {
             'an error.',
       );
     }
+    // The rest of the server's rule, for the same reason: a refusal there has
+    // no redirect.
+    final problem = partnerUserIdProblem(partnerUserId);
+    if (problem != null) {
+      throw ArgumentError.value(
+        partnerUserId,
+        'partnerUserId',
+        '$problem. Send an opaque id you store — a UUID or your own customer '
+            'key, never an email or phone number. The server refuses it before '
+            'any redirect exists, so the failure would otherwise reach you as '
+            'silence.',
+      );
+    }
   }
 
   /// The partner's registered OAuth client id. Public by nature — it is not a
@@ -183,4 +196,28 @@ final class TraciveProxyMode extends TraciveMode {
   @override
   String toString() => 'TraciveMode.proxy(baseUrl: $baseUrl, '
       'authHeaders: ${authHeaders.keys.toList()} (values redacted))';
+}
+
+/// Longest `partnerUserId` the server accepts.
+const int partnerUserIdMaxLength = 200;
+
+final RegExp _separators = RegExp(r'[\s\-().]');
+final RegExp _e164 = RegExp(r'^\+\d{7,15}$');
+final RegExp _indonesianMobile = RegExp(r'^(08|628)\d{8,11}$');
+
+/// Why the server would refuse [value] as a `partner_user_id` (backend
+/// `partnerUserIdProblem`), or null when it accepts it. KEEP IN SYNC with the
+/// server and the other three SDKs.
+String? partnerUserIdProblem(String value) {
+  final v = value.trim();
+  if (v.isEmpty) return 'must not be blank';
+  if (v.length > partnerUserIdMaxLength) {
+    return 'must be at most $partnerUserIdMaxLength characters';
+  }
+  if (v.contains('@')) return 'looks like an email address';
+  final compact = v.replaceAll(_separators, '');
+  if (_e164.hasMatch(compact) || _indonesianMobile.hasMatch(compact)) {
+    return 'looks like a phone number';
+  }
+  return null;
 }
