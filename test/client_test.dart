@@ -1046,6 +1046,63 @@ void main() {
       expect(transport.requests, hasLength(1));
     });
 
+    // A spent daily quota answers 429 with a Retry-After that runs to the next
+    // UTC midnight. The policy below would wait an hour before any retry, so a
+    // client that retried at all would hang into the test timeout instead of
+    // passing.
+    const hourLongRetries = RetryPolicy(
+      initialBackoff: Duration(hours: 1),
+      maxBackoff: Duration(hours: 1),
+      jitter: 0,
+    );
+    TraciveHttpResponse dailyQuota() => _error(
+          429,
+          'daily_quota_exceeded',
+          headers: const <String, String>{'retry-after': '43200'},
+        );
+
+    test('a daily-quota 429 on credits() is surfaced once, without waiting',
+        () async {
+      final transport = _FakeTransport((_) => dailyQuota());
+      final client =
+          _client(transport: transport, retryPolicy: hourLongRetries);
+
+      await expectLater(
+        client.credits(),
+        throwsA(
+          isA<TraciveRateLimitedException>().having(
+            (e) => e.retryAfter,
+            'retryAfter',
+            const Duration(seconds: 43200),
+          ),
+        ),
+      );
+      expect(transport.requests, hasLength(1));
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
+    test('a daily-quota 429 on a keyed check is surfaced once, without waiting',
+        () async {
+      final transport = _FakeTransport((_) => dailyQuota());
+      final client =
+          _client(transport: transport, retryPolicy: hourLongRetries);
+
+      await expectLater(
+        client.checkScammer(
+          query,
+          source: Source.server,
+          idempotencyKey: 'idem-429',
+        ),
+        throwsA(
+          isA<TraciveRateLimitedException>().having(
+            (e) => e.retryAfter,
+            'retryAfter',
+            const Duration(seconds: 43200),
+          ),
+        ),
+      );
+      expect(transport.requests, hasLength(1));
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
     test('a GET is retried without any key — it costs nothing', () async {
       final transport = _FakeTransport((_) => _error(503, 'unavailable'));
       final client = _client(transport: transport, retryPolicy: _fastRetries);
