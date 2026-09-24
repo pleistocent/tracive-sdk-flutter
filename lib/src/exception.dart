@@ -631,9 +631,9 @@ final class TraciveRateLimitedException extends TraciveException {
   /// Value of the `Retry-After` response header, when the server sent one.
   final Duration? retryAfter;
 
-  /// The organisation's daily check quota is spent, rather than a short burst
-  /// limit. Waiting a few seconds will not help: [retryAfter] points at the
-  /// reset at 00:00 UTC.
+  /// A daily allowance is spent — the connection's daily quota, its account
+  /// reads, or the sandbox org cap — rather than a per-second limit. Waiting a
+  /// few seconds will not help: [retryAfter] points at the reset at 00:00 UTC.
   bool get isDailyQuotaExceeded => code == 'daily_quota_exceeded';
 
   @override

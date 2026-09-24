@@ -194,7 +194,7 @@ Three more are about your contract or quota rather than your code:
 |---|---|---|
 | `TraciveUserCreditNotPermittedException` | 403 on a check: your contract does not let you charge the user's subscription credits | contact Tracive; retrying will not help |
 | `TraciveTranslationNotPermittedException` | 403 on a `Detail.full` check with a non-English `locale`: your contract withholds translation, or the user has no premium subscription | check again without `locale` for the English result |
-| `TraciveRateLimitedException` with `isDailyQuotaExceeded` | 429: the organisation's daily check quota is spent, and `retryAfter` points at 00:00 UTC | tell the user to try later; the SDK never retries a 429 |
+| `TraciveRateLimitedException` with `isDailyQuotaExceeded` | 429: a daily allowance is spent (the connection's daily quota, its account reads, or the sandbox org cap), and `retryAfter` points at 00:00 UTC | tell the user to try later; the SDK never retries a 429 |
 
 ### A damaged grant repairs itself, and costs one extra round trip
 
