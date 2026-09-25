@@ -99,10 +99,16 @@ class CheckResult {
   /// Reports the server considers ambiguous.
   final int ambiguousReports;
 
-  /// Earliest report, in UTC.
+  /// The month of the earliest report, in UTC.
+  ///
+  /// Month precision only: the server always sends the 15th at 12:00 UTC,
+  /// which falls in the same month in every time zone. Show the month and year
+  /// (e.g. "Jul 2026"). Never show the day or compute with it, such as
+  /// "3 days ago": an exact date could help identify the reporter.
   final DateTime? firstReportOn;
 
-  /// Most recent report, in UTC.
+  /// The month of the most recent report, in UTC. Month precision only,
+  /// exactly like [firstReportOn].
   final DateTime? lastReportOn;
 
   /// Reported loss per currency code, e.g. `{'IDR': 4500000.0}`. Unmodifiable.

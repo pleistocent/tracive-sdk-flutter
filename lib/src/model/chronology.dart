@@ -29,11 +29,10 @@ class Chronology {
   /// Server-assigned severity of this narrative.
   final int riskLevel;
 
-  /// When it happened, as sent by the server.
+  /// The month it happened, as `"YYYY-MM"` (e.g. `"2026-06"`).
   ///
-  /// Kept as a `String?` on purpose: the contract types it as a string, and
-  /// it can be a partial date (`"2026-03"`) that no `DateTime` can hold
-  /// faithfully.
+  /// Kept as a `String?` on purpose: it is display text with no day in it,
+  /// which no `DateTime` can hold faithfully. Do not parse it.
   final String? incidentDate;
 
   /// Wire form.

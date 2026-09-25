@@ -109,8 +109,8 @@ class DemoBackend extends HttpTransport {
       'reportTotal': reports,
       'credibleReports': (reports * 0.7).round(),
       'ambiguousReports': reports - (reports * 0.7).round(),
-      if (reports > 0) 'firstReportOn': '2025-11-02T04:15:00Z',
-      if (reports > 0) 'lastReportOn': '2026-07-14T09:30:00Z',
+      if (reports > 0) 'firstReportOn': '2025-11-15T12:00:00.000Z',
+      if (reports > 0) 'lastReportOn': '2026-07-15T12:00:00.000Z',
       'fraudAmount': reports > 0
           ? <String, Object?>{'IDR': reports * 1500000.0}
           : <String, Object?>{},
@@ -125,13 +125,13 @@ class DemoBackend extends HttpTransport {
                 'Promised 30% monthly returns, then stopped replying once '
                     'the transfer cleared.',
             'riskLevel': 3,
-            'incidentDate': '2026-06-01',
+            'incidentDate': '2026-06',
           },
         ],
       if (wantsFullDetail)
         'comments': <Object?>[
           <String, Object?>{
-            'date': '2026-06-02',
+            'date': '2026-06',
             'text': 'Took my deposit and blocked me.',
             'fromCredibleReport': true,
           },

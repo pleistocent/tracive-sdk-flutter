@@ -30,8 +30,8 @@ void main() {
         'reportTotal': 12,
         'credibleReports': 9,
         'ambiguousReports': 3,
-        'firstReportOn': '2025-01-02T03:04:05Z',
-        'lastReportOn': '2026-07-01T10:00:00Z',
+        'firstReportOn': '2025-01-15T12:00:00Z',
+        'lastReportOn': '2026-07-15T12:00:00.000Z',
         'fraudAmount': <String, Object?>{'IDR': 4500000, 'USD': 290.5},
         'tags': <Object?>['investment', 'telegram'],
         'relatedScammerCount': 4,
@@ -44,7 +44,7 @@ void main() {
         ],
         'comments': <Object?>[
           <String, Object?>{
-            'date': '2026-06-01',
+            'date': '2026-06',
             'text': 'Same story here.',
             'fromCredibleReport': true,
           },
@@ -64,7 +64,7 @@ void main() {
       expect(result.reportTotal, 12);
       expect(result.credibleReports, 9);
       expect(result.ambiguousReports, 3);
-      expect(result.firstReportOn, DateTime.utc(2025, 1, 2, 3, 4, 5));
+      expect(result.firstReportOn, DateTime.utc(2025, 1, 15, 12));
       expect(result.firstReportOn!.isUtc, isTrue);
       expect(result.fraudAmount, <String, double>{
         'IDR': 4500000,
@@ -180,10 +180,10 @@ void main() {
       final result = CheckResult.fromJson(<String, Object?>{
         'found': true,
         'riskTier': 'HIGH',
-        'lastReportOn': '2026-07-01T17:00:00+07:00',
+        'lastReportOn': '2026-07-15T19:00:00+07:00',
       }, fetchedAt: fetchedAt);
       expect(result.lastReportOn!.isUtc, isTrue);
-      expect(result.lastReportOn, DateTime.utc(2026, 7, 1, 10));
+      expect(result.lastReportOn, DateTime.utc(2026, 7, 15, 12));
     });
 
     test('round-trips through toJson', () {
@@ -192,7 +192,7 @@ void main() {
         'found': true,
         'riskTier': 'ELEVATED',
         'reportTotal': 3,
-        'firstReportOn': '2026-01-01T00:00:00.000Z',
+        'firstReportOn': '2026-01-15T12:00:00.000Z',
         'fraudAmount': <String, Object?>{'IDR': 1000.0},
         'tags': <Object?>['a'],
         'billing': <String, Object?>{'creditSource': 'USER', 'unitsCharged': 1},
@@ -609,7 +609,7 @@ void main() {
 
     test('comment and chronology text is summarised, not printed', () {
       const comment = Comment(
-        date: '2026-01-01',
+        date: '2026-01',
         text: 'he took my bank account 123',
         fromCredibleReport: true,
       );

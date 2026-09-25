@@ -826,8 +826,8 @@ CheckResult _result({
       reportTotal: 12,
       credibleReports: 9,
       ambiguousReports: 3,
-      firstReportOn: DateTime.utc(2025, 1, 2, 3, 4, 5),
-      lastReportOn: DateTime.utc(2026, 7, 1, 10),
+      firstReportOn: DateTime.utc(2025, 1, 15, 12),
+      lastReportOn: DateTime.utc(2026, 7, 15, 12),
       fraudAmount: const <String, double>{'IDR': 4500000},
       tags: const <String>['investment'],
       relatedScammerCount: 4,
@@ -836,14 +836,14 @@ CheckResult _result({
               const Chronology(
                 chronology: 'Promised 30% monthly returns.',
                 riskLevel: 3,
-                incidentDate: '2026-06-01',
+                incidentDate: '2026-06',
               ),
             ]
           : null,
       comments: full
           ? <Comment>[
               const Comment(
-                date: '2026-06-02',
+                date: '2026-06',
                 text: 'Took my deposit and blocked me.',
                 fromCredibleReport: true,
               ),

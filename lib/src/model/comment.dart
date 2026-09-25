@@ -21,9 +21,9 @@ class Comment {
         fromCredibleReport: asBool(json['fromCredibleReport']),
       );
 
-  /// When the comment was written, as sent by the server.
+  /// The month the comment was written, as `"YYYY-MM"` (e.g. `"2026-06"`).
   ///
-  /// A `String` by contract — it may be a display-formatted or partial date.
+  /// A `String` by contract: display text with no day in it. Do not parse it.
   final String date;
 
   /// The comment body.
