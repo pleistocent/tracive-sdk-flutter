@@ -63,8 +63,8 @@ class CheckResult {
       reportTotal: asInt(json['reportTotal']),
       credibleReports: asInt(json['credibleReports']),
       ambiguousReports: asInt(json['ambiguousReports']),
-      firstReportOn: asUtcDateTime(json['firstReportOn']),
-      lastReportOn: asUtcDateTime(json['lastReportOn']),
+      firstReportOn: asYearMonth(json['firstReportOn']),
+      lastReportOn: asYearMonth(json['lastReportOn']),
       fraudAmount: asAmountMap(json['fraudAmount']),
       tags: asStringList(json['tags']),
       relatedScammerCount: asInt(json['relatedScammerCount']),
@@ -99,17 +99,16 @@ class CheckResult {
   /// Reports the server considers ambiguous.
   final int ambiguousReports;
 
-  /// The month of the earliest report, in UTC.
+  /// The month of the earliest report, as `"YYYY-MM"` (e.g. `"2026-06"`).
   ///
-  /// Month precision only: the server always sends the 15th at 12:00 UTC,
-  /// which falls in the same month in every time zone. Show the month and year
-  /// (e.g. "Jul 2026"). Never show the day or compute with it, such as
-  /// "3 days ago": an exact date could help identify the reporter.
-  final DateTime? firstReportOn;
+  /// Show the month and year only (e.g. "Jun 2026"). Never invent a day or
+  /// compute with one, such as "3 days ago": an exact date could help identify
+  /// the reporter, which is why the server never sends it.
+  final String? firstReportOn;
 
-  /// The month of the most recent report, in UTC. Month precision only,
-  /// exactly like [firstReportOn].
-  final DateTime? lastReportOn;
+  /// The month of the most recent report, as `"YYYY-MM"`. Month precision
+  /// only, exactly like [firstReportOn].
+  final String? lastReportOn;
 
   /// Reported loss per currency code, e.g. `{'IDR': 4500000.0}`. Unmodifiable.
   final Map<String, double> fraudAmount;
@@ -234,8 +233,8 @@ class CheckResult {
     int? reportTotal,
     int? credibleReports,
     int? ambiguousReports,
-    DateTime? firstReportOn,
-    DateTime? lastReportOn,
+    String? firstReportOn,
+    String? lastReportOn,
     Map<String, double>? fraudAmount,
     List<String>? tags,
     int? relatedScammerCount,
@@ -275,8 +274,8 @@ class CheckResult {
         'reportTotal': reportTotal,
         'credibleReports': credibleReports,
         'ambiguousReports': ambiguousReports,
-        if (firstReportOn != null) 'firstReportOn': toIso8601Utc(firstReportOn),
-        if (lastReportOn != null) 'lastReportOn': toIso8601Utc(lastReportOn),
+        if (firstReportOn != null) 'firstReportOn': firstReportOn,
+        if (lastReportOn != null) 'lastReportOn': lastReportOn,
         'fraudAmount': fraudAmount,
         'tags': tags,
         'relatedScammerCount': relatedScammerCount,

@@ -30,8 +30,8 @@ void main() {
         'reportTotal': 12,
         'credibleReports': 9,
         'ambiguousReports': 3,
-        'firstReportOn': '2025-01-15T12:00:00Z',
-        'lastReportOn': '2026-07-15T12:00:00.000Z',
+        'firstReportOn': '2025-01',
+        'lastReportOn': '2026-07',
         'fraudAmount': <String, Object?>{'IDR': 4500000, 'USD': 290.5},
         'tags': <Object?>['investment', 'telegram'],
         'relatedScammerCount': 4,
@@ -64,8 +64,8 @@ void main() {
       expect(result.reportTotal, 12);
       expect(result.credibleReports, 9);
       expect(result.ambiguousReports, 3);
-      expect(result.firstReportOn, DateTime.utc(2025, 1, 15, 12));
-      expect(result.firstReportOn!.isUtc, isTrue);
+      expect(result.firstReportOn, '2025-01');
+      expect(result.lastReportOn, '2026-07');
       expect(result.fraudAmount, <String, double>{
         'IDR': 4500000,
         'USD': 290.5,
@@ -176,14 +176,26 @@ void main() {
       expect(RiskTier.caution.isRisky, isTrue);
     });
 
-    test('normalises instants to UTC', () {
+    test('a legacy ISO date-time report date keeps only its month', () {
       final result = CheckResult.fromJson(<String, Object?>{
         'found': true,
         'riskTier': 'HIGH',
-        'lastReportOn': '2026-07-15T19:00:00+07:00',
+        'firstReportOn': '2025-01-15T12:00:00Z',
+        'lastReportOn': '2026-07-15T12:00:00.000Z',
       }, fetchedAt: fetchedAt);
-      expect(result.lastReportOn!.isUtc, isTrue);
-      expect(result.lastReportOn, DateTime.utc(2026, 7, 15, 12));
+      expect(result.firstReportOn, '2025-01');
+      expect(result.lastReportOn, '2026-07');
+    });
+
+    test('a report date that is not a month decodes to null', () {
+      for (final value in <Object?>['garbage', '2026-13', '26-07', '', 5]) {
+        final result = CheckResult.fromJson(<String, Object?>{
+          'found': true,
+          'riskTier': 'HIGH',
+          'lastReportOn': value,
+        }, fetchedAt: fetchedAt);
+        expect(result.lastReportOn, isNull, reason: '$value');
+      }
     });
 
     test('round-trips through toJson', () {
@@ -192,7 +204,7 @@ void main() {
         'found': true,
         'riskTier': 'ELEVATED',
         'reportTotal': 3,
-        'firstReportOn': '2026-01-15T12:00:00.000Z',
+        'firstReportOn': '2026-01',
         'fraudAmount': <String, Object?>{'IDR': 1000.0},
         'tags': <Object?>['a'],
         'billing': <String, Object?>{'creditSource': 'USER', 'unitsCharged': 1},

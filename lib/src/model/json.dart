@@ -80,6 +80,18 @@ DateTime? asUtcDateTime(Object? value) {
 /// Serialises an instant as ISO-8601 UTC (`…Z`), or `null`.
 String? toIso8601Utc(DateTime? value) => value?.toUtc().toIso8601String();
 
+final _yearMonth = RegExp(r'^\d{4}-(0[1-9]|1[0-2])');
+
+/// Reads a `"YYYY-MM"` month. A longer string with a valid `YYYY-MM` prefix is
+/// cut to that prefix: servers before month strings sent an ISO date-time, and
+/// a result cached by an earlier build still holds one. Anything else yields
+/// `null`.
+String? asYearMonth(Object? value) {
+  if (value is! String) return null;
+  final match = _yearMonth.firstMatch(value.trim());
+  return match?.group(0);
+}
+
 /// Reads a list of strings, skipping non-string members. A missing or
 /// non-list value yields an empty list.
 List<String> asStringList(Object? value) {

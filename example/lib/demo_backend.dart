@@ -109,8 +109,8 @@ class DemoBackend extends HttpTransport {
       'reportTotal': reports,
       'credibleReports': (reports * 0.7).round(),
       'ambiguousReports': reports - (reports * 0.7).round(),
-      if (reports > 0) 'firstReportOn': '2025-11-15T12:00:00.000Z',
-      if (reports > 0) 'lastReportOn': '2026-07-15T12:00:00.000Z',
+      if (reports > 0) 'firstReportOn': '2025-11',
+      if (reports > 0) 'lastReportOn': '2026-07',
       'fraudAmount': reports > 0
           ? <String, Object?>{'IDR': reports * 1500000.0}
           : <String, Object?>{},
