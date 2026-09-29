@@ -53,13 +53,15 @@ void main() {
       // chain platform codes but not to a bank code, and added the vector that
       // pins the bank code's NFC step down. Version 5 added three rejections -
       // `not_an_email`, `empty_address`, `empty_platform` - and the guard case
-      // proving the reserved-key pattern does not span a newline.
-      expect(fixture['version'], 5);
+      // proving the reserved-key pattern does not span a newline. Version 6
+      // added `BANK_SHORT_CODE` and `BANK_BIC`, the vectors naming a bank by
+      // `bankShortCode` or `bic`, and `unknown_bank_code`.
+      expect(fixture['version'], 6);
     });
 
     test('carries the vectors it is supposed to', () {
-      expect(vectors, hasLength(34));
-      expect(rejected, hasLength(14));
+      expect(vectors, hasLength(42));
+      expect(rejected, hasLength(21));
     });
 
     test('carries the sections version 2 added', () {
@@ -1074,11 +1076,33 @@ TraciveQuery _build(Map<String, Object?> vector) {
       if (input['isIban'] == true) {
         return TraciveQuery.iban(input['iban'] as String);
       }
-      return TraciveQuery.bankAccount(
-        countryAlpha3: input['country'] as String,
-        bankCode: input['bankCode'] as String,
-        account: input['accountId'] as String,
-      );
+      final country = input['country'] as String;
+      final account = input['accountId'] as String;
+      // Exactly one way of naming the bank, so a vector cannot be driven
+      // through a factory other than the one its input names.
+      final selectors = const <String>['bankCode', 'bankShortCode', 'bic']
+          .where((field) => input[field] != null)
+          .toList();
+      if (selectors.length != 1) {
+        fail('BANK vector ${vector['id']} names the bank by $selectors');
+      }
+      return switch (selectors.single) {
+        'bankShortCode' => TraciveQuery.bankAccountByShortCode(
+            countryAlpha3: country,
+            bankShortCode: input['bankShortCode'] as String,
+            account: account,
+          ),
+        'bic' => TraciveQuery.bankAccountByBic(
+            countryAlpha3: country,
+            bic: input['bic'] as String,
+            account: account,
+          ),
+        _ => TraciveQuery.bankAccount(
+            countryAlpha3: country,
+            bankCode: input['bankCode'] as String,
+            account: account,
+          ),
+      };
     case 'CRYPTO':
       return TraciveQuery.crypto(
         chain: input['chain'] as String,

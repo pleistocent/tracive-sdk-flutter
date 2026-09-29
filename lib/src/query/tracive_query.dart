@@ -16,6 +16,7 @@
 // extra entry is a paid server round trip.
 
 import '../exception.dart';
+import 'bank_codes.dart';
 import 'document_id.dart';
 import 'js_string.dart';
 import 'normalizer.dart';
@@ -157,13 +158,7 @@ class TraciveQuery {
     required String bankCode,
     required String account,
   }) {
-    final country = jsTrim(jsToUpperCase(countryAlpha3));
-    if (!_alpha3Pattern.hasMatch(country)) {
-      throw const TraciveQueryException(
-        QueryRejectionReason.countryNotAlpha3,
-        message: 'Country must be an ISO 3166-1 alpha-3 code (three letters)',
-      );
-    }
+    final country = _foldCountry(countryAlpha3);
     final code = jsTrim(jsToUpperCase(_nfc(bankCode))).replaceAll('_', '');
     if (code.isEmpty) {
       throw const TraciveQueryException(
@@ -179,6 +174,71 @@ class TraciveQuery {
       );
     }
     return _build(QueryType.bank, 'BANK_${country}_${code}_$accountId');
+  }
+
+  /// A domestic bank account, with the bank named by its national bank code —
+  /// `014` for BCA in Indonesia — rather than by Tracive's bank code.
+  ///
+  /// The code is translated to Tracive's bank code through a table shipped
+  /// inside the SDK, offline, so this builds exactly the key
+  /// [TraciveQuery.bankAccount] builds for that bank: `IDN` + `014` and `IDN` +
+  /// `BCA` are one key and share cache entries. Case, whitespace, `.` and `-`
+  /// are ignored, and leading zeros are optional, so `14` finds `014`.
+  /// [countryAlpha3] and [account] fold exactly as in
+  /// [TraciveQuery.bankAccount].
+  ///
+  /// The country is checked first (`country_not_alpha3`). Throws
+  /// `unknown_bank_code` when the table does not list the code for that
+  /// country: no key built from it could hit, and a miss is billed.
+  factory TraciveQuery.bankAccountByShortCode({
+    required String countryAlpha3,
+    required String bankShortCode,
+    required String account,
+  }) {
+    final country = _foldCountry(countryAlpha3);
+    final bankCode = bankCodeByShortCode(country, bankShortCode);
+    if (bankCode == null) {
+      throw const TraciveQueryException(
+        QueryRejectionReason.unknownBankCode,
+        message: 'Bank short code is not one Tracive lists for this country',
+      );
+    }
+    return TraciveQuery.bankAccount(
+      countryAlpha3: country,
+      bankCode: bankCode,
+      account: account,
+    );
+  }
+
+  /// A domestic bank account, with the bank named by its BIC — `CENAIDJA` or
+  /// `CENAIDJAXXX` for BCA — rather than by Tracive's bank code.
+  ///
+  /// Translated like [TraciveQuery.bankAccountByShortCode], from the same
+  /// table, so this builds the key [TraciveQuery.bankAccount] builds for that
+  /// bank. An 11-character BIC is looked up by its first 8 (the branch is
+  /// ignored), within [countryAlpha3] only; case and whitespace are ignored.
+  ///
+  /// The country is checked first (`country_not_alpha3`). Throws
+  /// `unknown_bank_code` when the BIC is malformed or the table does not list
+  /// it for that country.
+  factory TraciveQuery.bankAccountByBic({
+    required String countryAlpha3,
+    required String bic,
+    required String account,
+  }) {
+    final country = _foldCountry(countryAlpha3);
+    final bankCode = bankCodeByBic(country, bic);
+    if (bankCode == null) {
+      throw const TraciveQueryException(
+        QueryRejectionReason.unknownBankCode,
+        message: 'BIC is malformed or not one Tracive lists for this country',
+      );
+    }
+    return TraciveQuery.bankAccount(
+      countryAlpha3: country,
+      bankCode: bankCode,
+      account: account,
+    );
   }
 
   /// An IBAN. Its country is embedded in the IBAN itself, so no country
@@ -271,6 +331,17 @@ class TraciveQuery {
   /// [TraciveQuery.bankAccount] and [TraciveQuery.iban]; NFC is not applied.
   static String _foldAccountId(String raw) =>
       jsToUpperCase(raw).replaceAll(_whitespaceOrHyphenPattern, '');
+
+  static String _foldCountry(String countryAlpha3) {
+    final country = jsTrim(jsToUpperCase(countryAlpha3));
+    if (!_alpha3Pattern.hasMatch(country)) {
+      throw const TraciveQueryException(
+        QueryRejectionReason.countryNotAlpha3,
+        message: 'Country must be an ISO 3166-1 alpha-3 code (three letters)',
+      );
+    }
+    return country;
+  }
 
   static String _nfc(String raw) => TraciveNormalization.fold(raw);
 

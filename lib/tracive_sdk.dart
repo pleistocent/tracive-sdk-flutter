@@ -74,6 +74,9 @@ export 'src/query/unorm_normalizer.dart';
 //   src/query/js_string.dart           — JavaScript string semantics; an
 //                                        implementation detail of the fold
 //                                        (the grammar test imports it directly)
+//   src/query/bank_codes.dart          — the embedded bank-code table behind
+//   src/query/bank_codes_json.dart       bankAccountByShortCode/ByBic
+//                                        (bank_codes_test imports them)
 //   src/client/error_envelope.dart     — wire-error decoding, internal
 //   src/oauth/pkce.dart                — PKCE pair generation, internal
 //   src/oauth/authorize_url.dart       — URL and form building, internal

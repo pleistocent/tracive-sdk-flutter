@@ -768,6 +768,11 @@ abstract final class QueryRejectionReason {
   /// The bank code folded to the empty string.
   static const String emptyBankCode = 'empty_bank_code';
 
+  /// The national bank code or BIC is malformed, or the SDK's bank-code table
+  /// does not list it for that country. No key built from it could hit, so it
+  /// is rejected locally and never billed.
+  static const String unknownBankCode = 'unknown_bank_code';
+
   /// The e-mail address folded to the empty string.
   ///
   /// The generic spelling is historical: it is the fixture's reason for the
@@ -815,6 +820,7 @@ abstract final class QueryRejectionReason {
     unknownCountry,
     emptyPhoneNumber,
     countryConflict,
+    unknownBankCode,
   ];
 }
 

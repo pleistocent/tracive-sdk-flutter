@@ -45,6 +45,10 @@ implementation is wrong.
 
 A grammar change starts at the Tracive API and lands in all four SDKs together, or it drifts.
 
+`test/fixtures/bank-codes.json` is vendored the same way, and the SDK ships it as the string
+constant in `lib/src/query/bank_codes_json.dart`. After re-vendoring it, run
+`dart run tool/embed_bank_codes.dart`; `test/bank_codes_test.dart` fails while the two differ.
+
 ### And nothing may sit between a fixture value and the assertion that reads it
 
 Pinning the file is only half of it. The pin proves the *bytes* did not move; it says nothing about

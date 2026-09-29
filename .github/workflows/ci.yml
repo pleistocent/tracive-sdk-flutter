@@ -67,7 +67,15 @@ jobs:
       # whole point of pinning it.
       - name: Verify the query-grammar fixture is unmodified
         run: |
-          echo "f94bf48164c82bcc59fda30669d9d8c25dbc36ecc7ad93fcd7fb56ba2cdf2901  test/fixtures/query-grammar-vectors.json" \
+          echo "e63439047455e20e0952d75ad438ec8c7b2f80e8b1872c5e6c47628daab89bfe  test/fixtures/query-grammar-vectors.json" \
+            | sha256sum --check --strict
+
+      # The bank-code table the national-code and BIC builders translate through, pinned for the
+      # same reason: it is the Tracive API's own table, vendored byte for byte into every SDK, and
+      # a local edit would make this SDK build keys the server does not.
+      - name: Verify the bank-code table is unmodified
+        run: |
+          echo "77eda1e45ec5d2894d9a676452f98470fa2c337d6ea12ab628ff176e62e740d5  test/fixtures/bank-codes.json" \
             | sha256sum --check --strict
 
       # The phone-normalization fixture, pinned the same way and for the same

@@ -124,6 +124,21 @@ TraciveQuery.crypto(chain: 'ETH', address: '0xAbC…');    // EVM addresses lowe
 TraciveQuery.username(platform: 'INSTAGRAM', handle: '@budi_scam');
 ```
 
+A bank can also be named the way your own records may already hold it — by its
+national bank code or its BIC:
+
+```dart
+TraciveQuery.bankAccountByShortCode(countryAlpha3: 'IDN', bankShortCode: '014', account: '3242-4242-422');
+TraciveQuery.bankAccountByBic(countryAlpha3: 'IDN', bic: 'CENAIDJA', account: '3242-4242-422');
+```
+
+Both translate the code to Tracive's bank code through a table shipped inside
+the SDK, offline, so each builds exactly the key `bankCode: 'BCA'` builds and
+shares its cache entries. Leading zeros are optional (`14` finds `014`), and an
+11-character BIC is looked up by its first 8. A code the table does not list for
+that country throws `unknown_bank_code` before any request, so it is never
+billed.
+
 There is deliberately **no `domain()` builder.** The plan listed a DOMAIN input
 type; the backend dropped it. Building such a key would guarantee a miss, and a
 miss is billed.
@@ -140,8 +155,8 @@ try {
 } on TraciveQueryException catch (e) {
   // e.reason is a stable, cross-SDK string: 'not_e164', 'not_an_email',
   // 'country_not_alpha3', 'empty_account_id', 'empty_bank_code',
-  // 'empty_value', 'empty_handle', 'empty_chain', 'empty_address',
-  // 'empty_platform', 'invalid_document_id'.
+  // 'unknown_bank_code', 'empty_value', 'empty_handle', 'empty_chain',
+  // 'empty_address', 'empty_platform', 'invalid_document_id'.
   showFieldError(messageFor(e.reason));
 }
 ```
