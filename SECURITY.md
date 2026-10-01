@@ -6,9 +6,9 @@
 
 Report it privately, either way:
 
-- **E-mail** — `security@tracive.id`. Encrypt with our PGP key if the report
-  contains user data or a working exploit; the key is published at
-  <https://tracive.id/.well-known/pgp-key.txt>.
+- **E-mail** — `developer@pleistocent.com`. If the report contains user data or
+  a working exploit and you want it encrypted, say so in a first message with no
+  details and we will send you a key.
 - **GitHub** — *Security* → *Report a vulnerability* on
   <https://github.com/pleistocent/tracive-sdk-flutter> (GitHub Private
   Vulnerability Reporting). This is the preferred channel: it keeps the report,
