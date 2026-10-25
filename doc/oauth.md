@@ -170,9 +170,9 @@ on native code that does nothing. The cost is the few lines below.
 ### Android
 
 The SDK detects the Tracive app with `canLaunchUrl(Uri.parse('tracive://'))` —
-the bare scheme, and `tracivedev://` against sandbox. It carries no host on
-purpose: Android resolves such a probe by intent-filter matching, and a filter
-that declares a host requires the URI to carry a matching one, so a probe
+the bare scheme, and `tracivesandbox://` against sandbox. It carries no host
+on purpose: Android resolves such a probe by intent-filter matching, and a
+filter that declares a host requires the URI to carry a matching one, so a probe
 naming a host the app does not register answers `false` for an app that is
 installed.
 On Android 11+ (API 30) that returns `false` for **any** app you have not
@@ -184,7 +184,7 @@ block every user looks un-onboarded and is sent to the install link.
 ```xml
 <queries>
     <!-- The presence probe. One entry per scheme it may use: `tracive` is the
-         production app, `tracivedev` the sandbox build. The probe follows
+         production app, `tracivesandbox` the sandbox build. The probe follows
          `environment`, so a missing entry here means switching to sandbox
          answers "not installed" for everyone. -->
     <intent>
@@ -193,7 +193,7 @@ block every user looks un-onboarded and is sent to the install link.
     </intent>
     <intent>
         <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="tracivedev" />
+        <data android:scheme="tracivesandbox" />
     </intent>
     <!-- url_launcher needs this to open the Custom Tab and the install link. -->
     <intent>
@@ -233,13 +233,14 @@ it.
 <key>LSApplicationQueriesSchemes</key>
 <array>
     <string>tracive</string>
-    <string>tracivedev</string>
+    <string>tracivesandbox</string>
 </array>
 ```
 
 `canOpenURL` returns `false` for any scheme not in that array, so the same
 "everyone looks un-onboarded" failure applies — and it applies per scheme, so
-omitting `tracivedev` breaks sandbox only, which is the harder one to notice.
+omitting `tracivesandbox` breaks sandbox only, which is the harder one to
+notice.
 
 Then add the Associated Domains capability with
 `applinks:your.app`, and serve

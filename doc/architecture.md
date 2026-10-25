@@ -113,7 +113,7 @@ sequenceDiagram
 What the ordering buys, in the order it appears:
 
 1. **The presence probe runs before anything is generated.** It probes the
-   custom scheme with no host — `tracive://`, or `tracivedev://` against
+   custom scheme with no host — `tracive://`, or `tracivesandbox://` against
    sandbox — and not the `https` authorize URL, because a browser is always
    installed and an `https` probe therefore always answers `true`. The
    probe needs a manifest declaration on both platforms or it answers `false`

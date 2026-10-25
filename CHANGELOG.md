@@ -79,6 +79,12 @@ until it is frozen at `1.0.0`.
   answers in this shape.
 
 ### Breaking
+- **Sandbox now probes for the Tracive sandbox app, URL scheme `tracivesandbox`.** It probed
+  `tracivedev://`, which now belongs to an internal build that claims no authorize host, so it can
+  never answer a sandbox consent. `TraciveOAuth.traciveSandboxAppScheme` changes value. If you run
+  against sandbox, replace `tracivedev` with `tracivesandbox` in your `<queries>` block and in
+  `LSApplicationQueriesSchemes`. Production, `TraciveEnvironment.custom` and the sandbox API and
+  authorize hosts are unchanged.
 - **`CheckResult.firstReportOn` and `lastReportOn` are now `String?` holding `"YYYY-MM"`, not
   `DateTime?`**, matching `Chronology.incidentDate` and `Comment.date`. The server no longer sends a
   day at all. An ISO date-time from an older server, or in a result cached by an earlier build, still
