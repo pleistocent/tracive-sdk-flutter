@@ -77,8 +77,8 @@
              the consent screen.
 
              One entry per scheme the probe may use, because the probe follows
-             `environment`: `tracive` is the production app, `tracivedev` the
-             sandbox build. A `<package>` entry would name one build and so
+             `environment`: `tracive` is the production app, `tracivesandbox`
+             the sandbox build. A `<package>` entry would name one build and so
              could not follow it. -->
         <intent>
             <action android:name="android.intent.action.VIEW"/>
@@ -86,7 +86,7 @@
         </intent>
         <intent>
             <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="tracivedev"/>
+            <data android:scheme="tracivesandbox"/>
         </intent>
         <!-- url_launcher needs this to open the Custom Tab and the install
              link. -->

@@ -533,7 +533,20 @@ void main() {
       // Sandbox and production are separate worlds: neither build claims the
       // other's scheme, so probing `tracive://` on a device carrying only the
       // sandbox app reports "not installed" for an app that is right there.
-      expect(launcher.probed.single.toString(), 'tracivedev://');
+      expect(launcher.probed.single.toString(), 'tracivesandbox://');
+    });
+
+    test('probes the production scheme when the environment is custom',
+        () async {
+      final launcher = _FakeLauncher(installed: true);
+      final oauth = _oauth(
+        launcher: launcher,
+        environment: TraciveEnvironment.custom('https://proxy.partner.test'),
+      );
+
+      await oauth.authorize();
+
+      expect(launcher.probed.single.toString(), 'tracive://');
     });
 
     test(

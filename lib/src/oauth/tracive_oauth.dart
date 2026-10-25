@@ -129,7 +129,7 @@ class TraciveOAuth {
   /// `<queries>` block and `LSApplicationQueriesSchemes` must list this scheme
   /// too**, or switching to [TraciveEnvironment.sandbox] silently answers "not
   /// installed" and sends every tester to the install link.
-  static const String traciveSandboxAppScheme = 'tracivedev';
+  static const String traciveSandboxAppScheme = 'tracivesandbox';
 
   /// The install page a device without the Tracive app is sent to.
   ///
@@ -152,9 +152,9 @@ class TraciveOAuth {
   /// every Android device including the ones holding the app.
   ///
   /// It works now because the Tracive app gained a scheme-only intent-filter,
-  /// verified on a device: `tracivedev://` went from "unable to resolve Intent"
-  /// to starting the app. So this constant and that filter are one contract —
-  /// neither is correct alone.
+  /// verified on a device: the bare-scheme probe went from "unable to resolve
+  /// Intent" to starting the app. So this constant and that filter are one
+  /// contract — neither is correct alone.
   ///
   /// iOS was never affected: `canOpenURL` there is answered by LaunchServices
   /// from the installed app's `CFBundleURLTypes` and inspects only the scheme.
