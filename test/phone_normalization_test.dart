@@ -75,6 +75,33 @@ void main() {
       }
     });
 
+    // Every dial code and every length up to 17: a number typed without '+'
+    // that starts with its own dial code keeps those digits only as the
+    // fixture's nationalNumberLengths says. The 5s keep trunk rules out of it.
+    test('a number starting with its dial code is read by the lengths table',
+        () {
+      final Map<String, dynamic> lengths =
+          fixture['nationalNumberLengths'] as Map<String, dynamic>;
+      expect(lengths, isNotEmpty);
+      final Set<String> dialCodes = countries
+          .map((dynamic c) => (c as Map<String, dynamic>)['dialCode'] as String)
+          .toSet()
+        ..remove('1');
+      for (final String dialCode in dialCodes) {
+        final List<dynamic> national =
+            lengths[dialCode] as List<dynamic>? ?? <dynamic>[];
+        for (int length = dialCode.length + 1; length <= 17; length++) {
+          final String rest = '5' * (length - dialCode.length);
+          final String typed = dialCode + rest;
+          final bool keep = national.contains(length) &&
+              !national.contains(length - dialCode.length);
+          expect(normalizePhoneNumber(dialCode, typed),
+              '+$dialCode${keep ? typed : rest}',
+              reason: '$dialCode / $typed');
+        }
+      }
+    });
+
     test('alpha-3 lookup ignores case and surrounding space', () {
       expect(Country.fromAlpha3('idn'), Country.idn);
       expect(Country.fromAlpha3('  IDN  '), Country.idn);

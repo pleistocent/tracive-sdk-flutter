@@ -61,14 +61,17 @@ String normalizePhoneNumber(String countryOrDialCode, String phoneNumber) {
   // stripped, so `000`, `62` and `1` are refused. The app folds those to `+62`
   // and `+1`, which cannot match any record, so this belongs with the first
   // kind — safe, not stricter.
-  if (_trimLeftCanonically(phoneNumber).startsWith('+') &&
-      !digits.startsWith(dialCode)) {
+  final bool international = _trimLeftCanonically(phoneNumber).startsWith('+');
+  if (international && !digits.startsWith(dialCode)) {
     throw const TraciveQueryException(QueryRejectionReason.countryConflict);
   }
 
   if (digits.startsWith('00$dialCode')) {
     digits = digits.substring(2 + dialCode.length);
-  } else if (digits.startsWith(dialCode)) {
+  } else if (digits.startsWith(dialCode) &&
+      (international || !_isNationalNumber(dialCode, digits))) {
+    // Without a `+`, digits that are a national number merely starting with
+    // the dial code's own digits keep them (Kazakh 701…).
     digits = digits.substring(dialCode.length);
   }
 
@@ -137,6 +140,120 @@ String normalizePhoneNumber(String countryOrDialCode, String phoneNumber) {
 /// compiled.
 String normalizePhoneNumberFor(Country country, String phoneNumber) =>
     normalizePhoneNumber(country.dialCode, phoneNumber);
+
+/// Every length a national number can have, for the dial codes whose national
+/// numbers can start with the dial code's own digits (libphonenumber 9.0.42
+/// metadata, all number types). The same table as `nationalNumberLengths` in
+/// `phone-normalization-vectors.json`, which the tests sweep.
+const Map<String, Set<int>> _nationalNumberLengths = <String, Set<int>>{
+  '7': <int>{10, 14},
+  '20': <int>{8, 9, 10},
+  '27': <int>{5, 6, 7, 8, 9, 10},
+  '31': <int>{5, 6, 7, 8, 9, 10, 11},
+  '32': <int>{8, 9},
+  '33': <int>{9},
+  '36': <int>{8, 9},
+  '39': <int>{6, 7, 8, 9, 10, 11, 12},
+  '41': <int>{9, 12},
+  '43': <int>{4, 5, 6, 7, 8, 9, 10, 11, 12, 13},
+  '45': <int>{8},
+  '46': <int>{6, 7, 8, 9, 10, 12},
+  '47': <int>{5, 8},
+  '48': <int>{6, 7, 8, 9, 10},
+  '49': <int>{4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+  '51': <int>{8, 9},
+  '53': <int>{6, 7, 8, 10},
+  '55': <int>{8, 9, 10, 11},
+  '62': <int>{7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17},
+  '63': <int>{6, 8, 9, 10, 11, 12, 13},
+  '65': <int>{8, 10, 11},
+  '66': <int>{8, 9, 10, 13},
+  '84': <int>{7, 8, 9, 10},
+  '90': <int>{7, 10, 12, 13},
+  '91': <int>{8, 9, 10, 11, 12, 13},
+  '92': <int>{8, 9, 10, 11, 12},
+  '95': <int>{6, 7, 8, 9, 10},
+  '213': <int>{8, 9},
+  '216': <int>{8},
+  '218': <int>{9},
+  '220': <int>{7, 9},
+  '222': <int>{8},
+  '230': <int>{7, 8, 10},
+  '231': <int>{7, 8, 9},
+  '233': <int>{8, 9},
+  '238': <int>{7},
+  '241': <int>{7, 8},
+  '243': <int>{7, 8, 9, 10},
+  '244': <int>{9},
+  '247': <int>{5, 6},
+  '250': <int>{8, 9},
+  '251': <int>{9},
+  '252': <int>{6, 7, 8, 9},
+  '255': <int>{9},
+  '262': <int>{9},
+  '266': <int>{8},
+  '267': <int>{7, 8, 10},
+  '290': <int>{4, 5},
+  '298': <int>{6},
+  '299': <int>{6},
+  '355': <int>{6, 7, 8, 9},
+  '358': <int>{5, 6, 7, 8, 9, 10, 11, 12},
+  '359': <int>{6, 7, 8, 9, 12},
+  '370': <int>{8},
+  '373': <int>{8},
+  '376': <int>{6, 8, 9},
+  '377': <int>{8, 9},
+  '379': <int>{6, 7, 8, 9, 10, 11, 12},
+  '380': <int>{9, 10},
+  '383': <int>{8, 9, 10, 11, 12},
+  '386': <int>{5, 6, 7, 8},
+  '387': <int>{8, 9},
+  '421': <int>{6, 7, 9},
+  '500': <int>{5},
+  '501': <int>{7, 11},
+  '502': <int>{8, 11},
+  '503': <int>{7, 8, 11},
+  '506': <int>{8, 10},
+  '507': <int>{7, 8, 10, 11},
+  '508': <int>{6, 9},
+  '590': <int>{9},
+  '594': <int>{9},
+  '596': <int>{9},
+  '677': <int>{5, 7},
+  '679': <int>{7, 11},
+  '680': <int>{7},
+  '683': <int>{4, 7},
+  '685': <int>{5, 6, 7, 10},
+  '850': <int>{8, 10},
+  '853': <int>{7, 8},
+  '855': <int>{8, 9, 10},
+  '886': <int>{7, 8, 9, 10, 11},
+  '960': <int>{7, 10},
+  '961': <int>{7, 8},
+  '962': <int>{8, 9},
+  '963': <int>{8, 9},
+  '965': <int>{7, 8},
+  '968': <int>{7, 8, 9},
+  '971': <int>{5, 6, 7, 8, 9, 10, 11, 12},
+  '972': <int>{7, 8, 9, 10, 11, 12},
+  '973': <int>{8},
+  '976': <int>{8, 9, 10},
+  '992': <int>{9},
+  '994': <int>{9},
+  '996': <int>{9, 10},
+  '998': <int>{9},
+};
+
+/// Digits that start with [dialCode] are a national number when their length
+/// is a national length and their length without the dial code is not. When
+/// both are (Indonesia's `62812…`, Italy's `393…`), the dial code is stripped as
+/// before, so a number typed with its country code never changes key.
+bool _isNationalNumber(String dialCode, String digits) {
+  final Set<int>? lengths = _nationalNumberLengths[dialCode];
+  if (lengths == null) return false;
+  return lengths.contains(digits.length) &&
+      !lengths.contains(digits.length - dialCode.length);
+}
 
 /// Countries whose trunk prefix is 8, with how many digits follow that 8.
 /// Belarus counts the 0 it writes after the 8 (`8 029 123 45 67`); the
