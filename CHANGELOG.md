@@ -8,6 +8,15 @@ until it is frozen at `1.0.0`.
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-11-04
+
+First public release on pub.dev. phase 1: OAuth mode only, against the live
+Tracive Open API.
+
+The 2026-07-31 entry below was a snapshot that was never published. This
+release is that snapshot plus everything listed here, so the **Breaking** items
+are changes from the snapshot, not from anything anyone could have installed.
+
 ### Added
 
 - **A bank account can be named by its national bank code or its BIC.**
@@ -858,7 +867,7 @@ until it is frozen at `1.0.0`.
 - The vendored fixture is version 5 (34 vectors, up from 25; 14 rejected
   vectors and 9 document-id guard cases).
 
-## [0.1.0] — 2026-07-31
+## 2026-07-31 snapshot (never published)
 
 First release. phase 1: **OAuth mode only, and the backend Open API is not live
 yet.** Everything below is built against a frozen contract; no code path in
@@ -923,7 +932,7 @@ implementation until the API ships.
 - The install link used when the Tracive app is missing is a **required**
   constructor argument (`installUrl`) with no default: at this release its URL
   was not yet confirmed, and a wrong default would have been invisible until it
-  was a 404 for a user without the Tracive app. Resolved in Unreleased, where
+  was a 404 for a user without the Tracive app. Resolved in 0.1.0, where
   the confirmed link becomes the default.
 
 [Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.1.0...HEAD
