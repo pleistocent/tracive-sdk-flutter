@@ -8,6 +8,13 @@ until it is frozen at `1.0.0`.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-07
+
+### Documentation
+
+- `openReportForm` points at `tracive-sdk-extended` for reporting without
+  leaving your app.
+
 ## [0.2.0] — 2026-11-05
 
 **This package now contains native code** — a small Android module (Kotlin) and an iOS one (Swift,
@@ -990,6 +997,7 @@ implementation until the API ships.
   was a 404 for a user without the Tracive app. Resolved in 0.1.0, where
   the confirmed link becomes the default.
 
-[Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.2.1
 [0.2.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.1.0

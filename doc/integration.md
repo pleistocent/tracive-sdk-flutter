@@ -12,7 +12,7 @@
 
 ```yaml
 dependencies:
-  tracive_sdk: ^0.2.0
+  tracive_sdk: ^0.2.1
 ```
 
 Requires Dart `^3.5.0` and Flutter `>=3.24.0`. It pulls in `http`, `crypto`,

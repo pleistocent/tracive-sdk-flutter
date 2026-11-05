@@ -531,6 +531,9 @@ class TraciveClient {
   ///
   /// **It does not throw.** A platform failure arrives as
   /// `ReportFormFailed(ReportFormPlatformFailure(reason))`.
+  ///
+  /// To let the user report without leaving your app, use
+  /// `tracive-sdk-extended`. This call hands the report to the Tracive app.
   Future<ReportFormResult> openReportForm(
     TraciveQuery query, {
     DateTime? incidentDate,
