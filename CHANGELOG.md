@@ -8,6 +8,61 @@ until it is frozen at `1.0.0`.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-05
+
+**This package now contains native code** — a small Android module (Kotlin) and an iOS one (Swift,
+CocoaPods and Swift Package Manager). After upgrading, rebuild your app from scratch (`flutter
+clean`, then a full build); a hot restart or hot reload does not load native code, and
+`openReportForm` then fails with `ReportFormPlatformFailure('missing_plugin')`. Nothing else in the
+SDK uses the native part.
+
+### Added
+
+- **`client.openReportForm(query, incidentDate:, attachments:)` opens Tracive's report form with
+  the scammer's account, the transaction date and a receipt already filled in**, for the "report
+  this recipient" button on a transaction detail screen.
+
+  ```dart
+  final result = await client.openReportForm(
+    TraciveQuery.bankAccount(countryAlpha3: 'IDN', bankCode: 'BCA', account: '1234567890'),
+    incidentDate: DateTime(2026, 11, 3),   // only year, month and day are read
+    attachments: [ReportAttachment.image(png, 'image/png'), ReportAttachment.pdf(pdf)],
+    anchor: buttonRect,                    // iPad popover; ignored elsewhere
+  );
+  ```
+
+  It needs no grant and no token, spends no credit and makes no request, so it works for a
+  confidential client, before `authorize()`, and in proxy mode. The files go to the Tracive app on
+  the same phone and nowhere else. The result is a sealed `ReportFormResult`:
+  `ReportFormOpened(attachmentsDelivered)`, `ReportFormCancelled` (iOS), `ReportFormInstallPageOpened`
+  or `ReportFormFailed(error)`. An app too old to take attachments is opened on the account alone
+  (`attachmentsDelivered: false`); a phone without Tracive gets the same clean install link
+  `authorize()` opens.
+
+  Attachments are checked before anything is opened, in the order of the shared
+  `report-package-vectors.json`, and a broken rule comes back as a typed `ReportFormError` with the
+  same `code` in every Tracive SDK: `INCIDENT_DATE_IN_FUTURE`, `TOO_MANY_ATTACHMENTS` (5, or 10 for a
+  phone number), `UNSUPPORTED_TYPE` (JPEG, PNG, WebP, HEIC, HEIF, BMP and PDF only),
+  `CONTENT_MISMATCH` (the bytes are not the declared type), `PDF_TOO_LARGE` (1 MiB or more) and
+  `PACKAGE_TOO_LARGE` (over 20 MiB encoded), plus `PLATFORM_FAILURE` for a hand-off the platform refused.
+
+  The build follows `environment` (sandbox, otherwise production); `target:` takes a
+  `ReportFormTarget` for testing against a build the SDK does not know about.
+
+- **iOS: add two schemes to `LSApplicationQueriesSchemes`** — `tracive-report` and
+  `tracivesandbox-report`, next to `tracive` and `tracivesandbox`. Without them every user gets the
+  account-only form, never the receipt.
+
+- **Android: the merged manifest gains a `<provider>`** —
+  `id.tracive.sdk.flutter.TraciveFlutterFileProvider`, authority
+  `${applicationId}.tracive-flutter-files`, `exported="false"`, serving only
+  `cache/tracive-sdk/report/` — and `<queries>` entries for the `tracive` and `tracivesandbox`
+  schemes, so those two entries of the block `doc/oauth.md` asked you to paste are no longer
+  needed (keeping them is harmless).
+
+- `TraciveClient` takes a `reportFormLauncher:` seam, like `launcher:`, so a widget test can fake the
+  platform half.
+
 ## [0.1.0] — 2026-11-04
 
 First public release on pub.dev. phase 1: OAuth mode only, against the live
@@ -935,5 +990,6 @@ implementation until the API ships.
   was a 404 for a user without the Tracive app. Resolved in 0.1.0, where
   the confirmed link becomes the default.
 
-[Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.1.0

@@ -37,8 +37,8 @@ that changes the timeline, and we would rather hear it from you than from a user
 
 | Version | Supported |
 |---|---|
-| `0.1.x` | Yes |
-| `< 0.1.0` | No — there is nothing earlier |
+| `0.2.x` | Yes |
+| `< 0.2.0` | No |
 
 While the package is `0.x`, security fixes land on the latest minor version
 only. There are no long-term support branches yet.
@@ -88,6 +88,12 @@ security bug even if nothing crashes.
 7. **A `checkScammer` is never auto-retried on a 5xx or a timeout without an
    `Idempotency-Key`.** A blind retry of a POST that may already have been
    processed risks charging the user twice.
+8. **A report package reaches the Tracive app and no other.** On Android it is
+   served by an unexported provider, from one cache folder, to an explicit
+   intent addressed to the Tracive package, and the account-only fallback link
+   is addressed to that package too. On iOS delivery counts only when the app
+   the user picks has the Tracive build's bundle id. The install link carries
+   neither the identifier nor the files.
 
 ## What this SDK cannot protect you from
 
@@ -104,6 +110,10 @@ Said plainly, so nobody relies on a guarantee that is not there:
   but the redirect URI must be an App Link / Universal Link your app actually
   owns. A custom scheme any app can claim is not equivalent, whatever the
   registration screen accepts.
+- **What the user picks in the iOS "Open in" sheet.** Any iOS app may claim
+  the report file's extension, and the sheet lists every app that does. If the
+  user picks another app, that app receives the receipt; the SDK can only report
+  `ReportFormCancelled` afterwards, not prevent it.
 - **Storing the authorization code.** For a `confidential` client the SDK hands
   back `AuthResult.codeReceived`. That code and its verifier are bearer
   credentials until they are exchanged: forward them to your backend over TLS

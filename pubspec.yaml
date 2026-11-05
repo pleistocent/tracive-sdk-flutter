@@ -2,7 +2,7 @@ name: tracive_sdk
 description: >-
   Check a phone number, e-mail, bank account, crypto address or social handle
   against Tracive's scam reports. phase 1 is OAuth-only.
-version: 0.1.0
+version: 0.2.0
 homepage: https://tracive.id
 repository: https://github.com/pleistocent/tracive-sdk-flutter
 issue_tracker: https://github.com/pleistocent/tracive-sdk-flutter/issues
