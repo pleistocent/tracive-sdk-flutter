@@ -88,6 +88,11 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="tracivesandbox"/>
         </intent>
+        <!-- The Tracive dev build, which only the report screen's "Dev build
+             (QA)" target opens. The SDK's own manifest makes the production
+             and sandbox builds visible; a build it does not know about needs
+             an entry here. A partner app needs none of this. -->
+        <package android:name="com.pleistocent.tracive.dev"/>
         <!-- url_launcher needs this to open the Custom Tab and the install
              link. -->
         <intent>

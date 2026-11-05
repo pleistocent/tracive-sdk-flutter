@@ -12,12 +12,14 @@
 
 ```yaml
 dependencies:
-  tracive_sdk: ^0.1.0
+  tracive_sdk: ^0.2.0
 ```
 
 Requires Dart `^3.5.0` and Flutter `>=3.24.0`. It pulls in `http`, `crypto`,
 `flutter_secure_storage`, `sqflite_sqlcipher`, `url_launcher`, `path` and
-`unorm_dart`.
+`unorm_dart`, and carries a small Android and iOS module of its own for
+[step 9](#9-report-a-scammer). Rebuild the app after adding or upgrading it; a
+hot restart does not load native code.
 
 Android and iOS only. On web and desktop the query builders, models and error
 types all work, but `sqflite_sqlcipher` has no implementation there — use
@@ -26,9 +28,10 @@ against.
 
 ## 2. Platform setup
 
-The OAuth flow needs four lines of Android manifest and three of `Info.plist`
-before it can even detect whether the Tracive app is installed. **Do this
-first**; without it every user looks un-onboarded.
+The OAuth flow needs a few lines of Android manifest and `Info.plist` before it
+can even detect whether the Tracive app is installed. **Do this first**; without
+it every user looks un-onboarded. The report form adds two iOS schemes, in
+[step 9](#9-report-a-scammer).
 
 → [`doc/oauth.md` § Platform setup](oauth.md#platform-setup)
 
@@ -310,6 +313,167 @@ if (shown != null) {
 
 Full rules in [caching.md](caching.md#recording-what-a-transaction-was-shown).
 
+## 9. Report a scammer
+
+A transaction detail screen is also where a user who has just been scammed
+looks for help. `openReportForm` opens Tracive's report form with the
+recipient's account, the transaction date and the receipt already filled in;
+the user reviews and submits it in the Tracive app.
+
+```dart
+Future<void> report(BuildContext buttonContext, Transaction transaction) async {
+  final box = buttonContext.findRenderObject()! as RenderBox;
+  final origin = box.localToGlobal(Offset.zero);
+
+  final result = await client.openReportForm(
+    TraciveQuery.bankAccount(
+      countryAlpha3: 'IDN',
+      bankCode: transaction.bankCode,
+      account: transaction.account,
+    ),
+    incidentDate: transaction.localDate,
+    attachments: [ReportAttachment.image(transaction.receiptPng, 'image/png')],
+    anchor: ReportFormAnchor(
+      left: origin.dx, top: origin.dy,
+      width: box.size.width, height: box.size.height,
+    ),
+  );
+
+  switch (result) {
+    case ReportFormOpened():            break; // Tracive is in front now
+    case ReportFormCancelled():         break; // iOS: user backed out; nothing sent
+    case ReportFormInstallPageOpened(): showSnack('Install Tracive, then tap Report again');
+    case ReportFormFailed(:final error): showSnack('Could not open the report form (${error.code})');
+  }
+}
+```
+
+**What it does not need.** No grant, no token, no credit, no request: it works
+for a confidential client, before `authorize()`, and in proxy mode. The receipt
+goes from your app to the Tracive app on the same phone and nowhere else.
+
+**`incidentDate` is a calendar date.** Only `year`, `month` and `day` are read,
+exactly as they are; there is no time zone conversion. Pass the date your user
+saw on the transaction. If you hold a UTC timestamp, call `.toLocal()` first,
+or a transfer made at 06:00 in Jakarta is reported as the day before. A date
+after the device's local today is refused.
+
+**What is checked, in this order, before anything is opened:**
+
+| `error.code` | Rule |
+|---|---|
+| `INCIDENT_DATE_IN_FUTURE` | the date is after the device's local today |
+| `TOO_MANY_ATTACHMENTS` | more than 5, or more than 10 when the query is a phone number (`max`) |
+| `UNSUPPORTED_TYPE` | not `image/jpeg` (`image/jpg` accepted), `image/png`, `image/webp`, `image/heic`, `image/heif`, `image/bmp` or `application/pdf`; GIF is refused (`index`) |
+| `CONTENT_MISMATCH` | the bytes are not the declared type, or are empty (`index`) |
+| `PDF_TOO_LARGE` | a PDF of 1,048,576 bytes or more (`index`) |
+| `PACKAGE_TOO_LARGE` | the encoded package is over 20 MiB, about 15 MiB of attachments (`max`) |
+| `PLATFORM_FAILURE` | the platform refused the hand-off; `reason` says which step |
+
+The Tracive app checks all of it again on receipt, since any app on the phone
+can send it a package. Checking here first means nothing the SDK accepts is
+silently dropped there.
+
+**What happens next**, against the Tracive build for your `environment`
+(sandbox for sandbox, production for production and for a custom base URL):
+
+| On the device | Android | iOS | Result |
+|---|---|---|---|
+| Tracive, a version that takes attachments | the report form opens | the "Open in" sheet; the user taps Tracive | `ReportFormOpened(attachmentsDelivered: true)` |
+| … and the user closes the sheet, or picks "Save to Files" or another app | — | nothing is sent to Tracive | `ReportFormCancelled()` |
+| … and the iPad is rotated with the sheet open, which closes it | — | nothing is sent to Tracive | `ReportFormCancelled()`, about a second later |
+| Tracive, an older version | opened on the account alone | the same, once the user allows iOS's "open Tracive?" prompt (cancelling it gives `ReportFormCancelled()`) | `ReportFormOpened(attachmentsDelivered: false)` |
+| No Tracive | the install link | the install link | `ReportFormInstallPageOpened()` |
+
+The install link is the one `authorize()` opens, and carries neither the
+account nor the files: it goes through a third-party link service. The account
+link of the older-app row is sent to the Tracive package alone on Android, and
+to the Tracive scheme on iOS.
+
+### iOS: two more queried schemes
+
+```xml
+<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>tracive</string>
+    <string>tracivesandbox</string>
+    <string>tracive-report</string>
+    <string>tracivesandbox-report</string>
+</array>
+```
+
+The `-report` schemes are registered only by Tracive versions that take
+attachments; the "Open in" sheet cannot tell an old version from a new one.
+**If you leave them out**, `canOpenURL` says no and every user gets the
+older-app row: the form opens on the account alone, without the date and the
+receipt. That is the safe direction, but it is easy to miss, so test it once
+with a current Tracive build.
+
+Pass `anchor`, the button's rectangle in the Flutter view's logical
+coordinates. On iPad the sheet is a popover and points at it; without one it
+points at the middle of the screen. iPhone and Android ignore it.
+
+### Android: what lands in your merged manifest
+
+Banks audit the merged manifest, so here is everything this package adds:
+
+```xml
+<queries>
+  <intent>
+    <action android:name="android.intent.action.VIEW" />
+    <data android:scheme="tracive" />
+  </intent>
+  <intent>
+    <action android:name="android.intent.action.VIEW" />
+    <data android:scheme="tracivesandbox" />
+  </intent>
+</queries>
+
+<provider
+  android:name="id.tracive.sdk.flutter.TraciveFlutterFileProvider"
+  android:authorities="${applicationId}.tracive-flutter-files"
+  android:exported="false"
+  android:grantUriPermissions="true">
+  <meta-data
+    android:name="android.support.FILE_PROVIDER_PATHS"
+    android:resource="@xml/tracive_sdk_flutter_report_paths" />
+</provider>
+```
+
+- The **provider** serves one folder, `cache/tracive-sdk/report/`, which holds
+  at most one package; the previous one is deleted on the next call. It is
+  never exported. Read access is granted per intent, to an explicit
+  `ACTION_VIEW` addressed to the Tracive package alone, so no other app can
+  receive or open the file. It is a subclass of androidx's `FileProvider`, so it
+  does not collide with yours, and its authority is not the one the other
+  Tracive SDKs use.
+- The **queries** make the production and sandbox Tracive apps visible on
+  Android 11+, which both the presence check and the hand-off need. They name
+  schemes, not packages: no Tracive application id is written into your
+  manifest.
+
+### Testing against another build
+
+`target:` aims the call at a build the SDK does not know about — for testing
+against it, never in production:
+
+```dart
+await client.openReportForm(
+  query,
+  target: ReportFormTarget(
+    androidPackage: 'com.example.qa',
+    iosBundleId: 'com.example.qa',
+    appScheme: 'exampleqa',
+    capabilityScheme: 'exampleqa-report',
+    fileExtension: 'exampleqareport',
+  ),
+);
+```
+
+That build needs a `<queries><package android:name="…"/>` entry in your own
+manifest and its two schemes in `LSApplicationQueriesSchemes`; the SDK's
+manifest only makes production and sandbox visible.
+
 ---
 
 ## Choosing a `Source`
@@ -421,6 +585,7 @@ TraciveClient(
   cache: CheckCache.inMemory(),
   tokenStore: InMemoryTokenStore(),
   launcher: myFakeLauncher,             // AuthLauncher
+  reportFormLauncher: myFakeReportForm, // ReportFormLauncher
 );
 ```
 

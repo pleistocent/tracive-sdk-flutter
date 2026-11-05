@@ -31,9 +31,21 @@ import '../model/source.dart';
 import '../model/tracive_environment.dart';
 import '../model/tracive_mode.dart';
 import '../oauth/auth_launcher.dart';
+// Same split as `TraciveOAuth`'s: the Flutter implementations under Flutter,
+// the inert ones under a bare Dart VM.
+import '../oauth/platform_default.dart'
+    if (dart.library.ui) '../oauth/platform_flutter.dart' as auth_platform;
 import '../oauth/token_store.dart';
 import '../oauth/tracive_oauth.dart';
 import '../query/tracive_query.dart';
+import '../report/report_attachment.dart';
+import '../report/report_form_flow.dart';
+import '../report/report_form_launcher.dart';
+import '../report/report_form_result.dart';
+import '../report/report_form_target.dart';
+import '../report/report_platform_default.dart'
+    if (dart.library.ui) '../report/report_platform_flutter.dart'
+    as report_platform;
 import 'clock.dart';
 import 'error_envelope.dart';
 import 'http_package_transport.dart';
@@ -98,9 +110,11 @@ class TraciveClient {
   /// [ArgumentError] with the reason `blank_install_url` (see
   /// [TraciveOAuth.installUrl] for why). The rest are seams:
   /// [transport] and [clock] are named as such by the cross-SDK contract;
-  /// [retryPolicy], [cache], [tokenStore], [launcher] and [oauth] are additive,
-  /// and every one of them has a working default, so an app passes none of
-  /// them.
+  /// [retryPolicy], [cache], [tokenStore], [launcher], [oauth] and
+  /// [reportFormLauncher] are additive, and every one of them has a working
+  /// default, so an app passes none of them.
+  ///
+  /// [installUrl] and [launcher] also serve [openReportForm], in every mode.
   ///
   /// **The default [cache] is in memory**, which is deliberate: a constructor
   /// must not silently open a database file and a Keystore entry. For the
@@ -128,9 +142,24 @@ class TraciveClient {
     AuthLauncher? launcher,
     TraciveOAuth? oauth,
     String? installUrl,
+    ReportFormLauncher? reportFormLauncher,
   }) {
     final resolvedTransport = transport ?? createDefaultHttpTransport();
     final resolvedClock = clock ?? TraciveClock.system;
+    final resolvedLauncher =
+        launcher ?? auth_platform.createDefaultAuthLauncher();
+    // Proxy mode builds no TraciveOAuth, so the blank-link rule it enforces is
+    // applied here instead: openReportForm uses the link in every mode.
+    if (mode is! TraciveOAuthMode &&
+        installUrl != null &&
+        installUrl.trim().isEmpty) {
+      throw ArgumentError.value(
+        installUrl,
+        'installUrl',
+        '${TraciveOAuth.blankInstallUrlReason}: pass a real URL or omit the '
+            'parameter.',
+      );
+    }
     // Proxy mode has no OAuth flow: it authenticates with the partner's own
     // headers against the partner's own endpoint. Every call throws anyway
     // (phase 2), so there is nothing to build.
@@ -141,7 +170,7 @@ class TraciveClient {
               environment: environment,
               transport: resolvedTransport,
               tokenStore: tokenStore,
-              launcher: launcher,
+              launcher: resolvedLauncher,
               clock: resolvedClock,
               // `??` fires on absence only. A blank string is a configured
               // value and travels through unchanged, so it meets the same
@@ -162,6 +191,12 @@ class TraciveClient {
       transport: resolvedTransport,
       clock: resolvedClock,
       retryPolicy: retryPolicy,
+      launcher: resolvedLauncher,
+      installUrl: resolvedOAuth?.installUrl ??
+          installUrl ??
+          TraciveOAuth.defaultInstallUrl,
+      reportFormLauncher: reportFormLauncher ??
+          report_platform.createDefaultReportFormLauncher(),
     );
   }
 
@@ -174,9 +209,15 @@ class TraciveClient {
     required HttpTransport transport,
     required TraciveClock clock,
     required RetryPolicy retryPolicy,
+    required AuthLauncher launcher,
+    required String installUrl,
+    required ReportFormLauncher reportFormLauncher,
   })  : _transport = transport,
         _clock = clock,
-        _retryPolicy = retryPolicy;
+        _retryPolicy = retryPolicy,
+        _launcher = launcher,
+        _installUrl = installUrl,
+        _reportFormLauncher = reportFormLauncher;
 
   /// How this client authenticates.
   final TraciveMode mode;
@@ -201,6 +242,9 @@ class TraciveClient {
   final HttpTransport _transport;
   final TraciveClock _clock;
   final RetryPolicy _retryPolicy;
+  final AuthLauncher _launcher;
+  final String _installUrl;
+  final ReportFormLauncher _reportFormLauncher;
 
   /// Checks currently on the wire, keyed by row key, detail level, locale and
   /// the caller's own idempotency key.
@@ -446,6 +490,68 @@ class TraciveClient {
   /// signed in and only the stored verdicts should go — a "clear data" button,
   /// or a privacy setting. The four SDKs all spell it this way.
   Future<void> clearCache() => cache.clear();
+
+  /// Opens Tracive's report form with [query], [incidentDate] and
+  /// [attachments] already filled in, for a user reporting the recipient of a
+  /// transaction as a scammer.
+  ///
+  /// It needs no grant and no token, spends no credit and makes no request,
+  /// so it works for a confidential client, before `authorize()`, and in proxy
+  /// mode. Nothing leaves the phone: the files travel to the Tracive app on the
+  /// device, and the user decides there whether to submit.
+  ///
+  /// [incidentDate] is the transaction's calendar date. Only its `year`,
+  /// `month` and `day` are read, exactly as they are, with no time zone
+  /// conversion — so pass the date as your user saw it (`DateTime(2026, 11, 3)`,
+  /// or `.toLocal()` first if you hold a UTC instant). A date after the
+  /// device's local today is refused.
+  ///
+  /// Every rule is checked before anything is written or opened, and a broken
+  /// one returns [ReportFormFailed] naming it (see [ReportFormError] for the
+  /// order). Then, against the build of the Tracive app for [environment] —
+  /// sandbox for sandbox, production otherwise:
+  ///
+  /// * the app accepts the package → `ReportFormOpened(attachmentsDelivered:
+  ///   true)`. On iOS the user first picks Tracive in the "Open in" sheet,
+  ///   which is popped over [anchor] on iPad; dismissing it, or picking any
+  ///   other app or "Save to Files", returns [ReportFormCancelled].
+  /// * the app is installed but too old for packages → it is opened on the
+  ///   identifier alone, `ReportFormOpened(attachmentsDelivered: false)`.
+  /// * the app is not installed → the same install link [authorize] opens,
+  ///   carrying neither the identifier nor the files,
+  ///   [ReportFormInstallPageOpened].
+  ///
+  /// [target] overrides the build, for testing against a build the SDK does
+  /// not know about; see [ReportFormTarget.new].
+  ///
+  /// iOS needs `<capabilityScheme>` and `<appScheme>` of each target in
+  /// `LSApplicationQueriesSchemes` (`tracive-report`, `tracivesandbox-report`,
+  /// `tracive`, `tracivesandbox`). Without the capability schemes every user
+  /// gets the identifier-only form, never the attachments.
+  ///
+  /// **It does not throw.** A platform failure arrives as
+  /// `ReportFormFailed(ReportFormPlatformFailure(reason))`.
+  Future<ReportFormResult> openReportForm(
+    TraciveQuery query, {
+    DateTime? incidentDate,
+    List<ReportAttachment> attachments = const <ReportAttachment>[],
+    ReportFormAnchor? anchor,
+    ReportFormTarget? target,
+  }) {
+    final mode = this.mode;
+    return runReportForm(
+      query: query.searchQueryIndex,
+      incidentDate: incidentDate,
+      attachments: attachments,
+      today: _clock.now().toLocal(),
+      target: target ?? ReportFormTarget.forEnvironment(environment),
+      anchor: anchor,
+      launcher: _reportFormLauncher,
+      authLauncher: _launcher,
+      installUrl: _installUrl,
+      clientId: mode is TraciveOAuthMode ? mode.clientId : null,
+    );
+  }
 
   /// Releases the HTTP transport. Call it when the client is done with.
   ///

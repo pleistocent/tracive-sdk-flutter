@@ -65,10 +65,15 @@ dev_dependencies:
   test: ^1.25.0
   flutter_lints: ^5.0.0
 
-# Deliberately not declared as a Flutter *plugin*. This package is pure Dart on
-# top of other people's plugins, so it has no `android/` or `ios/` module of its
-# own — which means it cannot yet merge the `<queries>` element the app-presence
-# check needs
-# into the host manifest. The host app adds four lines instead; `doc/oauth.md`
-# has them. Shipping an empty plugin module just to own a manifest would make
-# every integrator's build depend on native code that does nothing.
+# A plugin since the report form: the Tracive app is handed a file, which needs a
+# FileProvider on Android and the "Open in" sheet on iOS, and no dependency
+# offers either. The native halves only write the file and perform the hand-off;
+# everything that can be decided in Dart is, so it stays unit-testable.
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: id.tracive.sdk.flutter
+        pluginClass: TraciveSdkPlugin
+      ios:
+        pluginClass: TraciveSdkPlugin

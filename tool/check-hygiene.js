@@ -64,7 +64,12 @@ const SKIP_DIRECTORIES = new Set(['build', '.git', '.dart_tool', '.symlinks', 'P
 // Extensions scanned without sniffing. A file with no extension, or a dotfile, is sniffed
 // instead — see `looksLikeText` — because LICENSE, .gitignore and .npmrc are all plain text that
 // this script used to walk straight past.
-const TEXT_EXTENSIONS = new Set(['.dart', '.md', '.yml', '.yaml', '.json', '.xml', '.plist', '.sh', '.gradle']);
+// The native sources joined this list when the package became a plugin; before that, a `.kt`,
+// `.swift` or `.podspec` line was never read.
+const TEXT_EXTENSIONS = new Set([
+  '.dart', '.md', '.yml', '.yaml', '.json', '.xml', '.plist', '.sh', '.gradle',
+  '.kt', '.kts', '.swift', '.podspec',
+]);
 
 // The one allowed exception, and the only permitted matches for the org token.
 //

@@ -99,6 +99,30 @@ running the working tree, never a published version that may differ.
 | Press **Simulate 402** then **Check** | The typed `TraciveInsufficientCreditsException` — the one you should handle instead of polling `credits()`. |
 | Look at the folded key under any result | `+62 812-3456-7891` became `PHONE_+6281234567891`. That folded string is both what goes on the wire and what the cache key is hashed from. |
 
+## Report a scammer (any flavor)
+
+**Report a scammer from a transaction** opens a mock transaction detail — an
+amount, yesterday's date, a BCA account — with a **Report** button that calls
+`openReportForm` with that account, that date and a receipt drawn in code (one
+PNG, one small PDF). It makes no request and needs no grant, so it works in the
+demo flavor too; what it needs is a Tracive app on the phone.
+
+The picker chooses the build it opens:
+
+| Target | Opens | Needs on the device |
+|---|---|---|
+| **Sandbox** (default) | `com.pleistocent.tracive.sandbox` | the sandbox Tracive app, which shows what arrived without submitting anything |
+| **Production** | `com.pleistocent.tracive` | the production app — this opens a real report form |
+| **Dev build (QA)** | `com.pleistocent.tracive.dev`, through `ReportFormTarget(...)` | a locally built dev Tracive app |
+
+The dev build is reached through the SDK's explicit target override, which is
+why this app's `AndroidManifest.xml` has a `<package>` entry for it and its
+`Info.plist` lists `tracivedev` and `tracivedev-report`. A partner app needs
+neither; it needs only `tracive-report` and `tracivesandbox-report` on iOS.
+
+The result is shown under the button. With no Tracive app the install page
+opens; with one too old to take attachments the form opens on the account alone.
+
 ## Two things the demo flavor is not
 
 **It is not signed in the way your app will be.** Its token store is pre-seeded
@@ -126,4 +150,5 @@ grep -rn "TODO(partner)" example
 | [`lib/main.dart`](lib/main.dart) | Client construction — note there is no API-key parameter, in any mode — plus the whole check flow and the `disclaimer` being surfaced. |
 | [`lib/demo_backend.dart`](lib/demo_backend.dart) | The fake transport. Copy this shape for your own tests. |
 | [`lib/main.dart`](lib/main.dart) (`main()`) | That there is nothing to install for Unicode NFC. The SDK folds every query through full NFC by default, so a non-Latin identifier produces the same key here as it does on the server. |
-| [`test/widget_test.dart`](test/widget_test.dart) | Widget tests asserting a cache hit does no network I/O, and that invalid input never reaches the wire. |
+| [`lib/report_demo.dart`](lib/report_demo.dart) | The mock transaction detail and its `openReportForm` call, with the receipt drawn in code. |
+| [`test/widget_test.dart`](test/widget_test.dart) | Widget tests asserting a cache hit does no network I/O, that invalid input never reaches the wire, and what the Report button hands over. |

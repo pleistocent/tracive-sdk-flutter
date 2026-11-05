@@ -28,7 +28,7 @@ Three things, stated plainly, because finding them out later is expensive:
    binary is an API key that has been published. Authentication is OAuth 2.0
    with PKCE, so nothing long-lived and secret ever ships in your app.
 
-This is `0.1.0`. The surface may still change in a minor release until `1.0.0`.
+This is `0.2.0`. The surface may still change in a minor release until `1.0.0`.
 
 ---
 
@@ -36,15 +36,19 @@ This is `0.1.0`. The surface may still change in a minor release until `1.0.0`.
 
 ```yaml
 dependencies:
-  tracive_sdk: ^0.1.0
+  tracive_sdk: ^0.2.0
 ```
 
 Dart `^3.5.0`, Flutter `>=3.24.0`, Android and iOS.
 
-Then add the platform bits the OAuth flow needs — four lines of
-`AndroidManifest.xml` and three of `Info.plist`. Without them the SDK cannot
+Then add the platform bits the OAuth flow needs — a few lines of
+`AndroidManifest.xml` and `Info.plist`. Without the iOS ones the SDK cannot
 tell whether the Tracive app is installed and every user looks un-onboarded:
 [`doc/oauth.md` § Platform setup](doc/oauth.md#platform-setup).
+
+The package contains a small native module (for
+[reporting a scammer](#report-a-scammer)), so after adding or upgrading it,
+rebuild the app; a hot restart does not load native code.
 
 ## Use
 
@@ -114,8 +118,9 @@ A runnable app is in [`example/`](example).
 | **Query builders** | phone, e-mail, bank account, IBAN, crypto, social handle — each folded to the exact key the backend indexes |
 | **OAuth 2.0 + PKCE** | S256 only, app-presence pre-check, Custom Tabs / Universal Link, single-flight refresh on a non-terminal `401`, rotating refresh tokens |
 | **Encrypted cache** | SQLCipher, key in Keystore/Keychain, per-tier TTL, server-driven invalidation |
+| **Report a scammer** | opens Tracive's report form with the account, the date and a receipt filled in — no grant, no credit, no request |
 | **Typed errors** | every documented `error.code` maps to a `TraciveException` subclass |
-| **Testable offline** | the HTTP transport, the clock, the cache, the token store and the browser launcher are all injectable |
+| **Testable offline** | the HTTP transport, the clock, the cache, the token store, the browser launcher and the report-form platform are all injectable |
 
 ---
 
@@ -171,6 +176,55 @@ Each record is a snapshot on its own 90-day retention, so a later check of the s
 rewrite an older transaction's card, and one check can be recorded against several transactions — the
 second transfer to an account you already checked costs nothing and still gets a card. Full rules in
 [doc/caching.md](doc/caching.md#recording-what-a-transaction-was-shown).
+
+## Report a scammer
+
+On the same transaction detail screen, a "Report" button can open Tracive's report form with the
+recipient's account, the transaction date and the receipt already filled in. The user reviews and
+submits it in the Tracive app; nothing leaves the phone before that.
+
+```dart
+final result = await client.openReportForm(
+  TraciveQuery.bankAccount(countryAlpha3: 'IDN', bankCode: 'BCA', account: '1234567890'),
+  incidentDate: DateTime(2026, 11, 3),   // year, month and day only — no time zone conversion
+  attachments: [
+    ReportAttachment.image(receiptPng, 'image/png'),
+    ReportAttachment.pdf(receiptPdf),
+  ],
+  anchor: buttonRect,                    // where the iOS sheet points from on iPad
+);
+
+switch (result) {
+  case ReportFormOpened(:final attachmentsDelivered):
+    // false: an older Tracive app opened on the account alone.
+    if (!attachmentsDelivered) showHint('Attach the receipt in Tracive');
+  case ReportFormCancelled():
+    break; // iOS: the user closed the "Open in" sheet or picked another app.
+  case ReportFormInstallPageOpened():
+    break; // No Tracive app; the clean install link was opened.
+  case ReportFormFailed(:final error):
+    showError(error.code); // nothing opened, e.g. PDF_TOO_LARGE
+}
+```
+
+It needs no grant and no token and spends no credit, so it works for a confidential client and
+before `authorize()`. Up to 5 attachments (10 for a phone number): JPEG, PNG, WebP, HEIC, HEIF or BMP
+images, and PDFs under 1 MiB; everything is checked before anything is opened. On iOS the user picks
+Tracive in the system "Open in" sheet, one extra tap.
+
+**iOS: list the report schemes.** Add `tracive-report` and `tracivesandbox-report` to
+`LSApplicationQueriesSchemes`, next to `tracive` and `tracivesandbox`. They are how the SDK knows the
+installed app accepts attachments. Without them it falls back to opening the app on the account
+alone, so the user still reports, just without the date and the receipt.
+
+**Android: the merged manifest gains a file provider.** Banks audit that file, so here is what this
+package adds to it: `id.tracive.sdk.flutter.TraciveFlutterFileProvider` with authority
+`${applicationId}.tracive-flutter-files`, `exported="false"`, serving only
+`cache/tracive-sdk/report/`, read access granted per intent to the Tracive app's package alone; and
+`<queries>` intents for the `tracive` and `tracivesandbox` schemes. No Tracive application id is
+written into your manifest.
+
+Full rules in [`doc/integration.md`](doc/integration.md#9-report-a-scammer).
 
 ## Five things that will bite you if you skip them
 
@@ -294,7 +348,7 @@ vulnerability.
 | [`doc/caching.md`](doc/caching.md) | TTLs, the invalidation lever, what is never cached, what is not unit-tested |
 | [`doc/proxy-contract.md`](doc/proxy-contract.md) | phase 2: what a partner proxy must implement |
 | [`SECURITY.md`](SECURITY.md) | Design invariants, reporting a vulnerability |
-| [`CHANGELOG.md`](CHANGELOG.md) | Including the known limitations of `0.1.0` |
+| [`CHANGELOG.md`](CHANGELOG.md) | Including the known limitations of each release |
 
 ---
 

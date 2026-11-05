@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The one folder the SDK's provider may serve. The name is prefixed because a host app's resource
+     of the same name would silently replace this file. -->
+<paths>
+  <cache-path name="tracive_report" path="tracive-sdk/report/" />
+</paths>

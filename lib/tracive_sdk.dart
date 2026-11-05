@@ -64,6 +64,10 @@ export 'src/query/country.dart';
 export 'src/query/phone_numbers.dart';
 export 'src/query/tracive_query.dart';
 export 'src/query/unorm_normalizer.dart';
+export 'src/report/report_attachment.dart';
+export 'src/report/report_form_launcher.dart';
+export 'src/report/report_form_result.dart';
+export 'src/report/report_form_target.dart';
 
 // Not exported on purpose:
 //   src/model/json.dart                — tolerant JSON readers, internal
@@ -83,3 +87,10 @@ export 'src/query/unorm_normalizer.dart';
 //   src/oauth/platform_default.dart    — conditional-import halves; the picked
 //   src/oauth/platform_flutter.dart      implementation is reached through
 //                                        TraciveOAuth's defaults
+//   src/report/report_package.dart     — package encoding and the fallback
+//                                        link; the wire contract, not surface
+//                                        (report_package_test imports it)
+//   src/report/report_form_flow.dart   — the fallback chain behind
+//                                        TraciveClient.openReportForm
+//   src/report/report_platform_*.dart  — conditional-import halves, reached
+//                                        through TraciveClient's defaults

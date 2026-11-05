@@ -161,11 +161,11 @@ The authorize URL opens in a **Custom Tab** on Android and via
 
 ## Platform setup
 
-This package is intentionally **not** a Flutter plugin: it is pure Dart on top
-of other people's plugins, so it has no Android or iOS module of its own and
-therefore cannot merge a manifest fragment into your build. Shipping an empty
-plugin module just to own a manifest would make every integrator's build depend
-on native code that does nothing. The cost is the few lines below.
+The OAuth flow itself is pure Dart on top of other people's plugins. The package
+does carry a small native module, for the report form
+([integration.md, step 9](integration.md#9-report-a-scammer)), and on Android its
+manifest is merged into yours; on iOS nothing can be merged, because an
+`Info.plist` is not. So the lines below are yours to add.
 
 ### Android
 
@@ -178,6 +178,11 @@ installed.
 On Android 11+ (API 30) that returns `false` for **any** app you have not
 declared, whether it is installed or not — package visibility. Without this
 block every user looks un-onboarded and is sent to the install link.
+
+**The two scheme entries now come with the package**: its own manifest declares
+them and the manifest merger folds them into yours. Earlier versions could not,
+and the block below is what they asked for; keeping it does no harm, and the
+`https` entry is still yours.
 
 `android/app/src/main/AndroidManifest.xml`, as a direct child of `<manifest>`:
 
@@ -234,6 +239,9 @@ it.
 <array>
     <string>tracive</string>
     <string>tracivesandbox</string>
+    <!-- For openReportForm: integration.md, step 9. -->
+    <string>tracive-report</string>
+    <string>tracivesandbox-report</string>
 </array>
 ```
 

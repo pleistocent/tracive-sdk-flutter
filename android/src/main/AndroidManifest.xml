@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Merged into every host app. Banks audit their merged manifest, so each entry says why it is here,
+  and test/android_manifest_test.dart pins the provider's attributes.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!--
+    Package visibility (API 30+) for the production and sandbox Tracive apps, which claim these
+    schemes. Without it the report form's presence check and the explicit intent both see nothing,
+    and every user is sent to the install page. Schemes, not <package> entries: no Tracive
+    application id is written into a partner's manifest.
+  -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="tracive" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="tracivesandbox" />
+    </intent>
+  </queries>
+
+  <application>
+    <!--
+      Serves the report package to the Tracive app, and nothing else: one folder in this app's
+      cache, read access granted per intent to one explicit package. Never exported.
+
+      A subclass rather than androidx's FileProvider itself: a second provider entry with that class
+      name collides in the manifest merger with the host app's own.
+      The authority carries ${applicationId}, and a suffix no other Tracive SDK uses, so two apps
+      or two SDKs on one device never claim the same one; a duplicate authority fails the install.
+    -->
+    <provider
+      android:name="id.tracive.sdk.flutter.TraciveFlutterFileProvider"
+      android:authorities="${applicationId}.tracive-flutter-files"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/tracive_sdk_flutter_report_paths" />
+    </provider>
+  </application>
+
+</manifest>

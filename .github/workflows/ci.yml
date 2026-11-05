@@ -5,10 +5,9 @@
 # So this workflow needs no secrets, no service containers and no environment —
 # if a step here ever starts needing a credential, something has gone wrong.
 #
-# Runs on ubuntu-latest. A macOS runner is only needed where iOS is involved;
-# the Flutter SDK's unit tests are pure Dart and its example builds for Android,
-# so nothing here compiles Swift. The Swift SDK's own repo is where the macOS
-# runner belongs.
+# Runs on ubuntu-latest, so nothing here compiles the package's Swift (the iOS
+# half of the report form). Until there is a macOS job, build it locally:
+# `cd example && flutter build ios --simulator --debug --no-codesign`.
 
 name: CI
 
@@ -96,6 +95,13 @@ jobs:
       - name: Public-hygiene scan
         run: node tool/check-hygiene.js
 
+      # The report-package fixture, pinned for the same reason: it is the wire contract with the
+      # Tracive app's receiver, vendored byte-identically into all four SDKs.
+      - name: Verify the report-package fixture is unmodified
+        run: |
+          echo "1c0afd923252df3e7167f910f1727c82ab6251822e315b46e9a8f46222932563  test/fixtures/report-package-vectors.json" \
+            | sha256sum --check --strict
+
       - name: Verify the phone-normalization fixture is unmodified
         run: |
           echo "107b5ca60c49b891ea416f8aed714dd133f79cb1496d1281de596cdc97388ace  test/fixtures/phone-normalization-vectors.json" \
@@ -166,3 +172,9 @@ jobs:
       - name: Build Android APK (debug)
         working-directory: example
         run: flutter build apk --debug
+
+      # The plugin's own Kotlin unit tests (the report package folder). Needs the build above,
+      # which writes the Gradle wrapper and local.properties.
+      - name: Test the Android plugin module
+        working-directory: example/android
+        run: ./gradlew :tracive_sdk:testDebugUnitTest

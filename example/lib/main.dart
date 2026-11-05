@@ -14,6 +14,7 @@
 //   * The `disclaimer` is rendered on every result. The contract says surface
 //     it in any UI built on the SDK, so this UI surfaces it.
 //   * Typed errors, triggered on demand rather than described.
+//   * `openReportForm`, from a mock transaction detail (lib/report_demo.dart).
 //
 // THREE FLAVORS (lib/flavor.dart). `demo`, the default, answers every call
 // in-process from `DemoBackend`, so it runs on a fresh clone with nothing to
@@ -36,6 +37,7 @@ import 'package:tracive_sdk/tracive_sdk.dart';
 
 import 'demo_backend.dart';
 import 'flavor.dart';
+import 'report_demo.dart';
 
 Future<void> main() async {
   // Nothing is installed here on purpose. The SDK already folds every query
@@ -304,6 +306,16 @@ class _CheckScreenState extends State<CheckScreen> {
           padding: const EdgeInsets.all(16),
           children: <Widget>[
             _StatusBanner(flavor: widget.flavor),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => TransactionDetailScreen(client: _client),
+                ),
+              ),
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: const Text('Report a scammer from a transaction'),
+            ),
             const SizedBox(height: 16),
             if (widget.flavor.isLive) ...<Widget>[
               Wrap(

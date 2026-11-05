@@ -97,19 +97,32 @@ the platform is not.
 
 ---
 
-## This package is deliberately not a Flutter plugin
+## The native module is small on purpose
 
-There is no `android/` or `ios/` module and no `plugin:` block in `pubspec.yaml`. It is pure Dart on
-top of other people's plugins, and shipping an empty plugin module just to own a manifest was
-considered and rejected.
+`android/` (Kotlin) and `ios/` (Swift) exist for one feature, the report form, and do one thing:
+write the package Dart built and hand it to the Tracive app. Validation, encoding, the fallback
+chain and the iOS bundle-id check all live in Dart (`lib/src/report/`), so that every branch is
+covered by `flutter test` with a fake `ReportFormLauncher`. Keep it that way: logic that moves into
+Kotlin or Swift moves out of reach of the suite, because no device runs in this repository's gates.
 
-The consequence matters more than the fact: **nothing merges a manifest fragment into the host
-app.** The Android `<queries>` declaration that the app-presence probe needs is the integrator's to
-add, and a code comment that once claimed otherwise cost exactly the failure you would predict —
-without it, Android 11+ answers "not installed" for every user, including the ones who have the app,
-and every one of them is sent to the install link. Nothing errors.
+What the gates can still say about native code:
 
-If you document a platform requirement, say who is responsible for it.
+```sh
+cd example
+flutter build apk --debug                                  # the Kotlin compiles and the manifest merges
+(cd android && ./gradlew :tracive_sdk:testDebugUnitTest)   # ReportPackageStore, on the JVM
+flutter build ios --simulator --debug --no-codesign        # the Swift compiles (macOS only)
+```
+
+`test/report_platform_test.dart` reads the Kotlin and Swift sources and the plugin's manifest, and
+fails if they stop agreeing with Dart on the channel's argument names or outcomes, or if the
+provider becomes exported. It is a text check, not an execution; the hand-off itself is verified on
+devices.
+
+**Nothing merges into an `Info.plist`.** Android's manifest is merged, so the plugin declares its
+`<queries>` and its provider itself. iOS's `LSApplicationQueriesSchemes` is the integrator's to
+add, and a missing scheme fails silently (`canOpenURL` answers no). If you document a platform
+requirement, say who is responsible for it.
 
 ---
 

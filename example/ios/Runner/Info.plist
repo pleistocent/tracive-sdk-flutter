@@ -46,13 +46,20 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<!-- Lets the Tracive SDK ask whether the Tracive app is installed
-	     (SDK_SPEC.md §6 step 2, doc/oauth.md). `canOpenURL` returns false for
-	     any scheme absent from this array, so without it every user looks
-	     un-onboarded and is sent to the install link. -->
+	     (doc/oauth.md). `canOpenURL` returns false for any scheme absent from
+	     this array, so without it every user looks un-onboarded and is sent to
+	     the install link.
+	     The `-report` schemes tell openReportForm that the installed app takes
+	     attachments; without them it opens the identifier-only form. The
+	     `tracivedev` pair is for the report screen's QA target only. -->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tracive</string>
 		<string>tracivesandbox</string>
+		<string>tracive-report</string>
+		<string>tracivesandbox-report</string>
+		<string>tracivedev</string>
+		<string>tracivedev-report</string>
 	</array>
 	<!-- The OAuth redirect target, per flavor from ios/Flavors/*.xcconfig; it
 	     has to match lib/flavor.dart. A private-use scheme only because this

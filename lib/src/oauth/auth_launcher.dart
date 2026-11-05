@@ -35,17 +35,17 @@ abstract class AuthLauncher {
   ///
   /// The probe needs a manifest declaration to work at all:
   ///
-  /// * **Android** — package visibility. Declare a `<queries><intent>` for
-  ///   every scheme the probe may use, in your own
-  ///   `android/app/src/main/AndroidManifest.xml`. Nothing declares it for you:
-  ///   this package is pure Dart with no Android module, so there is no
-  ///   manifest of its own to merge into yours. Without the declaration
-  ///   Android 11+ answers `false` even when the app is installed.
+  /// * **Android** — package visibility: a `<queries><intent>` for every
+  ///   scheme the probe may use. This package's own manifest declares
+  ///   `tracive` and `tracivesandbox`, and the manifest merger folds them into
+  ///   yours, so there is nothing to add; a copy of your own does no harm.
+  ///   Without the declaration Android 11+ answers `false` even when the app
+  ///   is installed.
   ///
-  ///   Declare the **scheme**, not a `<package>` entry. The probe resolves an
-  ///   intent, so a scheme query is what answers it; a `<package>` entry names
-  ///   one build and so cannot follow [TraciveEnvironment], which is what the
-  ///   probe does. See `doc/oauth.md` for the block to paste.
+  ///   The **scheme**, not a `<package>` entry. The probe resolves an intent,
+  ///   so a scheme query is what answers it; a `<package>` entry names one
+  ///   build and so cannot follow [TraciveEnvironment], which is what the
+  ///   probe does. See `doc/oauth.md`.
   /// * **iOS** — add every such scheme to `LSApplicationQueriesSchemes` in
   ///   `Info.plist`. Without it `canOpenURL` answers `false`, again regardless
   ///   of the truth.
