@@ -258,7 +258,9 @@ this one. A published package has to name where it lives: the path is in `pubspe
 `repository` and `issue_tracker`, in the README's CI badge, in `SECURITY.md`'s reporting address and
 in the changelog's compare links, and it is the install instruction. The rule as written forbade
 what the package necessarily ships, which makes it a rule nobody can follow rather than a rule
-anybody breaks. Any *other* repository under that organisation is still an internal name.
+anybody breaks. Any *other* repository under that organisation is still an internal name, with two
+exact exceptions for `tracive_sdk_extended`: its Maven Central artifact, and the releases path of
+the public Swift SDK, where its XCFramework is fetched from.
 
 `node tool/check-hygiene.js` scans for all of this, and CI runs it. It proves every one of its rules can still
 fire — against its own self-test corpus — before it scans anything, and refuses to run if one

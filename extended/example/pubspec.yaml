@@ -1,0 +1,31 @@
+name: tracive_sdk_extended_example
+description: >-
+  A runnable example for package:tracive_sdk_extended: Tracive's form, your own
+  UI and the status screen, in sandbox or against a loopback stand-in.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  tracive_sdk: ^0.2.1
+  tracive_sdk_extended:
+    path: ../
+
+  # Delivers the OAuth redirect to Dart. Any deep-link package works.
+  app_links: ^6.4.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

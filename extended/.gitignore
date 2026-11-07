@@ -1,0 +1,19 @@
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Publishing from this folder does not read the repository root's rules. See ../.pubignore.
+coverage/
+local.properties
+*.iml
+*.log
+
+# A library: consumers resolve their own versions.
+/pubspec.lock
+
+# Points at a local tracive_sdk until that version is on pub.dev. Never published.
+pubspec_overrides.yaml
+
+# Fetched at pod install, or copied from a local build. See ios/tracive_core.rb.
+ios/Frameworks/

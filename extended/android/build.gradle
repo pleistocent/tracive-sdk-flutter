@@ -1,0 +1,62 @@
+// The version of the native SDK is the package's own, so the two cannot disagree.
+def packageVersion = file("../pubspec.yaml").readLines()
+    .find { it.startsWith("version:") }
+    .substring("version:".length()).trim()
+
+group = "id.tracive.sdk.extended.flutter"
+version = packageVersion
+
+// Used only when this plugin is built alone. In an app, the app's own AGP and Kotlin compile it, so
+// these do not raise the floor the README states.
+buildscript {
+    ext.kotlin_version = "2.2.21"
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.13.2")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+android {
+    namespace = "id.tracive.sdk.extended.flutter"
+
+    // The floor the Tracive AARs declare. The plain form, because `compileSdk { }` needs AGP 8.13.
+    compileSdk = 36
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
+    }
+
+    defaultConfig {
+        minSdk = 24
+    }
+
+    dependencies {
+        implementation("com.pleistocent:tracive-sdk-extended-ui:$packageVersion")
+        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+        implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.2")
+    }
+}

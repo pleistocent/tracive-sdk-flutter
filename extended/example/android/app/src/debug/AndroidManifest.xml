@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The Flutter tool talks to the running app over this. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <application android:networkSecurityConfig="@xml/local_backend_network" />
+</manifest>

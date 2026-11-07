@@ -1,0 +1,42 @@
+# pub reads this file instead of .gitignore in this folder, so the rules from .gitignore are
+# repeated here. Keep the two in step.
+
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.build/
+coverage/
+doc/api/
+.flutter-plugins
+.flutter-plugins-dependencies
+.gradle/
+Pods/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+DerivedData/
+.cxx/
+local.properties
+/pubspec.lock
+example/linux/
+example/macos/
+example/windows/
+example/web/
+example/.flutter-plugins
+example/.flutter-plugins-dependencies
+.idea/
+*.iml
+*.iws
+.vscode/
+*.swp
+.history/
+.DS_Store
+pubspec_overrides.yaml
+.env
+*.log
+
+# A package of its own. pub reads ignore files from the git root down, so this also hides it from a
+# publish run in extended/ ("The pubspec is hidden"). Publish it with git blind to this repository:
+#   cd extended && GIT_CEILING_DIRECTORIES="$(dirname "$PWD")" flutter pub publish
+/extended/

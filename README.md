@@ -212,6 +212,10 @@ before `authorize()`. Up to 5 attachments (10 for a phone number): JPEG, PNG, We
 images, and PDFs under 1 MiB; everything is checked before anything is opened. On iOS the user picks
 Tracive in the system "Open in" sheet, one extra tap.
 
+To let the user report without leaving your app, add
+[`tracive_sdk_extended`](https://github.com/pleistocent/tracive-sdk-flutter/tree/main/extended). It
+is a separate package because its native core adds about 6 MB on Android and 7 MB on iOS.
+
 **iOS: list the report schemes.** Add `tracive-report` and `tracivesandbox-report` to
 `LSApplicationQueriesSchemes`, next to `tracive` and `tracivesandbox`. They are how the SDK knows the
 installed app accepts attachments. Without them it falls back to opening the app on the account

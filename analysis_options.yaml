@@ -7,6 +7,9 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
+  exclude:
+    # A package of its own, with its own options.
+    - extended/**
   language:
     # No implicit downcast from `dynamic`. Every model in this SDK parses JSON
     # by hand out of `Object?`, and an implicit cast is exactly how a malformed
