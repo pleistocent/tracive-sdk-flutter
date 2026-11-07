@@ -28,7 +28,7 @@ Three things, stated plainly, because finding them out later is expensive:
    binary is an API key that has been published. Authentication is OAuth 2.0
    with PKCE, so nothing long-lived and secret ever ships in your app.
 
-This is `0.2.1`. The surface may still change in a minor release until `1.0.0`.
+This is `0.2.2`. The surface may still change in a minor release until `1.0.0`.
 
 ---
 
@@ -36,7 +36,7 @@ This is `0.2.1`. The surface may still change in a minor release until `1.0.0`.
 
 ```yaml
 dependencies:
-  tracive_sdk: ^0.2.1
+  tracive_sdk: ^0.2.2
 ```
 
 Dart `^3.5.0`, Flutter `>=3.24.0`, Android and iOS.

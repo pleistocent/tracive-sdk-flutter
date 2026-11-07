@@ -13,7 +13,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  tracive_sdk: ^0.2.1
+  tracive_sdk: ^0.2.2
   tracive_sdk_extended:
     path: ../
 

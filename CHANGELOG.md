@@ -8,6 +8,11 @@ until it is frozen at `1.0.0`.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-08
+
+The version moved with `tracive_sdk_extended`, which shares it. Nothing in this
+package changed.
+
 ## [0.2.1] - 2026-11-07
 
 ### Documentation
@@ -997,7 +1002,8 @@ implementation until the API ships.
   was a 404 for a user without the Tracive app. Resolved in 0.1.0, where
   the confirmed link becomes the default.
 
-[Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.2.2
 [0.2.1]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.2.1
 [0.2.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.1.0

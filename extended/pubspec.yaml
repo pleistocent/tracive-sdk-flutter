@@ -2,7 +2,7 @@ name: tracive_sdk_extended
 description: >-
   Lets a user report a scammer from inside your app, on Tracive's native form
   or your own Flutter UI, and check that report's status.
-version: 0.2.1
+version: 0.2.2
 homepage: https://github.com/pleistocent/tracive-sdk-flutter/tree/main/extended
 repository: https://github.com/pleistocent/tracive-sdk-flutter/tree/main/extended
 issue_tracker: https://github.com/pleistocent/tracive-sdk-flutter/issues
@@ -14,7 +14,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  tracive_sdk: ^0.2.1
+  tracive_sdk: ^0.2.2
 
 dev_dependencies:
   flutter_test:
