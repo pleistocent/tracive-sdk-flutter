@@ -141,7 +141,7 @@ secret shipped inside a mobile binary is a published secret.
 **Do not retry a check without an idempotency key.** The SDK cannot tell whether the first attempt
 was billed, so a blind retry risks charging a partner twice for one answer.
 
-**Do not add a `domain()` query builder.** The Tracive API indexes five identifier types. A domain
+**Do not add a `domain()` query builder.** The Tracive API indexes six identifier types. A domain
 key would match nothing, and the miss is billed.
 
 **Do not let `Detail.full` touch the cache, in either direction.** The stored projection keeps

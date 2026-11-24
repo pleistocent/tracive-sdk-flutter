@@ -98,6 +98,16 @@ running the working tree, never a published version that may differ.
 | Type `not-a-phone-number` and press **Check** | Rejected before any call is made, with the reason `not_e164`. Validation runs first because **a miss is billed**. |
 | Press **Simulate 402** then **Check** | The typed `TraciveInsufficientCreditsException` — the one you should handle instead of polling `credits()`. |
 | Look at the folded key under any result | `+62 812-3456-7891` became `PHONE_+6281234567891`. That folded string is both what goes on the wire and what the cache key is hashed from. |
+| Switch to **QRIS**, tap **Sandbox QR (HIGH)**, press **Check** | The QR is keyed by its NMID (`QRIS_ID9900000000101`), and the merchant's reply is shown below the warning, as written. |
+
+## QRIS in sandbox
+
+The **QRIS** input takes a payload (the text a QR decoder returns), an NMID or
+a PAN. Its two chips fill in the sandbox's own test QRIS: **Sandbox QR (HIGH)**
+is the QR of the HIGH entry, and **Sandbox NMID with reply** is the CAUTION
+entry whose merchant has answered the reports. They answer only in the
+`sandbox` flavor, and only for an organisation whose agreement covers QRIS;
+any other gets `TraciveUnsupportedInputTypeException`.
 
 ## Report a scammer (any flavor)
 

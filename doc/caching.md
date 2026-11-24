@@ -147,7 +147,13 @@ the rest of its old lifetime.
 | `checkId` | nothing was checked on a hit, so there is no id |
 
 `disclaimer` and `tags` are **kept**, and they do vary with `locale` — so the
-table above is not the whole rule.
+table above is not the whole rule. `qris` and `rightOfReply` are kept as well;
+neither is ever translated. A row stored before they existed decodes with both
+`null`.
+
+A QRIS checked by PAN and the same QRIS checked by NMID are **two entries**. The
+server maps a PAN to its NMID after the charge, so the SDK cannot, and the cache
+key is derived from the key that was sent.
 
 The cache key is the **query alone**; it mentions neither `detail` nor `locale`.
 That is sound only because of a second rule, enforced in `TraciveClient`:

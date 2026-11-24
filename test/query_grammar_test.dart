@@ -30,6 +30,8 @@ import 'package:tracive_sdk/src/query/document_id.dart';
 // fixture's `crossLanguageSemantics` block is a statement about them, so it can
 // only be executed against them directly.
 import 'package:tracive_sdk/src/query/js_string.dart';
+// And the QRIS CRC, which the fixture pins only through whole payloads.
+import 'package:tracive_sdk/src/query/qris.dart' show qrisCrc;
 
 void main() {
   final fixture = _loadFixture();
@@ -55,13 +57,28 @@ void main() {
       // `not_an_email`, `empty_address`, `empty_platform` - and the guard case
       // proving the reserved-key pattern does not span a newline. Version 6
       // added `BANK_SHORT_CODE` and `BANK_BIC`, the vectors naming a bank by
-      // `bankShortCode` or `bic`, and `unknown_bank_code`.
-      expect(fixture['version'], 6);
+      // `bankShortCode` or `bic`, and `unknown_bank_code`. Version 7 added
+      // QRIS: the `QRIS_PAYLOAD`, `QRIS_NMID` and `QRIS_PAN` rules, their
+      // vectors, and six rejection reasons.
+      expect(fixture['version'], 7);
     });
 
     test('carries the vectors it is supposed to', () {
-      expect(vectors, hasLength(42));
-      expect(rejected, hasLength(21));
+      expect(vectors, hasLength(59));
+      expect(rejected, hasLength(35));
+      expect(vectors.where((v) => v['type'] == 'QRIS'), hasLength(17));
+      expect(rejected.where((v) => v['type'] == 'QRIS'), hasLength(14));
+    });
+
+    test('every vector type is a QueryType this SDK knows', () {
+      final types = <String>{
+        for (final entry in <Map<String, Object?>>[...vectors, ...rejected])
+          if (entry['type'] != 'RAW') entry['type']! as String,
+      };
+      expect(
+        QueryType.values.map((type) => type.wireValue).toSet(),
+        containsAll(types),
+      );
     });
 
     test('carries the sections version 2 added', () {
@@ -80,11 +97,10 @@ void main() {
     });
 
     test('still forbids a DOMAIN builder', () {
-      // The Tracive API indexes five input types and DOMAIN is not one of
+      // The Tracive API indexes six input types and DOMAIN is not one of
       // them, so a `DOMAIN_...` key could never match - and a miss is billed.
-      // There is
-      // deliberately no `TraciveQuery.domain()`, and `QueryType` has no
-      // `domain` member. If this assertion ever fails because the fixture
+      // There is deliberately no `TraciveQuery.domain()`, and `QueryType` has
+      // no `domain` constant. If this assertion ever fails because the fixture
       // changed, that is the signal to add the builder - not before.
       expect(fixture['notImplemented'], contains('DOMAIN'));
       expect(
@@ -541,6 +557,63 @@ void main() {
       // these, so the guard must accept both.
       expect(isValidDocumentId('__ab__\n'), isTrue);
       expect(isValidDocumentId('\n__ab__'), isTrue);
+    });
+  });
+
+  group('QRIS details the fixture does not spell out', () {
+    test('the CRC is CRC-16/CCITT-FALSE', () {
+      // The catalogued check value for "123456789". The fixture's payloads
+      // pin the CRC only through whole QRIS strings; this pins the algorithm.
+      expect(qrisCrc('123456789'), '29B1');
+    });
+
+    test('Luhn doubles every second digit left of the check digit', () {
+      // The fixture's 19-digit PAN has check digit 0 whichever digits are
+      // doubled, so it cannot catch a fold that doubles the wrong ones. This
+      // PAN can: its check digit is 9, and 8 is what the wrong phase accepts.
+      expect(
+        TraciveQuery.qrisPan('9360999900000101009').searchQueryIndex,
+        'QRIS_936099990000010100',
+      );
+      expect(
+        () => TraciveQuery.qrisPan('9360999900000101008'),
+        throwsA(
+          isA<TraciveQueryException>().having(
+            (e) => e.reason,
+            'reason',
+            'not_a_pan',
+          ),
+        ),
+      );
+    });
+
+    test('every QRIS builder yields the QRIS type', () {
+      expect(TraciveQuery.qrisNmid('ID1020000000033').type, QueryType.qris);
+      expect(TraciveQuery.qrisPan('936009143100000003').type, QueryType.qris);
+    });
+
+    test('a PAN key and an NMID key are different queries', () {
+      // The server maps a PAN to its NMID only after the charge, so the SDK
+      // cannot: the two are separate keys, and separate cache entries.
+      expect(
+        TraciveQuery.qrisPan('936009143100000003'),
+        isNot(TraciveQuery.qrisNmid('ID1020000000033')),
+      );
+    });
+
+    test('the six QRIS reasons are the wire strings', () {
+      // Literals, because they are shared with the other SDKs.
+      expect(
+        QueryRejectionReason.values,
+        containsAll(<String>[
+          'not_a_qris',
+          'qris_crc_mismatch',
+          'qris_no_nmid',
+          'qris_not_indexed',
+          'not_an_nmid',
+          'not_a_pan',
+        ]),
+      );
     });
   });
 
@@ -1113,6 +1186,20 @@ TraciveQuery _build(Map<String, Object?> vector) {
         platform: input['platform'] as String,
         handle: input['handle'] as String,
       );
+    case 'QRIS':
+      // Exactly one of the three, for the same reason as the bank selectors.
+      final fields = const <String>['payload', 'nmid', 'pan']
+          .where((field) => input[field] != null)
+          .toList();
+      if (fields.length != 1) {
+        fail('QRIS vector ${vector['id']} sends $fields');
+      }
+      final value = input[fields.single]! as String;
+      return switch (fields.single) {
+        'payload' => TraciveQuery.qris(value),
+        'nmid' => TraciveQuery.qrisNmid(value),
+        _ => TraciveQuery.qrisPan(value),
+      };
     case 'RAW':
       // A raw key, not builder input: it exercises the document-id guard.
       validateDocumentId(input['value'] as String);
@@ -1159,6 +1246,14 @@ String _refoldSameType(TraciveQuery query) {
         platform: rest.substring(0, split),
         handle: rest.substring(split + 1),
       ).searchQueryIndex;
+    case QueryType.qris:
+      // A payload folds to its NMID, so every QRIS key is an NMID or a PAN.
+      final value = key.substring('QRIS_'.length);
+      return value.startsWith('ID')
+          ? TraciveQuery.qrisNmid(value).searchQueryIndex
+          : TraciveQuery.qrisPan(value).searchQueryIndex;
+    default:
+      fail('no refold for ${query.type}');
   }
 }
 

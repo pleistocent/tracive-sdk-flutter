@@ -288,6 +288,82 @@ void main() {
     });
   });
 
+  group('QRIS', () {
+    final nmid = TraciveQuery.qrisNmid('ID1020000000033');
+    final pan = TraciveQuery.qrisPan('936009143100000003');
+    final hit = _result(
+      tier: RiskTier.caution,
+      fetchedAt: DateTime.utc(2026, 7, 31, 9),
+    ).copyWith(
+      qris: const QrisDetails(
+        merchantName: 'TOKO CONTOH',
+        city: 'JAKARTA',
+        criteria: QrisCriteria.umi,
+        acquirer: 'ID.DANA.WWW',
+      ),
+      rightOfReply: const RightOfReply(
+        text: 'Kami pemilik usaha ini.',
+        language: 'id',
+      ),
+    );
+
+    test('a hit keeps its merchant and its right of reply', () async {
+      final cache = DefaultCheckCache(
+        store: MemoryCheckCacheStore(),
+        clock: () => DateTime.utc(2026, 7, 31, 10),
+      );
+      await cache.write(nmid, hit);
+
+      final stored = (await cache.read(nmid))!;
+      expect(stored.qris, hit.qris);
+      expect(stored.rightOfReply, hit.rightOfReply);
+    });
+
+    test('a row stored before either field existed still decodes', () async {
+      final store = MemoryCheckCacheStore();
+      final cache = DefaultCheckCache(
+        store: store,
+        clock: () => DateTime.utc(2026, 7, 31, 10),
+      );
+      final older = _result(
+        tier: RiskTier.caution,
+        fetchedAt: DateTime.utc(2026, 7, 31, 9),
+      ).cacheable();
+      final payload = older.toJson();
+      expect(payload.keys, isNot(contains('qris')));
+      expect(payload.keys, isNot(contains('rightOfReply')));
+      await store.write(
+        StoredCheck(
+          cacheKey: cacheKeyFor(nmid),
+          payload: jsonEncode(payload),
+          riskTier: 'CAUTION',
+          fetchedAt: DateTime.utc(2026, 7, 31, 9),
+          expiresAt: DateTime.utc(2099),
+          storedAt: DateTime.utc(2026, 7, 31, 9),
+        ),
+      );
+
+      final stored = (await cache.read(nmid))!;
+      expect(stored.riskTier, RiskTier.caution);
+      expect(stored.qris, isNull);
+      expect(stored.rightOfReply, isNull);
+    });
+
+    test('a PAN and an NMID are two entries, even for one merchant', () async {
+      // The server maps a PAN to its NMID after the charge; the SDK cannot, so
+      // an answer cached under one key is never served for the other.
+      final cache = DefaultCheckCache(
+        store: MemoryCheckCacheStore(),
+        clock: () => DateTime.utc(2026, 7, 31, 10),
+      );
+      await cache.write(pan, hit);
+
+      expect(cacheKeyFor(pan), isNot(cacheKeyFor(nmid)));
+      expect(await cache.read(pan), isNotNull);
+      expect(await cache.read(nmid), isNull);
+    });
+  });
+
   group('privacy', () {
     test('no stored field carries the identifier', () async {
       final store = MemoryCheckCacheStore();

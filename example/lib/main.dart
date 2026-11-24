@@ -15,6 +15,8 @@
 //     it in any UI built on the SDK, so this UI surfaces it.
 //   * Typed errors, triggered on demand rather than described.
 //   * `openReportForm`, from a mock transaction detail (lib/report_demo.dart).
+//   * A QRIS check, with the sandbox's own test QR one tap away, and the
+//     merchant's right of reply shown below the warning.
 //
 // THREE FLAVORS (lib/flavor.dart). `demo`, the default, answers every call
 // in-process from `DemoBackend`, so it runs on a fresh clone with nothing to
@@ -82,6 +84,18 @@ class TraciveExampleApp extends StatelessWidget {
       );
 }
 
+/// What the input field holds.
+enum _InputKind { phone, qris }
+
+/// The sandbox's QRIS test accounts: the QR of its HIGH entry, and the NMID of
+/// the entry that carries a right of reply. They answer in sandbox only, and
+/// only for an organisation whose agreement covers QRIS.
+const String _sandboxQrisPayload =
+    '00020101021126550011ID.DANA.WWW01189360999900000101000207SBX00010303UMI'
+    '51440014ID.CO.QRIS.WWW0215ID99000000001010303UMI5204581253033605802ID'
+    '5919TOKO CONTOH SANDBOX6007JAKARTA6105101106304AF35';
+const String _sandboxQrisNmidWithReply = 'ID9900000000103';
+
 /// The one screen: enter an identifier, check it, read the result.
 class CheckScreen extends StatefulWidget {
   /// Creates the screen.
@@ -107,6 +121,7 @@ class _CheckScreenState extends State<CheckScreen> {
 
   Source _source = Source.cacheFirst;
   Detail _detail = Detail.minimal;
+  _InputKind _kind = _InputKind.phone;
 
   bool _busy = false;
   bool _authorized = false;
@@ -200,7 +215,9 @@ class _CheckScreenState extends State<CheckScreen> {
     try {
       // Validation happens here, before anything leaves the device: a key that
       // could not match is never sent, because a miss is billed.
-      final query = TraciveQuery.phone(_input.text);
+      final query = _kind == _InputKind.phone
+          ? TraciveQuery.phone(_input.text)
+          : _qrisQuery(_input.text);
       // TODO(partner): pass an idempotencyKey — one per logical check, reused
       // only to retry that same check. Without one a 5xx or a timeout cannot be
       // retried safely, because a blind retry risks being charged twice.
@@ -221,6 +238,26 @@ class _CheckScreenState extends State<CheckScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// A QRIS field takes any of the three forms; the shape says which.
+  static TraciveQuery _qrisQuery(String text) {
+    final value = text.trim();
+    if (value.startsWith('000201')) return TraciveQuery.qris(value);
+    if (value.toUpperCase().startsWith('ID')) {
+      return TraciveQuery.qrisNmid(value);
+    }
+    return TraciveQuery.qrisPan(value);
+  }
+
+  void _setKind(_InputKind kind, [String? text]) {
+    setState(() {
+      _kind = kind;
+      _input.text = text ??
+          (kind == _InputKind.phone
+              ? '+62 812-3456-7891'
+              : _sandboxQrisPayload);
+    });
   }
 
   Future<void> _clearCache() async {
@@ -334,14 +371,51 @@ class _CheckScreenState extends State<CheckScreen> {
               ),
               const SizedBox(height: 16),
             ],
+            SegmentedButton<_InputKind>(
+              segments: const <ButtonSegment<_InputKind>>[
+                ButtonSegment<_InputKind>(
+                  value: _InputKind.phone,
+                  label: Text('Phone'),
+                ),
+                ButtonSegment<_InputKind>(
+                  value: _InputKind.qris,
+                  label: Text('QRIS'),
+                ),
+              ],
+              selected: <_InputKind>{_kind},
+              onSelectionChanged: (selection) => _setKind(selection.first),
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: _input,
-              decoration: const InputDecoration(
-                labelText: 'Phone number (E.164)',
-                helperText: 'Spaces and dashes are folded away by the grammar.',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: _kind == _InputKind.phone
+                    ? 'Phone number (E.164)'
+                    : 'QRIS payload, NMID or PAN',
+                helperText: _kind == _InputKind.phone
+                    ? 'Spaces and dashes are folded away by the grammar.'
+                    : 'A payload is keyed by its NMID. Sandbox test QRIS below.',
+                border: const OutlineInputBorder(),
               ),
             ),
+            if (_kind == _InputKind.qris) ...<Widget>[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: <Widget>[
+                  ActionChip(
+                    label: const Text('Sandbox QR (HIGH)'),
+                    onPressed: () =>
+                        _setKind(_InputKind.qris, _sandboxQrisPayload),
+                  ),
+                  ActionChip(
+                    label: const Text('Sandbox NMID with reply'),
+                    onPressed: () =>
+                        _setKind(_InputKind.qris, _sandboxQrisNmidWithReply),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
             _SourcePicker(
               value: _source,
@@ -561,6 +635,13 @@ class _ResultCard extends StatelessWidget {
                     .map((e) => '${e.key} ${e.value.toStringAsFixed(0)}')
                     .join(', '),
               ),
+            if (result.qris case final qris?) ...<Widget>[
+              if (qris.merchantName != null)
+                _Row(label: 'Merchant', value: qris.merchantName!),
+              if (qris.city != null) _Row(label: 'City', value: qris.city!),
+              if (qris.criteria != null)
+                _Row(label: 'Business size', value: qris.criteria!),
+            ],
             _Row(label: 'Fetched at', value: '${result.fetchedAt.toUtc()}'),
             if (result.checkId != null)
               _Row(label: 'Check id', value: result.checkId!),
@@ -612,6 +693,14 @@ class _ResultCard extends StatelessWidget {
                   ),
                 ],
               ),
+            ],
+
+            // Below the warning, as written: never translated or shortened.
+            if (result.rightOfReply case final reply?) ...<Widget>[
+              const Divider(height: 24),
+              Text("The merchant's reply", style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Text(reply.text, style: theme.textTheme.bodyMedium),
             ],
           ],
         ),

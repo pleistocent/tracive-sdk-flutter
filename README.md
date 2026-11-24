@@ -1,7 +1,7 @@
 # Tracive SDK for Flutter
 
-Check a phone number, e-mail address, bank account, crypto address or social
-handle against Tracive's scam reports, from a Flutter app.
+Check a phone number, e-mail address, bank account, crypto address, social
+handle or QRIS against Tracive's scam reports, from a Flutter app.
 
 [![CI](https://github.com/pleistocent/tracive-sdk-flutter/actions/workflows/ci.yml/badge.svg)](https://github.com/pleistocent/tracive-sdk-flutter/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -115,7 +115,7 @@ A runnable app is in [`example/`](example).
 
 | | |
 |---|---|
-| **Query builders** | phone, e-mail, bank account, IBAN, crypto, social handle — each folded to the exact key the backend indexes |
+| **Query builders** | phone, e-mail, bank account, IBAN, crypto, social handle, QRIS — each folded to the exact key the backend indexes |
 | **OAuth 2.0 + PKCE** | S256 only, app-presence pre-check, Custom Tabs / Universal Link, single-flight refresh on a non-terminal `401`, rotating refresh tokens |
 | **Encrypted cache** | SQLCipher, key in Keystore/Keychain, per-tier TTL, server-driven invalidation |
 | **Report a scammer** | opens Tracive's report form with the account, the date and a receipt filled in — no grant, no credit, no request |
@@ -229,6 +229,28 @@ package adds to it: `id.tracive.sdk.flutter.TraciveFlutterFileProvider` with aut
 written into your manifest.
 
 Full rules in [`doc/integration.md`](doc/integration.md#9-report-a-scammer).
+
+## Checking a QRIS
+
+Before the user pays at a merchant's QR, check the QR itself:
+
+```dart
+final query = TraciveQuery.qris(scannedText);            // the QR decoder's text
+// or TraciveQuery.qrisNmid('ID1020000000033'), or TraciveQuery.qrisPan(pan)
+final result = await client.checkScammer(query);
+```
+
+- **Only for an organisation whose agreement with Tracive covers QRIS.** Any
+  other gets `TraciveUnsupportedInputTypeException` (`unsupported_input_type`).
+- **A warning, never a block.** Show the result before the user pays; never
+  hold or refuse a payment automatically because of it.
+- **Show `result.rightOfReply` below the warning, verbatim**, when the merchant
+  has answered the reports. Do not translate it.
+- `TraciveQuery.qris` refuses a QR that is not intact (`qris_crc_mismatch`) or
+  whose business is medium or large (`qris_not_indexed`; only micro and small
+  businesses are indexed) before any request, so neither is billed.
+
+Details in [`doc/integration.md`](doc/integration.md#qris).
 
 ## Five things that will bite you if you skip them
 

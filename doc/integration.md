@@ -125,6 +125,9 @@ TraciveQuery.bankAccount(countryAlpha3: 'IDN', bankCode: 'BCA', account: '3242-4
 TraciveQuery.iban('DE89 3704 0044 0532 0130 00');
 TraciveQuery.crypto(chain: 'ETH', address: '0xAbC…');    // EVM addresses lowercased
 TraciveQuery.username(platform: 'INSTAGRAM', handle: '@budi_scam');
+TraciveQuery.qris(scannedText);                          // -> QRIS_<NMID>
+TraciveQuery.qrisNmid('ID1020000000033');
+TraciveQuery.qrisPan('936009143100000003');
 ```
 
 A bank can also be named the way your own records may already hold it — by its
@@ -141,6 +144,44 @@ shares its cache entries. Leading zeros are optional (`14` finds `014`), and an
 11-character BIC is looked up by its first 8. A code the table does not list for
 that country throws `unknown_bank_code` before any request, so it is never
 billed.
+
+### QRIS
+
+A QRIS can be checked three ways. `TraciveQuery.qris` takes the text a QR
+decoder returns and keys it by the merchant's NMID, so every QR of one merchant
+shares one key; `qrisNmid` takes the NMID printed under the QR (`ID` and 13
+digits); `qrisPan` takes the merchant PAN (18 digits, or the 19 a receipt
+prints).
+
+- **Only for an organisation whose agreement covers QRIS.** For any other, the
+  server answers 400 `unsupported_input_type`, which this SDK throws as
+  `TraciveUnsupportedInputTypeException`, exactly as before.
+- **Show the result as a warning before the user pays. Never block or hold a
+  payment automatically because of it.** The `disclaimer` of a QRIS check says
+  the same.
+- **Show `rightOfReply` below the warning, as written**, when a result carries
+  one: it is the merchant's own answer to the reports. Do not translate it;
+  `rightOfReply.language` says what it is written in.
+- A hit may carry `qris`: the merchant name, city, business size (`criteria`:
+  `UMI`, `UKE`, `UME` or `UBE`, kept as a string so a new value cannot break the
+  check) and acquirer. The PAN never comes back.
+- The payload is checked before anything is sent: `not_a_qris` (not a QRIS, or a
+  partial scan), `qris_crc_mismatch` (edited or misread: tell the user the QR is
+  not intact rather than calling it unreported), `qris_no_nmid`, and
+  `qris_not_indexed` (a medium or large business, or none declared: only micro
+  and small businesses are ever indexed, so the check could only be a billed
+  miss). A dynamic QR is accepted; its merchant may be indexed from its static
+  QR.
+- **A PAN costs a check even when the server cannot map it.** The server looks
+  the PAN up after the charge, and a PAN it has not seen answers as a miss.
+  Prefer the payload or the NMID when you have them.
+- **The PAN key and the NMID key are separate cache entries.** The SDK cannot
+  map one to the other, so checking a merchant by PAN does not warm the cache
+  for its NMID, or the other way round.
+
+To report a QRIS with `tracive_sdk_extended`, use its NMID key
+(`TraciveQuery.qris` or `qrisNmid`); a report takes up to three QRIS and never
+a PAN.
 
 There is deliberately **no `domain()` builder.** The plan listed a DOMAIN input
 type; the backend dropped it. Building such a key would guarantee a miss, and a
@@ -159,7 +200,9 @@ try {
   // e.reason is a stable, cross-SDK string: 'not_e164', 'not_an_email',
   // 'country_not_alpha3', 'empty_account_id', 'empty_bank_code',
   // 'unknown_bank_code', 'empty_value', 'empty_handle', 'empty_chain',
-  // 'empty_address', 'empty_platform', 'invalid_document_id'.
+  // 'empty_address', 'empty_platform', 'not_a_qris', 'qris_crc_mismatch',
+  // 'qris_no_nmid', 'qris_not_indexed', 'not_an_nmid', 'not_a_pan',
+  // 'invalid_document_id'.
   showFieldError(messageFor(e.reason));
 }
 ```
@@ -262,6 +305,8 @@ If you implement your own retry loop, pass one there too.
 not adjudicated findings**, and presenting them as the latter is how a false
 positive becomes someone's problem — a real person locked out of a payment, on
 the strength of a report nobody verified. Show it wherever you show the verdict.
+
+When a result carries `rightOfReply`, show it below the warning too, verbatim.
 
 ### Keep the check on the transaction it belongs to
 
