@@ -64,10 +64,10 @@ void main() {
     });
 
     test('carries the vectors it is supposed to', () {
-      expect(vectors, hasLength(60));
-      expect(rejected, hasLength(36));
-      expect(vectors.where((v) => v['type'] == 'QRIS'), hasLength(18));
-      expect(rejected.where((v) => v['type'] == 'QRIS'), hasLength(15));
+      expect(vectors, hasLength(61));
+      expect(rejected, hasLength(37));
+      expect(vectors.where((v) => v['type'] == 'QRIS'), hasLength(19));
+      expect(rejected.where((v) => v['type'] == 'QRIS'), hasLength(16));
     });
 
     test('every vector type is a QueryType this SDK knows', () {
