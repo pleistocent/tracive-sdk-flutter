@@ -64,10 +64,10 @@ void main() {
     });
 
     test('carries the vectors it is supposed to', () {
-      expect(vectors, hasLength(59));
-      expect(rejected, hasLength(35));
-      expect(vectors.where((v) => v['type'] == 'QRIS'), hasLength(17));
-      expect(rejected.where((v) => v['type'] == 'QRIS'), hasLength(14));
+      expect(vectors, hasLength(60));
+      expect(rejected, hasLength(36));
+      expect(vectors.where((v) => v['type'] == 'QRIS'), hasLength(18));
+      expect(rejected.where((v) => v['type'] == 'QRIS'), hasLength(15));
     });
 
     test('every vector type is a QueryType this SDK knows', () {
@@ -565,26 +565,6 @@ void main() {
       // The catalogued check value for "123456789". The fixture's payloads
       // pin the CRC only through whole QRIS strings; this pins the algorithm.
       expect(qrisCrc('123456789'), '29B1');
-    });
-
-    test('Luhn doubles every second digit left of the check digit', () {
-      // The fixture's 19-digit PAN has check digit 0 whichever digits are
-      // doubled, so it cannot catch a fold that doubles the wrong ones. This
-      // PAN can: its check digit is 9, and 8 is what the wrong phase accepts.
-      expect(
-        TraciveQuery.qrisPan('9360999900000101009').searchQueryIndex,
-        'QRIS_936099990000010100',
-      );
-      expect(
-        () => TraciveQuery.qrisPan('9360999900000101008'),
-        throwsA(
-          isA<TraciveQueryException>().having(
-            (e) => e.reason,
-            'reason',
-            'not_a_pan',
-          ),
-        ),
-      );
     });
 
     test('every QRIS builder yields the QRIS type', () {
