@@ -641,6 +641,8 @@ class _ResultCard extends StatelessWidget {
               if (qris.city != null) _Row(label: 'City', value: qris.city!),
               if (qris.criteria != null)
                 _Row(label: 'Business size', value: qris.criteria!),
+              if (qris.acquirer != null)
+                _Row(label: 'Provider', value: qris.acquirer!),
             ],
             _Row(label: 'Fetched at', value: '${result.fetchedAt.toUtc()}'),
             if (result.checkId != null)
