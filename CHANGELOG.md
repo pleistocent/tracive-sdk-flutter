@@ -8,6 +8,51 @@ until it is frozen at `1.0.0`.
 
 ## [Unreleased]
 
+## [0.3.0]
+
+QRIS, Indonesia's national merchant QR, joins the five identifier types.
+
+### Breaking
+
+- **`QueryType` is now a class with constant instances instead of an enum**, so
+  that the next type the Tracive API indexes is not a breaking change again.
+  `QueryType.phone`, `==`, `wireValue`, `QueryType.fromWire` and
+  `QueryType.values` work as before. To migrate:
+  - a `switch` over a `QueryType` needs a default branch (`_ =>` in a switch
+    expression, `default:` in a statement), which is also where a later type
+    will land;
+  - replace `.name` with `.wireValue` (`'PHONE'`, not `'phone'`), and
+    `QueryType.values.byName(…)` with `QueryType.fromWire(…)`;
+  - `.index` has no replacement; key on `wireValue`.
+
+### Added
+
+- **`TraciveQuery.qris(payload)`, `TraciveQuery.qrisNmid(nmid)` and
+  `TraciveQuery.qrisPan(pan)`**, and `QueryType.qris`. The payload is the text
+  a QR decoder returns; it is keyed by the merchant's NMID (`QRIS_ID…`), so
+  every QR of one merchant shares one key. **Only for an organisation whose
+  agreement with Tracive covers QRIS**; any other gets
+  `TraciveUnsupportedInputTypeException`, as for any type it may not check.
+- Six rejection reasons, thrown before any request: `not_a_qris`,
+  `qris_crc_mismatch` (the QR was edited or misread), `qris_no_nmid`,
+  `qris_not_indexed` (a medium or large business: only micro and small ones
+  are indexed), `not_an_nmid` and `not_a_pan`.
+- **`CheckResult.qris`** (`QrisDetails`: `merchantName`, `city`, `criteria`,
+  `acquirer`; `QrisCriteria` names the four sizes) and
+  **`CheckResult.rightOfReply`** (`RightOfReply`: `text`, `language`), on
+  minimal and full answers alike. An unknown `criteria` is kept as sent. Both
+  are cached, and a row cached by an earlier version decodes with both `null`.
+
+### Documentation
+
+- A QRIS result is a warning to show before the user pays, never a reason to
+  block or hold a payment automatically. Show `rightOfReply` below it,
+  verbatim and untranslated.
+- A PAN is mapped to its NMID by the server after the charge, so an unmapped
+  PAN is a billed miss, and the PAN key and the NMID key are separate cache
+  entries.
+- The query grammar fixture is version 7.
+
 ## [0.2.2] - 2026-11-08
 
 The version moved with `tracive_sdk_extended`, which shares it. Nothing in this
@@ -1003,6 +1048,7 @@ implementation until the API ships.
   the confirmed link becomes the default.
 
 [Unreleased]: https://github.com/pleistocent/tracive-sdk-flutter/compare/v0.2.2...HEAD
+[0.3.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.3.0
 [0.2.2]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.2.2
 [0.2.1]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.2.1
 [0.2.0]: https://github.com/pleistocent/tracive-sdk-flutter/releases/tag/v0.2.0

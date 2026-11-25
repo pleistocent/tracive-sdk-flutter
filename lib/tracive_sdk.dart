@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 /// Tracive SDK for Dart and Flutter — check a phone number, e-mail address,
-/// bank account, crypto address or social handle against Tracive's scam
+/// bank account, crypto address, social handle or QRIS against Tracive's scam
 /// reports.
 ///
 /// **Status: phase 1, OAuth mode only.** Sandbox and production are separate
@@ -50,6 +50,8 @@ export 'src/model/credits_info.dart';
 export 'src/model/detail.dart';
 export 'src/model/origin.dart';
 export 'src/model/profile_info.dart';
+export 'src/model/qris_details.dart';
+export 'src/model/right_of_reply.dart';
 export 'src/model/risk_tier.dart';
 export 'src/model/source.dart';
 export 'src/model/tracive_environment.dart';
@@ -78,6 +80,9 @@ export 'src/report/report_form_target.dart';
 //   src/query/js_string.dart           — JavaScript string semantics; an
 //                                        implementation detail of the fold
 //                                        (the grammar test imports it directly)
+//   src/query/qris.dart                — the QRIS payload reader behind
+//                                        TraciveQuery.qris (the grammar test
+//                                        imports its CRC directly)
 //   src/query/bank_codes.dart          — the embedded bank-code table behind
 //   src/query/bank_codes_json.dart       bankAccountByShortCode/ByBic
 //                                        (bank_codes_test imports them)

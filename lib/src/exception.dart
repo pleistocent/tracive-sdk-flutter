@@ -379,10 +379,12 @@ final class TraciveInvalidRequestException extends TraciveException {
   });
 }
 
-/// 400 `unsupported_input_type` — the server does not index this input type.
+/// 400 `unsupported_input_type` — the server does not index this input type,
+/// or does not index it for you.
 ///
-/// The most likely cause is a key this SDK cannot build (there is deliberately
-/// no `domain()` builder; see [TraciveQueryException]).
+/// A QRIS check gets this when your organisation's agreement with Tracive does
+/// not cover QRIS. Otherwise the likely cause is a key this SDK cannot build
+/// (there is deliberately no `domain()` builder; see [TraciveQueryException]).
 final class TraciveUnsupportedInputTypeException extends TraciveException {
   /// Creates the exception from a decoded error envelope: [message],
   /// [code], [statusCode] and [checkId] all come off the wire.
@@ -803,6 +805,28 @@ abstract final class QueryRejectionReason {
   /// The built key is not a legal record key.
   static const String invalidDocumentId = 'invalid_document_id';
 
+  /// The text is not a QRIS payload: it does not start with `000201`, its TLV
+  /// framing breaks (often a partial scan), or it does not end in a CRC.
+  static const String notAQris = 'not_a_qris';
+
+  /// The QRIS payload is framed correctly but fails its CRC: it was edited or
+  /// misread. Tell the user the QR is not intact, not that it is unreported.
+  static const String qrisCrcMismatch = 'qris_crc_mismatch';
+
+  /// The QRIS payload carries no NMID (`ID` and 13 digits) in tag 51.
+  static const String qrisNoNmid = 'qris_no_nmid';
+
+  /// The QRIS belongs to a medium or large business, or names no business
+  /// size. Tracive indexes only micro and small businesses (UMI, UKE), so the
+  /// check could only be a billed miss.
+  static const String qrisNotIndexed = 'qris_not_indexed';
+
+  /// The NMID is not `ID` followed by 13 ASCII digits once spaces are removed.
+  static const String notAnNmid = 'not_an_nmid';
+
+  /// The PAN is neither 18 ASCII digits nor 19 with a valid Luhn check digit.
+  static const String notAPan = 'not_a_pan';
+
   /// Every reason string, for tests and exhaustiveness checks.
   static const List<String> values = <String>[
     notE164,
@@ -821,6 +845,12 @@ abstract final class QueryRejectionReason {
     emptyPhoneNumber,
     countryConflict,
     unknownBankCode,
+    notAQris,
+    qrisCrcMismatch,
+    qrisNoNmid,
+    qrisNotIndexed,
+    notAnNmid,
+    notAPan,
   ];
 }
 

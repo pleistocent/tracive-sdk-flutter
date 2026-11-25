@@ -87,6 +87,11 @@ switch (outcome) {
 The user writes the chronology, so it cannot be prefilled. Closing the form cancels an upload in
 progress.
 
+**A QRIS is reported by its NMID.** Build the query with `TraciveQuery.qris(payload)` or
+`TraciveQuery.qrisNmid(nmid)`, never `qrisPan`: a report takes up to three QRIS and no PAN, and only
+for an organisation whose agreement covers QRIS. Attach the QR image as evidence. The form shows the
+identifier as `QRIS · <NMID>`.
+
 ## Your own UI
 
 ```dart

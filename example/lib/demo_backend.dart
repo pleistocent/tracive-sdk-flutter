@@ -93,7 +93,9 @@ class DemoBackend extends HttpTransport {
     // every type, but it is for String within a process, which is enough here.
     final bucket =
         key.isEmpty ? 0 : key.codeUnits.fold<int>(7, (a, b) => a + b) % 10;
+    final qris = key.startsWith('QRIS_');
     final (tier, reports) = switch (bucket) {
+      _ when qris => ('CAUTION', 2),
       0 || 1 => ('HIGH', 27),
       2 || 3 => ('ELEVATED', 9),
       4 || 5 => ('CAUTION', 3),
@@ -136,9 +138,25 @@ class DemoBackend extends HttpTransport {
             'fromCredibleReport': true,
           },
         ],
+      if (qris)
+        'qris': <String, Object?>{
+          'merchantName': 'DEMO STORE',
+          'city': 'JAKARTA',
+          'criteria': 'UMI',
+          'acquirer': 'ID.DANA.WWW',
+        },
+      if (qris)
+        'rightOfReply': <String, Object?>{
+          'text': 'We own this store. This QR sits at our till and has never '
+              'been used to sell online.',
+          'language': 'en',
+        },
       'billing': <String, Object?>{'creditSource': 'USER', 'unitsCharged': 1},
-      'disclaimer':
-          'These are user-submitted reports, not adjudicated findings. '
+      'disclaimer': qris
+          ? 'These are user-submitted reports, not adjudicated findings. '
+              'Show them as a warning before the user pays; never block a '
+              'payment on them.'
+          : 'These are user-submitted reports, not adjudicated findings. '
               'Verify independently before acting on them.',
       // A field this build has never heard of. It must be ignored,
       // not to be fatal — this is that requirement, exercised.

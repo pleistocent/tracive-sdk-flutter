@@ -198,6 +198,74 @@ void main() {
       }
     });
 
+    test('decodes a QRIS hit with its merchant and right of reply', () {
+      final result = CheckResult.fromJson(<String, Object?>{
+        'checkId': 'chk_4d2c0b9a8e7f6a5b4c3d',
+        'found': true,
+        'riskTier': 'CAUTION',
+        'reportTotal': 2,
+        'credibleReports': 1,
+        'ambiguousReports': 1,
+        'firstReportOn': '2026-08',
+        'lastReportOn': '2026-09',
+        'fraudAmount': <String, Object?>{'IDR': 350000},
+        'tags': <Object?>['goods not delivered'],
+        'relatedScammerCount': 0,
+        'qris': <String, Object?>{
+          'merchantName': 'TOKO CONTOH',
+          'city': 'JAKARTA',
+          'criteria': 'UMI',
+          'acquirer': 'ID.DANA.WWW',
+        },
+        'rightOfReply': <String, Object?>{
+          'text': 'Kami pemilik usaha ini.',
+          'language': 'id',
+        },
+        'billing': <String, Object?>{'creditSource': 'USER', 'unitsCharged': 1},
+        'disclaimer': 'This information is indicative. For a QRIS, show it '
+            'to the user as a warning before they pay.',
+      }, fetchedAt: fetchedAt);
+
+      expect(
+        result.qris,
+        const QrisDetails(
+          merchantName: 'TOKO CONTOH',
+          city: 'JAKARTA',
+          criteria: QrisCriteria.umi,
+          acquirer: 'ID.DANA.WWW',
+        ),
+      );
+      expect(
+        result.rightOfReply,
+        const RightOfReply(text: 'Kami pemilik usaha ini.', language: 'id'),
+      );
+      expect(CheckResult.fromJson(result.toJson()), result);
+      expect('$result', isNot(contains('pemilik')));
+      expect('${result.qris}', isNot(contains('TOKO')));
+    });
+
+    test('a QRIS criteria this build does not know is kept as sent', () {
+      final result = CheckResult.fromJson(<String, Object?>{
+        'found': true,
+        'riskTier': 'HIGH',
+        'qris': <String, Object?>{'criteria': 'UXX', 'merchantName': 7},
+      }, fetchedAt: fetchedAt);
+      expect(result.riskTier, RiskTier.high);
+      expect(result.qris?.criteria, 'UXX');
+      expect(result.qris?.merchantName, isNull);
+    });
+
+    test('a non-QRIS answer, or an empty reply, carries neither field', () {
+      final result = CheckResult.fromJson(<String, Object?>{
+        'found': true,
+        'riskTier': 'HIGH',
+        'qris': 'not an object',
+        'rightOfReply': <String, Object?>{'text': '', 'language': 'id'},
+      }, fetchedAt: fetchedAt);
+      expect(result.qris, isNull);
+      expect(result.rightOfReply, isNull);
+    });
+
     test('round-trips through toJson', () {
       final original = CheckResult.fromJson(<String, Object?>{
         'checkId': 'chk_1',
@@ -991,7 +1059,25 @@ void main() {
       expect(ClientType.fromWire(null), ClientType.public);
 
       expect(QueryType.fromWire('username'), QueryType.username);
+      expect(QueryType.fromWire(' qris '), QueryType.qris);
       expect(QueryType.fromWire('DOMAIN'), isNull);
+    });
+
+    test('QueryType is open: a switch over it needs a default', () {
+      // A class, not an enum, so the next type the API indexes is not a
+      // breaking change. This switch has no QRIS case and still compiles; over
+      // an enum it would not.
+      String describe(QueryType type) => switch (type) {
+            QueryType.phone => 'phone',
+            _ => 'other',
+          };
+      expect(describe(QueryType.phone), 'phone');
+      expect(describe(QueryType.qris), 'other');
+      expect(
+        QueryType.values.map((type) => type.wireValue),
+        <String>['PHONE', 'EMAIL', 'BANK', 'CRYPTO', 'USERNAME', 'QRIS'],
+      );
+      expect(identical(QueryType.fromWire('QRIS'), QueryType.qris), isTrue);
     });
 
     test('Source says what it is allowed to touch', () {

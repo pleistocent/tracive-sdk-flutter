@@ -20,6 +20,7 @@ import 'bank_codes.dart';
 import 'document_id.dart';
 import 'js_string.dart';
 import 'normalizer.dart';
+import 'qris.dart';
 import 'query_type.dart';
 
 /// E.164: `+`, a non-zero country digit, then 6–14 more digits.
@@ -325,6 +326,59 @@ class TraciveQuery {
       QueryType.username,
       'USERNAME_${foldedPlatform}_$foldedHandle',
     );
+  }
+
+  /// A QRIS, read from its payload: the text a QR decoder returns for the
+  /// merchant's QR code.
+  ///
+  /// The key is the merchant's NMID (`QRIS_ID…`), never the merchant name or
+  /// the PAN, so every QR of one merchant shares one key and one cache entry.
+  /// Only tab, LF, CR, space and U+00A0 are trimmed from the edges; the rest
+  /// must be exactly what was scanned, because the CRC covers it.
+  ///
+  /// Throws, in this order: `not_a_qris` (not a QRIS at all, or a partial
+  /// scan), `qris_crc_mismatch` (edited or misread — tell the user the QR is
+  /// not intact rather than calling it unreported), `qris_no_nmid`, and
+  /// `qris_not_indexed` (a medium or large business: Tracive indexes only UMI
+  /// and UKE, so the check could only be a billed miss). A dynamic QR is
+  /// accepted; its merchant may be indexed from its static QR.
+  ///
+  /// Only for an organisation whose agreement covers QRIS. Any other gets
+  /// `TraciveUnsupportedInputTypeException` from the server.
+  factory TraciveQuery.qris(String payload) =>
+      _build(QueryType.qris, 'QRIS_${nmidOfPayload(payload)}');
+
+  /// A QRIS by its NMID, as printed under the QR: `ID` and 13 digits.
+  ///
+  /// Fold: remove every tab, LF, CR, space and U+00A0, wherever they sit, then
+  /// upper-case. Throws `not_an_nmid` for anything else.
+  factory TraciveQuery.qrisNmid(String nmid) {
+    final folded = normalizeNmid(nmid);
+    if (folded == null) {
+      throw const TraciveQueryException(
+        QueryRejectionReason.notAnNmid,
+        message: 'NMID must be ID followed by 13 digits',
+      );
+    }
+    return _build(QueryType.qris, 'QRIS_$folded');
+  }
+
+  /// A QRIS by its merchant PAN: 18 digits, or the 19 a receipt prints (the
+  /// 18 plus a Luhn check digit, dropped only when it checks out).
+  ///
+  /// The server maps a PAN to its NMID after the charge, and a PAN it has not
+  /// seen answers as a miss, which is billed. The cache keeps this key apart
+  /// from the NMID key, so one merchant checked both ways is two entries.
+  /// Throws `not_a_pan`.
+  factory TraciveQuery.qrisPan(String pan) {
+    final folded = normalizePan(pan);
+    if (folded == null) {
+      throw const TraciveQueryException(
+        QueryRejectionReason.notAPan,
+        message: 'PAN must be 18 digits, or 19 with a valid check digit',
+      );
+    }
+    return _build(QueryType.qris, 'QRIS_$folded');
   }
 
   /// Uppercase first, then strip whitespace and ASCII hyphens. Shared by

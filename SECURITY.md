@@ -37,8 +37,8 @@ that changes the timeline, and we would rather hear it from you than from a user
 
 | Version | Supported |
 |---|---|
-| `0.2.x` | Yes |
-| `< 0.2.0` | No |
+| `0.3.x` | Yes |
+| `< 0.3.0` | No |
 
 While the package is `0.x`, security fixes land on the latest minor version
 only. There are no long-term support branches yet.

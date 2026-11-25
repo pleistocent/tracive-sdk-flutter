@@ -7,6 +7,8 @@ import 'collection_equality.dart';
 import 'comment.dart';
 import 'json.dart';
 import 'origin.dart';
+import 'qris_details.dart';
+import 'right_of_reply.dart';
 import 'risk_tier.dart';
 
 /// The answer to a scammer check.
@@ -37,6 +39,8 @@ class CheckResult {
     this.comments,
     this.billing,
     this.disclaimer,
+    this.qris,
+    this.rightOfReply,
   })  : fraudAmount = Map<String, double>.unmodifiable(fraudAmount),
         tags = List<String>.unmodifiable(tags);
 
@@ -56,6 +60,9 @@ class CheckResult {
     final chronologies = asJsonMapList(json['topChronologies']);
     final commentMaps = asJsonMapList(json['comments']);
     final billingJson = asJsonMap(json['billing']);
+    final qrisJson = asJsonMap(json['qris']);
+    final replyJson = asJsonMap(json['rightOfReply']);
+    final reply = replyJson == null ? null : RightOfReply.fromJson(replyJson);
     return CheckResult(
       checkId: asString(json['checkId']),
       found: asBool(json['found']),
@@ -73,6 +80,9 @@ class CheckResult {
       comments: commentMaps?.map(Comment.fromJson).toList(growable: false),
       billing: billingJson == null ? null : Billing.fromJson(billingJson),
       disclaimer: asString(json['disclaimer']),
+      qris: qrisJson == null ? null : QrisDetails.fromJson(qrisJson),
+      // A reply with no text has nothing to show below the warning.
+      rightOfReply: reply == null || reply.text.isEmpty ? null : reply,
       origin: origin ?? Origin.fromWire(json['origin']),
       fetchedAt: fetchedAt ??
           asUtcDateTime(json['fetchedAt']) ??
@@ -133,7 +143,18 @@ class CheckResult {
   final Billing? billing;
 
   /// Legal/UX disclaimer. **Surface this in any UI built on the SDK.**
+  ///
+  /// On a QRIS check it adds that the result is a warning to show before the
+  /// user pays, never a reason to block or hold a payment automatically.
   final String? disclaimer;
+
+  /// The merchant behind a QRIS hit. `null` for every other type, and for a
+  /// QRIS miss.
+  final QrisDetails? qris;
+
+  /// The reported party's answer, when they have given one. Show it below the
+  /// warning, verbatim and untranslated.
+  final RightOfReply? rightOfReply;
 
   /// Cache or network.
   final Origin origin;
@@ -165,6 +186,8 @@ class CheckResult {
   /// cache key must become `(query, detail, locale)` first** — otherwise an
   /// Indonesian answer is served to an English caller, in the one string this
   /// SDK asks every integrator to put on screen.
+  ///
+  /// [qris] and [rightOfReply] are kept as well; neither is ever translated.
   CheckResult cacheable() => CheckResult(
         checkId: null,
         found: found,
@@ -181,6 +204,8 @@ class CheckResult {
         comments: null,
         billing: null,
         disclaimer: disclaimer,
+        qris: qris,
+        rightOfReply: rightOfReply,
         origin: Origin.cache,
         fetchedAt: fetchedAt,
       );
@@ -217,6 +242,8 @@ class CheckResult {
         comments: null,
         billing: billing,
         disclaimer: disclaimer,
+        qris: qris,
+        rightOfReply: rightOfReply,
         origin: origin,
         fetchedAt: fetchedAt,
       );
@@ -242,6 +269,8 @@ class CheckResult {
     List<Comment>? comments,
     Billing? billing,
     String? disclaimer,
+    QrisDetails? qris,
+    RightOfReply? rightOfReply,
     Origin? origin,
     DateTime? fetchedAt,
   }) =>
@@ -261,6 +290,8 @@ class CheckResult {
         comments: comments ?? this.comments,
         billing: billing ?? this.billing,
         disclaimer: disclaimer ?? this.disclaimer,
+        qris: qris ?? this.qris,
+        rightOfReply: rightOfReply ?? this.rightOfReply,
         origin: origin ?? this.origin,
         fetchedAt: fetchedAt ?? this.fetchedAt,
       );
@@ -287,6 +318,8 @@ class CheckResult {
           'comments': <Object?>[for (final item in comments!) item.toJson()],
         if (billing != null) 'billing': billing!.toJson(),
         if (disclaimer != null) 'disclaimer': disclaimer,
+        if (qris != null) 'qris': qris!.toJson(),
+        if (rightOfReply != null) 'rightOfReply': rightOfReply!.toJson(),
         'origin': origin.wireValue,
         'fetchedAt': toIso8601Utc(fetchedAt),
       };
@@ -310,6 +343,8 @@ class CheckResult {
           listEquals(other.comments, comments) &&
           other.billing == billing &&
           other.disclaimer == disclaimer &&
+          other.qris == qris &&
+          other.rightOfReply == rightOfReply &&
           other.origin == origin &&
           other.fetchedAt == fetchedAt;
 
@@ -330,6 +365,8 @@ class CheckResult {
         listHash(comments),
         billing,
         disclaimer,
+        qris,
+        rightOfReply,
         origin,
         fetchedAt,
       ]);
@@ -343,5 +380,6 @@ class CheckResult {
       'relatedScammerCount: $relatedScammerCount, origin: ${origin.name}, '
       'fetchedAt: $fetchedAt, '
       'topChronologies: ${topChronologies?.length}, '
-      'comments: ${comments?.length})';
+      'comments: ${comments?.length}, qris: ${qris != null}, '
+      'rightOfReply: ${rightOfReply != null})';
 }

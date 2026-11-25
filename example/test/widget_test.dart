@@ -109,6 +109,24 @@ void main() {
     );
   });
 
+  testWidgets('a QRIS check keys the QR by its NMID and shows the reply', (
+    tester,
+  ) async {
+    await _pumpApp(tester);
+
+    await tester.tap(find.text('QRIS'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sandbox QR (HIGH)'));
+    await tester.pumpAndSettle();
+    await _tapCheck(tester);
+
+    expect(find.textContaining('QRIS_ID9900000000101'), findsOneWidget);
+    expect(find.text('DEMO STORE'), findsOneWidget);
+    expect(find.text("The merchant's reply"), findsOneWidget);
+    expect(
+        find.textContaining('never been used to sell online'), findsOneWidget);
+  });
+
   testWidgets('source: cache with an empty cache is an error, not "safe"', (
     tester,
   ) async {
